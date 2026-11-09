@@ -3,152 +3,744 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Notre capteur</title>
-<!-- Chart.js : la bibliothèque qui dessine les graphes, chargée depuis un CDN -->
+<title>Qualité de l'air · Notre capteur</title>
+<meta name="description" content="Mesures en direct de notre capteur de qualité de l'air : particules fines, température, humidité et CO2.">
+
+<!-- Chart.js 4.4.1 : la bibliothèque qui dessine les graphes (même version que l'exemple du prof) -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
 <style>
+  :root {
+    --fond: #f2f6f3;
+    --carte: #ffffff;
+    --texte: #1b2420;
+    --texte-doux: #55655b;
+    --bordure: #d9e1dc;
+    --accent: #1f6f5b;
+    --accent-fonce: #154d3f;
+    --ombre: 0 1px 2px rgba(20, 40, 30, .06), 0 4px 14px rgba(20, 40, 30, .07);
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+
   body {
-    font-family: system-ui, sans-serif; color: #1b2420; background: #f6f7f6;
-    max-width: 900px; margin: 0 auto; padding: 16px;
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--texte);
+    background: var(--fond);
+    line-height: 1.5;
   }
-  h1 { margin-bottom: 4px; }
+  .conteneur { max-width: 960px; margin: 0 auto; padding: 0 16px; }
+
+  /* ---------- En-tête ---------- */
+  .hero {
+    background: linear-gradient(135deg, var(--accent-fonce), var(--accent));
+    color: #fff;
+    padding: 32px 0 28px;
+  }
+  .surtitre {
+    margin: 0 0 8px;
+    font-size: .78rem;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    opacity: .85;
+  }
+  .hero h1 { margin: 0 0 10px; font-size: clamp(1.6rem, 5vw, 2.3rem); line-height: 1.15; }
+  .intro { margin: 0 0 18px; max-width: 62ch; }
+
+  .statut {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    margin: 0;
+    padding: 6px 14px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .16);
+    font-size: .92rem;
+  }
+  .statut .point { width: 10px; height: 10px; border-radius: 50%; background: #cfd8d3; flex: none; }
+  .statut.ok .point { background: #7be0a4; }
+  .statut.alerte .point { background: #ffc266; }
+  .statut.erreur .point { background: #ff8a80; }
+
+  /* Texte à compléter par le groupe : bien visible pour ne pas l'oublier */
+  .a-completer { background: #fff3b0; color: #4a3b00; padding: 0 4px; border-radius: 3px; }
+
+  /* ---------- Contrôles ---------- */
+  .controles {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px 20px;
+    margin: 20px 0 8px;
+  }
+  .periodes { display: inline-flex; padding: 3px; border-radius: 10px; background: #e1e9e4; }
+  .periode {
+    min-height: 40px;
+    padding: 8px 18px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--texte-doux);
+    font: inherit;
+    cursor: pointer;
+  }
+  .periode.actif {
+    background: #fff;
+    color: var(--accent-fonce);
+    font-weight: 600;
+    box-shadow: 0 1px 3px rgba(20, 40, 30, .15);
+  }
+  .periode:focus-visible, .option input:focus-visible { outline: 3px solid #7aa6ff; outline-offset: 2px; }
+  .option { display: inline-flex; align-items: center; gap: 8px; font-size: .92rem; color: var(--texte-doux); cursor: pointer; }
+  .option input { width: 18px; height: 18px; }
+
+  .etat { margin: 4px 0 16px; font-size: .9rem; color: var(--texte-doux); }
+  .etat.erreur { padding: 10px 14px; border-radius: 8px; background: #fbdedc; color: #8c1d18; }
+
+  /* ---------- Titres et cartes ---------- */
+  h2 { margin: 0 0 4px; font-size: 1.15rem; }
+  .note { margin: 0 0 12px; font-size: .85rem; color: var(--texte-doux); }
+  section { margin: 22px 0; }
+
   .carte {
-    background: #fff; border: 1px solid #d6ddd8; border-radius: 8px;
-    padding: 12px 16px; margin: 16px 0;
+    padding: 16px;
+    border: 1px solid var(--bordure);
+    border-radius: 12px;
+    background: var(--carte);
+    box-shadow: var(--ombre);
   }
-  #valeurs { display: flex; flex-wrap: wrap; gap: 24px; }
-  .valeur b { display: block; font-size: 1.8rem; }
-  #etat { color: #5a6a60; }
-  #etat.erreur { color: #b3261e; }
+  .zone-graphe { position: relative; height: 280px; }
+
+  /* ---------- Dernières valeurs ---------- */
+  .grille-valeurs { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .valeur {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 12px 14px;
+    border: 1px solid var(--bordure);
+    border-left: 5px solid var(--bordure);
+    border-radius: 10px;
+    background: var(--carte);
+    box-shadow: var(--ombre);
+  }
+  .valeur-nom { font-size: .85rem; color: var(--texte-doux); }
+  .valeur-chiffre { font-size: 1.8rem; font-weight: 700; line-height: 1.1; }
+  .valeur-chiffre small { font-size: .85rem; font-weight: 500; color: var(--texte-doux); }
+  .badge { align-self: flex-start; padding: 2px 10px; border-radius: 999px; font-size: .78rem; font-weight: 600; }
+
+  /* ---------- Tableaux ---------- */
+  .defile { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+  th, td { padding: 8px 10px; border-bottom: 1px solid var(--bordure); text-align: right; white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  thead th { font-size: .82rem; color: var(--texte-doux); font-weight: 600; }
+  tbody th { font-weight: 600; }
+  tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; }
+
+  /* ---------- Explications ---------- */
+  .apropos h3 { margin: 18px 0 4px; font-size: 1rem; }
+  .apropos p { margin: 0 0 8px; }
+  .petit { font-size: .85rem; color: var(--texte-doux); }
+
+  footer { margin: 28px 0 32px; font-size: .85rem; color: var(--texte-doux); }
+  footer p { margin: 0 0 4px; }
+
+  @media (max-width: 520px) {
+    .zone-graphe { height: 240px; }
+    .periode { padding: 8px 14px; }
+  }
 </style>
 </head>
 <body>
 
-<h1>Notre capteur</h1>
-<p>Mesures envoyées par la carte du groupe au serveur AirCarto.</p>
+<noscript><p style="padding:16px">Cette page a besoin de JavaScript pour afficher les mesures.</p></noscript>
 
-<p>
-  Période :
-  <select id="periode">
-    <option value="-6h">6 dernières heures</option>
-    <option value="-24h" selected>24 dernières heures</option>
-    <option value="-7d">7 derniers jours</option>
-  </select>
-</p>
-<p id="etat">Chargement…</p>
+<header class="hero">
+  <div class="conteneur">
+    <p class="surtitre">BUT Mesures physiques · IUT Aix-Marseille</p>
+    <h1>Quelle est la qualité de l'air ici&nbsp;?</h1>
+    <p class="intro">
+      Cette page affiche les mesures de notre capteur : particules fines, température, humidité et CO₂.
+      Le capteur est installé <mark class="a-completer">[À COMPLÉTER : lieu, par exemple « salle X, bâtiment Y »]</mark>.
+    </p>
+    <p id="statut" class="statut"><span class="point"></span><span id="statut-texte">Chargement…</span></p>
+  </div>
+</header>
 
-<div class="carte">
-  <h2>Dernière mesure</h2>
-  <div id="valeurs"></div>
-</div>
+<main class="conteneur">
 
-<div class="carte">
-  <h2>Particules (µg/m³)</h2>
-  <canvas id="graphe-pm"></canvas>
-</div>
-<div class="carte">
-  <h2>Température (°C) et humidité (%)</h2>
-  <canvas id="graphe-meteo"></canvas>
-</div>
-<div class="carte" id="carte-co2">
-  <h2>CO₂ (ppm)</h2>
-  <canvas id="graphe-co2"></canvas>
-</div>
+  <div class="controles">
+    <div class="periodes" role="group" aria-label="Période affichée">
+      <button type="button" class="periode" data-periode="-6h" aria-pressed="false">6 heures</button>
+      <button type="button" class="periode actif" data-periode="-24h" aria-pressed="true">24 heures</button>
+      <button type="button" class="periode" data-periode="-7d" aria-pressed="false">7 jours</button>
+    </div>
+    <label class="option">
+      <input type="checkbox" id="afficher-seuils" checked>
+      Afficher les seuils sur les graphes
+    </label>
+  </div>
+
+  <p id="etat" class="etat" role="status">Chargement…</p>
+
+  <section aria-labelledby="titre-derniere">
+    <h2 id="titre-derniere">Dernière mesure</h2>
+    <p class="note" id="note-derniere"></p>
+    <div id="valeurs" class="grille-valeurs"></div>
+  </section>
+
+  <section class="carte">
+    <h2>Particules fines (µg/m³)</h2>
+    <p class="note">PM1, PM2.5 et PM10 : particules de moins de 1, 2,5 et 10 micromètres.</p>
+    <div class="zone-graphe"><canvas id="graphe-pm"></canvas></div>
+  </section>
+
+  <section class="carte">
+    <h2>Température (°C) et humidité (%)</h2>
+    <p class="note">Température sur l'axe de gauche, humidité sur l'axe de droite.</p>
+    <div class="zone-graphe"><canvas id="graphe-meteo"></canvas></div>
+  </section>
+
+  <section class="carte" id="carte-co2">
+    <h2>CO₂ (ppm)</h2>
+    <p class="note">Le CO₂ indique si la pièce est bien aérée.</p>
+    <div class="zone-graphe"><canvas id="graphe-co2"></canvas></div>
+  </section>
+
+  <section class="carte" id="carte-resume">
+    <h2>Résumé de la période</h2>
+    <p class="note">Minimum, moyenne et maximum des points affichés sur les graphes.</p>
+    <div class="defile">
+      <table>
+        <thead>
+          <tr><th>Mesure</th><th>Minimum</th><th>Moyenne</th><th>Maximum</th></tr>
+        </thead>
+        <tbody id="resume-corps"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="carte apropos" id="apropos">
+    <h2>Comprendre les mesures</h2>
+
+    <h3>Le projet</h3>
+    <p>
+      <mark class="a-completer">[À COMPLÉTER : en 2 ou 3 phrases, le but du projet, le modèle de carte utilisé
+      et la date de mise en service.]</mark>
+    </p>
+
+    <h3>PM1, PM2.5 et PM10</h3>
+    <p>
+      Ce sont des particules en suspension dans l'air, classées selon leur diamètre. Plus elles sont petites,
+      plus elles pénètrent profondément dans les voies respiratoires : les PM2.5 peuvent aller jusqu'aux poumons
+      profonds. Elles se mesurent en microgrammes par mètre cube d'air (µg/m³).
+    </p>
+
+    <h3>CO₂</h3>
+    <p>
+      À l'intérieur, le CO₂ vient surtout de notre respiration. Aux niveaux mesurés en salle, ce n'est pas lui
+      qui est dangereux : il sert d'indicateur de confinement. Plus il monte, moins l'air est renouvelé.
+      Le Haut Conseil de la santé publique (HCSP) fixe un objectif sous 800 ppm dans les lieux clos et
+      recommande d'aérer au-delà. L'air extérieur est autour de 400 ppm.
+    </p>
+
+    <h3>Les couleurs et les seuils</h3>
+    <div class="defile">
+      <table>
+        <thead>
+          <tr><th>Niveau</th><th>PM2.5 (µg/m³)</th><th>PM10 (µg/m³)</th><th>CO₂ (ppm)</th></tr>
+        </thead>
+        <tbody id="seuils-corps"></tbody>
+      </table>
+    </div>
+    <p class="petit">
+      Particules : valeur guide de l'OMS (2021) pour « Bon », puis cibles intermédiaires 3 et 1 de l'OMS
+      pour « Moyen » et « Élevé ». Ces valeurs de l'OMS portent sur des moyennes de 24 heures : ici elles
+      servent de repère pour la dernière mesure, à titre indicatif. CO₂ : 800 ppm est l'objectif du HCSP ;
+      1 000 et 1 500 ppm sont des repères usuels pour l'aération des salles.
+    </p>
+    <p class="petit">
+      Sources : OMS, <em>Lignes directrices mondiales sur la qualité de l'air</em>, 2021 ; HCSP, recommandations
+      sur l'aération et la ventilation des établissements.
+      <mark class="a-completer">[À COMPLÉTER : ajoutez ici les liens de vos propres sources.]</mark>
+    </p>
+
+    <h3>Température et humidité</h3>
+    <p>Elles ne sont pas colorées : elles donnent le contexte (une salle chaude et humide se ressent vite).</p>
+  </section>
+
+</main>
+
+<footer class="conteneur">
+  <p>Données : serveur AirCarto. Graphes : Chart.js. Mise à jour automatique toutes les 5 minutes.</p>
+  <p>Projet réalisé par <mark class="a-completer">[À COMPLÉTER : noms du groupe]</mark>.</p>
+</footer>
 
 <script>
-// ---------- Réglages : à remplacer ----------
-const CLE = "838fcf4b7c5d3b220c9548d29d633fd3";   // clé du groupe (32 caractères)
+// =====================================================================
+// 1) RÉGLAGES : seule la clé est obligatoire
+// =====================================================================
+const CLE = "";            // clé du groupe (32 caractères)
 const DEVICE_ID = "";      // adresse MAC d'une carte, ou "" pour toutes
+const URL_API = "https://api.aircarto.fr/iut-amu/data";
+const RAFRAICHISSEMENT_MS = 5 * 60 * 1000;   // mise à jour toutes les 5 minutes
 
 // Une moyenne par intervalle selon la période : assez de points pour une
-// courbe lisible, pas trop pour rester rapide (7 jours en brut = 60 000 points).
+// courbe lisible, pas trop pour rester rapide.
 const MOYENNE = { "-6h": "5m", "-24h": "15m", "-7d": "1h" };
 
-// Nom affiché et unité de chaque champ de l'API
+// Nom, unité, nombre de décimales, couleur de courbe et axe de chaque champ de l'API.
+// zero : l'axe démarre à 0 (utile pour les particules et l'humidité).
 const CHAMPS = {
-  pm1: ["PM1", "µg/m³"], pm25: ["PM2.5", "µg/m³"], pm10: ["PM10", "µg/m³"],
-  temp: ["Température", "°C"], hum: ["Humidité", "%"], co2: ["CO₂", "ppm"],
+  pm1:  { nom: "PM1",         unite: "µg/m³", decimales: 1, couleur: "#7e6bb8", axe: "y",  zero: true },
+  pm25: { nom: "PM2.5",       unite: "µg/m³", decimales: 1, couleur: "#e07b00", axe: "y",  zero: true },
+  pm10: { nom: "PM10",        unite: "µg/m³", decimales: 1, couleur: "#1f77b4", axe: "y",  zero: true },
+  temp: { nom: "Température", unite: "°C",    decimales: 1, couleur: "#d1495b", axe: "y",  zero: false },
+  hum:  { nom: "Humidité",    unite: "%",     decimales: 0, couleur: "#2a9d8f", axe: "y1", zero: true },
+  co2:  { nom: "CO₂",         unite: "ppm",   decimales: 0, couleur: "#3d5a80", axe: "y",  zero: false },
 };
 
-const graphes = {};   // les graphes déjà dessinés, à remplacer au rechargement
+// Limites entre les niveaux (Bon | Moyen | Élevé | Très élevé).
+//  - PM2.5 et PM10 : valeur guide OMS 2021 (24 h), puis cibles intermédiaires 3 et 1.
+//  - CO2 : 800 ppm (objectif HCSP), 1000 et 1500 ppm (repères usuels).
+// tracer : indices des limites dessinées en pointillés sur le graphe.
+const SEUILS = {
+  pm25: { limites: [15, 37.5, 75],      tracer: [0],    suffixe: " (OMS)" },
+  pm10: { limites: [45, 75, 150],       tracer: [0],    suffixe: " (OMS)" },
+  co2:  { limites: [800, 1000, 1500],   tracer: [0, 1], suffixe: "" },
+};
+const NIVEAUX = [
+  { nom: "Bon",        couleur: "#2e7d32", fond: "#e3f3e5" },
+  { nom: "Moyen",      couleur: "#7a5d00", fond: "#fff1c2" },
+  { nom: "Élevé",      couleur: "#a84f00", fond: "#ffe3c7" },
+  { nom: "Très élevé", couleur: "#b3261e", fond: "#fbdedc" },
+];
 
-// Demande les mesures au serveur et renvoie la liste des points.
+// =====================================================================
+// 2) PETITS OUTILS
+// =====================================================================
+const graphes = {};            // les graphes déjà dessinés, détruits avant chaque redessin
+let periodeActuelle = "-24h";
+let cache = null;              // dernières données reçues : { periode, points, serie }
+let numeroRequete = 0;         // pour ignorer une réponse arrivée trop tard
+
+if (typeof Chart !== "undefined") {
+  Chart.defaults.font.family = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+  Chart.defaults.color = "#44534a";
+}
+
+// Crée un élément HTML avec une classe et un texte (le texte n'est jamais interprété comme du HTML).
+function el(balise, classe, texte) {
+  const e = document.createElement(balise);
+  if (classe) e.className = classe;
+  if (texte !== undefined) e.textContent = texte;
+  return e;
+}
+
+const estNombre = v => typeof v === "number" && Number.isFinite(v);
+
+// Nombre à la française : 1 234,5. Sans "decimales", jusqu'à 1 décimale si besoin.
+function nb(valeur, decimales) {
+  const options = (decimales === undefined)
+    ? { maximumFractionDigits: 1 }
+    : { minimumFractionDigits: decimales, maximumFractionDigits: decimales };
+  return valeur.toLocaleString("fr-FR", options);
+}
+
+// "5m" -> 300000 ; "1h" -> 3600000
+function enMs(freq) {
+  const n = parseInt(freq, 10);
+  return freq.endsWith("h") ? n * 3600000 : n * 60000;
+}
+
+// "15m" -> "15 min" ; "1h" -> "1 h"
+function libelleDuree(freq) {
+  return freq.replace("m", " min").replace("h", " h");
+}
+
+function depuis(ms) {
+  const min = Math.round(ms / 60000);
+  if (min < 1) return "à l'instant";
+  if (min < 60) return "il y a " + min + " min";
+  const h = Math.floor(min / 60);
+  if (h < 48) return "il y a " + h + " h";
+  return "il y a " + Math.floor(h / 24) + " jours";
+}
+
+// Renvoie le niveau (objet de NIVEAUX) d'une valeur, ou null si le champ n'a pas de seuils.
+function niveau(champ, valeur) {
+  const s = SEUILS[champ];
+  if (!s) return null;
+  const i = s.limites.findIndex(limite => valeur <= limite);
+  return NIVEAUX[i === -1 ? s.limites.length : i];
+}
+
+function definirStatut(classe, message) {
+  document.getElementById("statut").className = "statut " + classe;
+  document.getElementById("statut-texte").textContent = message;
+}
+
+// =====================================================================
+// 3) LECTURE DES MESURES
+// =====================================================================
 async function chargerMesures(periode) {
+  if (!CLE) {
+    throw new Error("la clé du groupe n'est pas renseignée (ligne « const CLE » du script).");
+  }
   const params = new URLSearchParams({ key: CLE, start: periode, freq: MOYENNE[periode] });
   if (DEVICE_ID) params.set("device_id", DEVICE_ID);
-  const reponse = await fetch("https://api.aircarto.fr/iut-amu/data?" + params);
-  const json = await reponse.json();
+
+  let reponse;
+  try {
+    reponse = await fetch(URL_API + "?" + params);
+  } catch (e) {
+    throw new Error("impossible de joindre le serveur (connexion internet ?).");
+  }
+  let json;
+  try {
+    json = await reponse.json();
+  } catch (e) {
+    throw new Error("réponse du serveur illisible (code " + reponse.status + ").");
+  }
   if (!json.ok) {
     // Le serveur explique toujours l'erreur dans "message"
-    throw new Error(json.message);
+    throw new Error(json.message || "erreur du serveur.");
   }
-  return json.points;
+  return json.points || [];
 }
 
-// Dessine (ou redessine) un graphe avec une courbe par champ.
-function dessiner(idCanvas, points, champs) {
-  const etiquettes = points.map(p => new Date(p.time).toLocaleString("fr-FR",
-    { weekday: "short", hour: "2-digit", minute: "2-digit" }));
-  const courbes = champs
-    .filter(c => points.some(p => p[c] !== undefined))   // seulement les champs mesurés
-    .map(c => ({
-      label: CHAMPS[c][0],
-      data: points.map(p => p[c] ?? null),               // null = trou dans la courbe
-      pointRadius: 0,
-      borderWidth: 2,
-    }));
+// Place chaque point sur une grille de temps régulière : s'il manque des mesures,
+// on obtient des cases vides (p = null) et donc un trou visible dans la courbe.
+function regulariser(points, pasMs) {
+  const t0 = new Date(points[0].time).getTime();
+  const cases = [];
+  points.forEach(p => {
+    const i = Math.round((new Date(p.time).getTime() - t0) / pasMs);
+    if (Number.isFinite(i) && i >= 0) cases[i] = p;
+  });
+  const serie = [];
+  for (let i = 0; i < cases.length; i++) {
+    serie.push({ t: t0 + i * pasMs, p: cases[i] || null });
+  }
+  return serie;
+}
 
-  if (graphes[idCanvas]) graphes[idCanvas].destroy();
+// =====================================================================
+// 4) GRAPHES
+// =====================================================================
+
+// Plugin Chart.js maison : trace des lignes horizontales en pointillés (les seuils).
+function creerPluginSeuils(lignes) {
+  return {
+    id: "seuils",
+    afterDatasetsDraw(chart) {
+      const echelle = chart.scales.y;
+      if (!echelle) return;
+      const { ctx, chartArea } = chart;
+      lignes.forEach(l => {
+        const y = echelle.getPixelForValue(l.valeur);
+        if (y < chartArea.top || y > chartArea.bottom) return;
+        ctx.save();
+        ctx.setLineDash([6, 4]);
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = l.couleur;
+        ctx.beginPath();
+        ctx.moveTo(chartArea.left, y);
+        ctx.lineTo(chartArea.right, y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = l.couleur;
+        ctx.font = "11px system-ui, sans-serif";
+        ctx.textAlign = "right";
+        ctx.fillText(l.texte, chartArea.right - 4, y - 4);
+        ctx.restore();
+      });
+    },
+  };
+}
+
+// Un point isolé (entouré de trous) serait invisible : on le dessine quand même.
+function pointIsole(contexte) {
+  const d = contexte.dataset.data;
+  const i = contexte.dataIndex;
+  return (d[i - 1] == null && d[i + 1] == null) ? 3 : 0;
+}
+
+// Dessine (ou redessine) un graphe avec une courbe par champ. Renvoie le nombre de courbes.
+function dessiner(idCanvas, serie, champs) {
+  if (graphes[idCanvas]) {
+    graphes[idCanvas].destroy();
+    delete graphes[idCanvas];
+  }
+  // seulement les champs réellement mesurés
+  const utiles = champs.filter(c => serie.some(r => r.p && estNombre(r.p[c])));
+  if (utiles.length === 0) return 0;
+
+  const longues = serie.map(r => new Date(r.t).toLocaleString("fr-FR",
+    { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }));
+  const courtes = serie.map(r => new Date(r.t).toLocaleString("fr-FR",
+    { weekday: "short", hour: "2-digit", minute: "2-digit" }));
+
+  const jeux = utiles.map(c => ({
+    label: CHAMPS[c].nom,
+    unite: CHAMPS[c].unite,
+    decimales: CHAMPS[c].decimales,
+    data: serie.map(r => (r.p && estNombre(r.p[c])) ? r.p[c] : null),   // null = trou
+    borderColor: CHAMPS[c].couleur,
+    backgroundColor: CHAMPS[c].couleur,
+    borderWidth: 2,
+    tension: 0.2,
+    pointRadius: pointIsole,
+    pointHoverRadius: 4,
+    yAxisID: CHAMPS[c].axe,
+  }));
+
+  // Un axe vertical par unité (température à gauche, humidité à droite)
+  const echelles = {
+    x: {
+      grid: { display: false },
+      ticks: { autoSkip: true, maxTicksLimit: 7, maxRotation: 0, callback: valeur => courtes[valeur] },
+    },
+  };
+  utiles.forEach(c => {
+    const axe = CHAMPS[c].axe;
+    if (!echelles[axe]) {
+      echelles[axe] = {
+        position: axe === "y" ? "left" : "right",
+        beginAtZero: false,
+        title: { display: true, text: CHAMPS[c].unite },
+        grid: axe === "y" ? {} : { drawOnChartArea: false },
+      };
+    }
+    if (CHAMPS[c].zero) echelles[axe].beginAtZero = true;
+  });
+
+  // Seuils en pointillés (si la case est cochée)
+  const lignes = [];
+  if (document.getElementById("afficher-seuils").checked) {
+    utiles.forEach(c => {
+      const s = SEUILS[c];
+      if (!s) return;
+      s.tracer.forEach(i => lignes.push({
+        valeur: s.limites[i],
+        couleur: NIVEAUX[i + 1].couleur,
+        texte: CHAMPS[c].nom + " : " + nb(s.limites[i]) + s.suffixe,
+      }));
+    });
+  }
+
   graphes[idCanvas] = new Chart(document.getElementById(idCanvas), {
     type: "line",
-    data: { labels: etiquettes, datasets: courbes },
-    options: { interaction: { mode: "index", intersect: false } },
+    data: { labels: longues, datasets: jeux },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      scales: echelles,
+      plugins: {
+        legend: { display: utiles.length > 1, position: "bottom" },
+        tooltip: {
+          callbacks: {
+            label: ctx => ctx.parsed.y == null
+              ? ctx.dataset.label
+              : ctx.dataset.label + " : " + nb(ctx.parsed.y, ctx.dataset.decimales) + " " + ctx.dataset.unite,
+          },
+        },
+      },
+    },
+    plugins: [creerPluginSeuils(lignes)],
   });
-  return courbes.length;
+  return utiles.length;
 }
 
-// Affiche la valeur la plus récente de chaque champ.
-function afficherDerniere(points) {
-  const derniere = points[points.length - 1];
-  const html = Object.keys(CHAMPS)
-    .filter(c => derniere[c] !== undefined)
-    .map(c => {
-      const [nom, unite] = CHAMPS[c];
-      const valeur = derniere[c].toFixed(c === "co2" ? 0 : 1);   // CO2 sans décimale
-      return `<div class="valeur">${nom}<b>${valeur} ${unite}</b></div>`;
+// =====================================================================
+// 5) AFFICHAGE
+// =====================================================================
+
+// Dernière valeur non vide d'un champ (le dernier point peut être incomplet).
+function derniereValeur(serie, champ) {
+  for (let i = serie.length - 1; i >= 0; i--) {
+    const p = serie[i].p;
+    if (p && estNombre(p[champ])) return { valeur: p[champ], t: serie[i].t };
+  }
+  return null;
+}
+
+// Cartes « dernière mesure », colorées selon le niveau. Renvoie l'heure de la mesure la plus récente.
+function afficherDerniere(serie) {
+  const conteneur = document.getElementById("valeurs");
+  conteneur.replaceChildren();
+  let plusRecent = 0;
+
+  Object.keys(CHAMPS).forEach(c => {
+    const d = derniereValeur(serie, c);
+    if (!d) return;
+    plusRecent = Math.max(plusRecent, d.t);
+    const info = CHAMPS[c];
+    const niv = niveau(c, d.valeur);
+
+    const carte = el("div", "valeur");
+    carte.append(el("span", "valeur-nom", info.nom));
+    const chiffre = el("span", "valeur-chiffre", nb(d.valeur, info.decimales));
+    chiffre.append(" ", el("small", "", info.unite));
+    carte.append(chiffre);
+
+    if (niv) {
+      const badge = el("span", "badge", niv.nom);
+      badge.style.background = niv.fond;
+      badge.style.color = niv.couleur;
+      carte.style.borderLeftColor = niv.couleur;
+      carte.append(badge);
+    }
+    conteneur.append(carte);
+  });
+
+  const quand = new Date(plusRecent).toLocaleString("fr-FR",
+    { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
+  document.getElementById("note-derniere").textContent =
+    "Mesure du " + quand + " (" + depuis(Date.now() - plusRecent) + ").";
+  return plusRecent;
+}
+
+// Pastille d'en-tête : capteur en ligne, en retard ou muet.
+function majStatut(tDerniere, pasMs) {
+  const age = Date.now() - tDerniere;
+  if (age <= pasMs + 15 * 60000) {
+    definirStatut("ok", "Capteur en ligne · dernière mesure " + depuis(age));
+  } else if (age <= pasMs + 2 * 3600000) {
+    definirStatut("alerte", "Mesures en retard · dernière mesure " + depuis(age));
+  } else {
+    definirStatut("erreur", "Capteur muet ? Dernière mesure " + depuis(age));
+  }
+}
+
+function afficherResume(serie) {
+  const corps = document.getElementById("resume-corps");
+  corps.replaceChildren();
+  Object.keys(CHAMPS).forEach(c => {
+    const vals = serie.map(r => r.p && r.p[c]).filter(estNombre);
+    if (vals.length === 0) return;
+    const info = CHAMPS[c];
+    const moyenne = vals.reduce((a, b) => a + b, 0) / vals.length;
+
+    const tr = el("tr");
+    const th = el("th", "", info.nom + " (" + info.unite + ")");
+    th.scope = "row";
+    tr.append(th);
+    [Math.min(...vals), moyenne, Math.max(...vals)].forEach(v =>
+      tr.append(el("td", "", nb(v, info.decimales))));
+    corps.append(tr);
+  });
+}
+
+// Tableau des seuils, construit à partir de SEUILS (une seule source de vérité).
+function remplirSeuils() {
+  const corps = document.getElementById("seuils-corps");
+  corps.replaceChildren();
+  NIVEAUX.forEach((n, i) => {
+    const tr = el("tr");
+    const th = el("th");
+    th.scope = "row";
+    const badge = el("span", "badge", n.nom);
+    badge.style.background = n.fond;
+    badge.style.color = n.couleur;
+    th.append(badge);
+    tr.append(th);
+
+    ["pm25", "pm10", "co2"].forEach(c => {
+      const l = SEUILS[c].limites;
+      let texte;
+      if (i === 0) texte = "≤ " + nb(l[0]);
+      else if (i < l.length) texte = "> " + nb(l[i - 1]) + " et ≤ " + nb(l[i]);
+      else texte = "> " + nb(l[l.length - 1]);
+      tr.append(el("td", "", texte));
     });
-  document.getElementById("valeurs").innerHTML = html.join("");
+    corps.append(tr);
+  });
 }
 
+function viderGraphes() {
+  Object.keys(graphes).forEach(id => { graphes[id].destroy(); delete graphes[id]; });
+}
+
+// Redessine toute la page à partir des dernières données reçues (sans nouvelle requête).
+function afficherTout() {
+  if (!cache) return;
+  const { periode, points, serie } = cache;
+  const pasMs = enMs(MOYENNE[periode]);
+
+  majStatut(afficherDerniere(serie), pasMs);
+
+  [["graphe-pm", ["pm1", "pm25", "pm10"]],
+   ["graphe-meteo", ["temp", "hum"]],
+   ["graphe-co2", ["co2"]]].forEach(([id, champs]) => {
+    const n = dessiner(id, serie, champs);
+    document.getElementById(id).closest(".carte").hidden = (n === 0);   // pas de mesure : on cache la carte
+  });
+
+  afficherResume(serie);
+
+  const etat = document.getElementById("etat");
+  etat.className = "etat";
+  etat.textContent = points.length + " points, moyenne sur " + libelleDuree(MOYENNE[periode]) + ".";
+}
+
+// =====================================================================
+// 6) MISE À JOUR ET ÉVÉNEMENTS
+// =====================================================================
 async function rafraichir() {
   const etat = document.getElementById("etat");
-  const periode = document.getElementById("periode").value;
+  const numero = ++numeroRequete;
+  const periode = periodeActuelle;
   try {
+    if (typeof Chart === "undefined") {
+      throw new Error("Chart.js n'a pas pu être chargé (connexion internet ?).");
+    }
     const points = await chargerMesures(periode);
+    if (numero !== numeroRequete) return;   // une demande plus récente a pris le relais
+
     if (points.length === 0) {
+      cache = null;
+      viderGraphes();
+      document.getElementById("valeurs").replaceChildren();
+      document.getElementById("note-derniere").textContent = "";
+      document.getElementById("resume-corps").replaceChildren();
+      definirStatut("erreur", "Aucune mesure sur cette période");
+      etat.className = "etat erreur";
       etat.textContent = "Aucune mesure sur cette période : la carte envoie-t-elle ?";
       return;
     }
-    afficherDerniere(points);
-    dessiner("graphe-pm", points, ["pm1", "pm25", "pm10"]);
-    dessiner("graphe-meteo", points, ["temp", "hum"]);
-    const avecCo2 = dessiner("graphe-co2", points, ["co2"]);
-    // Pas de CO2 sur un NebuleAir : on cache son graphe
-    document.getElementById("carte-co2").hidden = (avecCo2 === 0);
-
-    const date = new Date(points[points.length - 1].time).toLocaleString("fr-FR");
-    etat.className = "";
-    etat.textContent = `${points.length} points, moyenne sur ${MOYENNE[periode]}. `
-                     + `Dernière mesure : ${date}.`;
+    cache = { periode, points, serie: regulariser(points, enMs(MOYENNE[periode])) };
+    afficherTout();
   } catch (erreur) {
-    etat.className = "erreur";
+    if (numero !== numeroRequete) return;
+    definirStatut("erreur", "Données indisponibles");
+    etat.className = "etat erreur";
     etat.textContent = "Erreur : " + erreur.message;
   }
 }
 
-document.getElementById("periode").addEventListener("change", rafraichir);
+document.querySelectorAll(".periode").forEach(bouton => {
+  bouton.addEventListener("click", () => {
+    periodeActuelle = bouton.dataset.periode;
+    document.querySelectorAll(".periode").forEach(b => {
+      const actif = (b === bouton);
+      b.classList.toggle("actif", actif);
+      b.setAttribute("aria-pressed", String(actif));
+    });
+    document.getElementById("etat").textContent = "Chargement…";
+    rafraichir();
+  });
+});
+
+document.getElementById("afficher-seuils").addEventListener("change", afficherTout);
+
+remplirSeuils();
 rafraichir();
-setInterval(rafraichir, 5 * 60 * 1000);   // mise à jour toutes les 5 minutes
+setInterval(rafraichir, RAFRAICHISSEMENT_MS);
 </script>
 </body>
 </html>
