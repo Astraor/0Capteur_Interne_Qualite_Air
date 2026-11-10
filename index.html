@@ -6,64 +6,89 @@
 <title>Qualité de l'air · Notre capteur</title>
 <meta name="description" content="Mesures en direct de notre capteur de qualité de l'air : particules fines, température, humidité et CO2.">
 
+<!-- Polices (si elles ne chargent pas, le navigateur utilise des polices de secours) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400..700;1,6..72,400..700&display=swap" rel="stylesheet">
+
+<!-- Chart.js 4.4.1 : la bibliothèque qui dessine les graphes -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
 <style>
   :root {
-    --fond: #f2f6f3;
-    --carte: #ffffff;
-    --texte: #1b2420;
-    --texte-doux: #55655b;
-    --bordure: #d9e1dc;
-    --accent: #1f6f5b;
-    --accent-fonce: #154d3f;
-    --ombre: 0 1px 2px rgba(20, 40, 30, .06), 0 4px 14px rgba(20, 40, 30, .07);
+    --papier: #f4f1ea;
+    --surface: #fbf9f4;
+    --encre: #1e211d;
+    --doux: #5f6258;
+    --filet: #d9d3c4;
+    --accent: #a8432a;
+    --serif: "Newsreader", Georgia, "Times New Roman", serif;
+    --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Consolas, monospace;
   }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
 
   body {
     margin: 0;
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    color: var(--texte);
-    background: var(--fond);
-    line-height: 1.5;
+    font-family: var(--sans);
+    color: var(--encre);
+    background: var(--papier);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
   }
-  .conteneur { max-width: 960px; margin: 0 auto; padding: 0 16px; }
+  .conteneur { max-width: 1000px; margin: 0 auto; padding: 0 20px; }
 
   /* ---------- En-tête ---------- */
-  .hero {
-    background: linear-gradient(135deg, var(--accent-fonce), var(--accent));
-    color: #fff;
-    padding: 32px 0 28px;
+  .entete {
+    padding: 44px 0 30px;
+    border-top: 6px solid var(--encre);
+    border-bottom: 1px solid var(--encre);
   }
   .surtitre {
-    margin: 0 0 8px;
-    font-size: .78rem;
-    letter-spacing: .08em;
+    margin: 0 0 18px;
+    font-family: var(--mono);
+    font-size: .74rem;
+    letter-spacing: .1em;
     text-transform: uppercase;
-    opacity: .85;
+    color: var(--doux);
   }
-  .hero h1 { margin: 0 0 10px; font-size: clamp(1.6rem, 5vw, 2.3rem); line-height: 1.15; }
-  .intro { margin: 0 0 18px; max-width: 62ch; }
+  .entete h1 {
+    margin: 0 0 22px;
+    max-width: 16ch;
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: clamp(2.2rem, 7vw, 3.8rem);
+    line-height: 1.02;
+    letter-spacing: -.02em;
+  }
+  .entete h1 em { font-style: italic; color: var(--accent); }
+  .entete-bas {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 18px 40px;
+  }
+  .intro { margin: 0; max-width: 58ch; color: var(--doux); }
 
   .statut {
     display: inline-flex;
     align-items: center;
-    gap: 9px;
+    gap: 10px;
     margin: 0;
-    padding: 6px 14px;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, .16);
-    font-size: .92rem;
+    font-family: var(--mono);
+    font-size: .8rem;
   }
-  .statut .point { width: 10px; height: 10px; border-radius: 50%; background: #cfd8d3; flex: none; }
-  .statut.ok .point { background: #7be0a4; }
-  .statut.alerte .point { background: #ffc266; }
-  .statut.erreur .point { background: #ff8a80; }
+  .statut .point { width: 9px; height: 9px; border-radius: 50%; background: #b9b3a2; flex: none; }
+  .statut.ok .point { background: #3d7a47; animation: respire 2.4s ease-in-out infinite; }
+  .statut.alerte .point { background: #c98a1a; }
+  .statut.erreur .point { background: #b3261e; }
+  @keyframes respire { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+  @media (prefers-reduced-motion: reduce) { .statut .point { animation: none !important; } }
 
   /* Texte à compléter par le groupe : bien visible pour ne pas l'oublier */
-  .a-completer { background: #fff3b0; color: #4a3b00; padding: 0 4px; border-radius: 3px; }
+  .a-completer { background: #fff3b0; color: #4a3b00; padding: 0 4px; border-radius: 2px; }
 
   /* ---------- Contrôles ---------- */
   .controles {
@@ -71,85 +96,133 @@
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 12px 20px;
-    margin: 20px 0 8px;
+    gap: 14px 24px;
+    margin: 28px 0 10px;
   }
-  .periodes { display: inline-flex; padding: 3px; border-radius: 10px; background: #e1e9e4; }
+  .periodes { display: inline-flex; gap: 6px; }
   .periode {
-    min-height: 40px;
+    min-height: 42px;
     padding: 8px 18px;
-    border: 0;
-    border-radius: 8px;
+    border: 1px solid var(--encre);
+    border-radius: 2px;
     background: transparent;
-    color: var(--texte-doux);
-    font: inherit;
+    color: var(--encre);
+    font: 500 .88rem var(--sans);
     cursor: pointer;
+    transition: background .15s, color .15s;
   }
-  .periode.actif {
-    background: #fff;
-    color: var(--accent-fonce);
-    font-weight: 600;
-    box-shadow: 0 1px 3px rgba(20, 40, 30, .15);
+  .periode:hover { background: #e9e4d6; }
+  .periode.actif { background: var(--encre); color: var(--papier); }
+  .periode:focus-visible, .option input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .option { display: inline-flex; align-items: center; gap: 10px; font-size: .9rem; color: var(--doux); cursor: pointer; }
+  .option input { width: 18px; height: 18px; accent-color: var(--accent); }
+
+  .etat { margin: 6px 0 4px; font-family: var(--mono); font-size: .8rem; color: var(--doux); }
+  .etat.erreur {
+    padding: 12px 16px;
+    border-left: 3px solid #9c2a22;
+    background: #f6e4e0;
+    color: #7a1f18;
+    font-family: var(--sans);
+    font-size: .92rem;
   }
-  .periode:focus-visible, .option input:focus-visible { outline: 3px solid #7aa6ff; outline-offset: 2px; }
-  .option { display: inline-flex; align-items: center; gap: 8px; font-size: .92rem; color: var(--texte-doux); cursor: pointer; }
-  .option input { width: 18px; height: 18px; }
 
-  .etat { margin: 4px 0 16px; font-size: .9rem; color: var(--texte-doux); }
-  .etat.erreur { padding: 10px 14px; border-radius: 8px; background: #fbdedc; color: #8c1d18; }
-
-  /* ---------- Titres et cartes ---------- */
-  h2 { margin: 0 0 4px; font-size: 1.15rem; }
-  .note { margin: 0 0 12px; font-size: .85rem; color: var(--texte-doux); }
-  section { margin: 22px 0; }
-
-  .carte {
-    padding: 16px;
-    border: 1px solid var(--bordure);
-    border-radius: 12px;
-    background: var(--carte);
-    box-shadow: var(--ombre);
+  /* ---------- Sections ---------- */
+  main { counter-reset: sec; }
+  .bloc { margin: 0; padding: 30px 0 14px; border-top: 1px solid var(--filet); }
+  main > .bloc:first-of-type { margin-top: 14px; }
+  .bloc > h2 {
+    margin: 0 0 4px;
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 1.55rem;
+    letter-spacing: -.01em;
+    line-height: 1.2;
   }
-  .zone-graphe { position: relative; height: 280px; }
+  .bloc > h2::before {
+    counter-increment: sec;
+    content: counter(sec, decimal-leading-zero);
+    margin-right: 14px;
+    font-family: var(--mono);
+    font-size: .78rem;
+    font-weight: 500;
+    letter-spacing: .04em;
+    color: var(--accent);
+    vertical-align: .22em;
+  }
+  .note { margin: 0 0 16px; font-size: .88rem; color: var(--doux); }
+  .zone-graphe { position: relative; height: 300px; }
 
   /* ---------- Dernières valeurs ---------- */
-  .grille-valeurs { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .grille-valeurs { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 26px 28px; margin-top: 6px; }
   .valeur {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    padding: 12px 14px;
-    border: 1px solid var(--bordure);
-    border-left: 5px solid var(--bordure);
-    border-radius: 10px;
-    background: var(--carte);
-    box-shadow: var(--ombre);
+    gap: 6px;
+    padding-top: 12px;
+    border-top: 3px solid #b9b3a2;
   }
-  .valeur-nom { font-size: .85rem; color: var(--texte-doux); }
-  .valeur-chiffre { font-size: 1.8rem; font-weight: 700; line-height: 1.1; }
-  .valeur-chiffre small { font-size: .85rem; font-weight: 500; color: var(--texte-doux); }
-  .badge { align-self: flex-start; padding: 2px 10px; border-radius: 999px; font-size: .78rem; font-weight: 600; }
+  .valeur-nom { font-size: .78rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--doux); }
+  .valeur-chiffre {
+    font-family: var(--mono);
+    font-weight: 500;
+    font-size: 2.1rem;
+    line-height: 1.1;
+    letter-spacing: -.03em;
+    font-variant-numeric: tabular-nums;
+  }
+  .valeur-chiffre small { margin-left: 4px; font-size: .78rem; font-weight: 400; letter-spacing: 0; color: var(--doux); }
+  .badge {
+    align-self: flex-start;
+    padding: 2px 8px;
+    border-radius: 2px;
+    font-size: .7rem;
+    font-weight: 600;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
 
   /* ---------- Tableaux ---------- */
   .defile { overflow-x: auto; }
-  table { width: 100%; border-collapse: collapse; font-size: .92rem; }
-  th, td { padding: 8px 10px; border-bottom: 1px solid var(--bordure); text-align: right; white-space: nowrap; }
-  th:first-child, td:first-child { text-align: left; }
-  thead th { font-size: .82rem; color: var(--texte-doux); font-weight: 600; }
-  tbody th { font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+  th, td { padding: 11px 12px; border-bottom: 1px solid var(--filet); text-align: right; white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; padding-left: 0; }
+  thead th {
+    border-bottom: 1px solid var(--encre);
+    font-size: .72rem;
+    font-weight: 600;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--doux);
+  }
+  tbody th { font-weight: 500; }
+  td { font-family: var(--mono); font-variant-numeric: tabular-nums; }
   tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; }
 
   /* ---------- Explications ---------- */
-  .apropos h3 { margin: 18px 0 4px; font-size: 1rem; }
-  .apropos p { margin: 0 0 8px; }
-  .petit { font-size: .85rem; color: var(--texte-doux); }
+  .texte-ligne { display: grid; grid-template-columns: 1fr; gap: 4px 40px; padding: 18px 0; border-top: 1px solid var(--filet); }
+  .texte-ligne:first-of-type { margin-top: 14px; }
+  .texte-ligne h3 { margin: 0; font-family: var(--serif); font-weight: 600; font-size: 1.1rem; line-height: 1.3; }
+  .texte-ligne p { margin: 0 0 10px; max-width: 68ch; }
+  .texte-ligne p:last-child { margin-bottom: 0; }
+  .petit { font-size: .85rem; color: var(--doux); }
+  @media (min-width: 740px) {
+    .texte-ligne { grid-template-columns: 200px 1fr; }
+  }
 
-  footer { margin: 28px 0 32px; font-size: .85rem; color: var(--texte-doux); }
+  footer {
+    margin: 36px 0 0;
+    padding: 20px 0 40px;
+    border-top: 1px solid var(--encre);
+    font-size: .82rem;
+    color: var(--doux);
+  }
   footer p { margin: 0 0 4px; }
 
   @media (max-width: 520px) {
-    .zone-graphe { height: 240px; }
+    .zone-graphe { height: 250px; }
     .periode { padding: 8px 14px; }
+    .valeur-chiffre { font-size: 1.8rem; }
   }
 </style>
 </head>
@@ -157,15 +230,17 @@
 
 <noscript><p style="padding:16px">Cette page a besoin de JavaScript pour afficher les mesures.</p></noscript>
 
-<header class="hero">
+<header class="entete">
   <div class="conteneur">
     <p class="surtitre">BUT Mesures physiques · IUT Aix-Marseille</p>
-    <h1>Quelle est la qualité de l'air ici&nbsp;?</h1>
-    <p class="intro">
-      Cette page affiche les mesures de notre capteur : particules fines, température, humidité et CO₂.
-      Le capteur est installé <mark class="a-completer">[À COMPLÉTER : lieu, par exemple « salle X, bâtiment Y »]</mark>.
-    </p>
-    <p id="statut" class="statut"><span class="point"></span><span id="statut-texte">Chargement…</span></p>
+    <h1>Quelle est la qualité de l'air <em>ici</em>&nbsp;?</h1>
+    <div class="entete-bas">
+      <p class="intro">
+        Cette page affiche les mesures de notre capteur : particules fines, température, humidité et CO₂.
+        Le capteur est installé <mark class="a-completer">[À COMPLÉTER : lieu, par exemple « salle X, bâtiment Y »]</mark>.
+      </p>
+      <p id="statut" class="statut"><span class="point"></span><span id="statut-texte">Chargement…</span></p>
+    </div>
   </div>
 </header>
 
@@ -185,31 +260,31 @@
 
   <p id="etat" class="etat" role="status">Chargement…</p>
 
-  <section aria-labelledby="titre-derniere">
+  <section class="bloc" aria-labelledby="titre-derniere">
     <h2 id="titre-derniere">Dernière mesure</h2>
     <p class="note" id="note-derniere"></p>
     <div id="valeurs" class="grille-valeurs"></div>
   </section>
 
-  <section class="carte">
+  <section class="bloc">
     <h2>Particules fines (µg/m³)</h2>
     <p class="note">PM1, PM2.5 et PM10 : particules de moins de 1, 2,5 et 10 micromètres.</p>
     <div class="zone-graphe"><canvas id="graphe-pm"></canvas></div>
   </section>
 
-  <section class="carte">
+  <section class="bloc">
     <h2>Température (°C) et humidité (%)</h2>
     <p class="note">Température sur l'axe de gauche, humidité sur l'axe de droite.</p>
     <div class="zone-graphe"><canvas id="graphe-meteo"></canvas></div>
   </section>
 
-  <section class="carte" id="carte-co2">
+  <section class="bloc" id="carte-co2">
     <h2>CO₂ (ppm)</h2>
     <p class="note">Le CO₂ indique si la pièce est bien aérée.</p>
     <div class="zone-graphe"><canvas id="graphe-co2"></canvas></div>
   </section>
 
-  <section class="carte" id="carte-resume">
+  <section class="bloc" id="carte-resume">
     <h2>Résumé de la période</h2>
     <p class="note">Minimum, moyenne et maximum des points affichés sur les graphes.</p>
     <div class="defile">
@@ -222,60 +297,82 @@
     </div>
   </section>
 
-  <section class="carte apropos" id="apropos">
+  <section class="bloc" id="apropos">
     <h2>Comprendre les mesures</h2>
 
-    <h3>Le projet</h3>
-    <p>
-      <mark class="a-completer">[À COMPLÉTER : en 2 ou 3 phrases, le but du projet, le modèle de carte utilisé
-      et la date de mise en service.]</mark>
-    </p>
-
-    <h3>PM1, PM2.5 et PM10</h3>
-    <p>
-      Ce sont des particules en suspension dans l'air, classées selon leur diamètre. Plus elles sont petites,
-      plus elles pénètrent profondément dans les voies respiratoires : les PM2.5 peuvent aller jusqu'aux poumons
-      profonds. Elles se mesurent en microgrammes par mètre cube d'air (µg/m³).
-    </p>
-
-    <h3>CO₂</h3>
-    <p>
-      À l'intérieur, le CO₂ vient surtout de notre respiration. Aux niveaux mesurés en salle, ce n'est pas lui
-      qui est dangereux : il sert d'indicateur de confinement. Plus il monte, moins l'air est renouvelé.
-      Le Haut Conseil de la santé publique (HCSP) fixe un objectif sous 800 ppm dans les lieux clos et
-      recommande d'aérer au-delà. L'air extérieur est autour de 400 ppm.
-    </p>
-
-    <h3>Les couleurs et les seuils</h3>
-    <div class="defile">
-      <table>
-        <thead>
-          <tr><th>Niveau</th><th>PM2.5 (µg/m³)</th><th>PM10 (µg/m³)</th><th>CO₂ (ppm)</th></tr>
-        </thead>
-        <tbody id="seuils-corps"></tbody>
-      </table>
+    <div class="texte-ligne">
+      <h3>Le projet</h3>
+      <div>
+        <p>
+          <mark class="a-completer">[À COMPLÉTER : en 2 ou 3 phrases, le but du projet, le modèle de carte utilisé
+          et la date de mise en service.]</mark>
+        </p>
+      </div>
     </div>
-    <p class="petit">
-      Particules : valeur guide de l'OMS (2021) pour « Bon », puis cibles intermédiaires 3 et 1 de l'OMS
-      pour « Moyen » et « Élevé ». Ces valeurs de l'OMS portent sur des moyennes de 24 heures : ici elles
-      servent de repère pour la dernière mesure, à titre indicatif. CO₂ : 800 ppm est l'objectif du HCSP ;
-      1 000 et 1 500 ppm sont des repères usuels pour l'aération des salles.
-    </p>
-    <p class="petit">
-      Sources : OMS, <em>Lignes directrices mondiales sur la qualité de l'air</em>, 2021 ; HCSP, recommandations
-      sur l'aération et la ventilation des établissements.
-      <mark class="a-completer">[À COMPLÉTER : ajoutez ici les liens de vos propres sources.]</mark>
-    </p>
 
-    <h3>Température et humidité</h3>
-    <p>Elles ne sont pas colorées : elles donnent le contexte (une salle chaude et humide se ressent vite).</p>
+    <div class="texte-ligne">
+      <h3>PM1, PM2.5 et PM10</h3>
+      <div>
+        <p>
+          Ce sont des particules en suspension dans l'air, classées selon leur diamètre. Plus elles sont petites,
+          plus elles pénètrent profondément dans les voies respiratoires : les PM2.5 peuvent aller jusqu'aux poumons
+          profonds. Elles se mesurent en microgrammes par mètre cube d'air (µg/m³).
+        </p>
+      </div>
+    </div>
+
+    <div class="texte-ligne">
+      <h3>CO₂</h3>
+      <div>
+        <p>
+          À l'intérieur, le CO₂ vient surtout de notre respiration. Aux niveaux mesurés en salle, ce n'est pas lui
+          qui est dangereux : il sert d'indicateur de confinement. Plus il monte, moins l'air est renouvelé.
+          Le Haut Conseil de la santé publique (HCSP) fixe un objectif sous 800 ppm dans les lieux clos et
+          recommande d'aérer au-delà. L'air extérieur est autour de 400 ppm.
+        </p>
+      </div>
+    </div>
+
+    <div class="texte-ligne">
+      <h3>Les couleurs et les seuils</h3>
+      <div>
+        <div class="defile">
+          <table>
+            <thead>
+              <tr><th>Niveau</th><th>PM2.5 (µg/m³)</th><th>PM10 (µg/m³)</th><th>CO₂ (ppm)</th></tr>
+            </thead>
+            <tbody id="seuils-corps"></tbody>
+          </table>
+        </div>
+        <p class="petit" style="margin-top:14px">
+          Particules : valeur guide de l'OMS (2021) pour « Bon », puis cibles intermédiaires 3 et 1 de l'OMS
+          pour « Moyen » et « Élevé ». Ces valeurs de l'OMS portent sur des moyennes de 24 heures : ici elles
+          servent de repère pour la dernière mesure, à titre indicatif. CO₂ : 800 ppm est l'objectif du HCSP ;
+          1 000 et 1 500 ppm sont des repères usuels pour l'aération des salles.
+        </p>
+        <p class="petit">
+          Sources : OMS, <em>Lignes directrices mondiales sur la qualité de l'air</em>, 2021 ; HCSP, recommandations
+          sur l'aération et la ventilation des établissements.
+          <mark class="a-completer">[À COMPLÉTER : ajoutez ici les liens de vos propres sources.]</mark>
+        </p>
+      </div>
+    </div>
+
+    <div class="texte-ligne">
+      <h3>Température et humidité</h3>
+      <div>
+        <p>Elles ne sont pas colorées : elles donnent le contexte (une salle chaude et humide se ressent vite).</p>
+      </div>
+    </div>
   </section>
 
 </main>
 
-<footer class="conteneur">
-  <p>Données : serveur AirCarto. Graphes : Chart.js. Mise à jour automatique toutes les 5 minutes.</p>
-  <p>Projet réalisé par <mark class="a-completer">[À COMPLÉTER : noms du groupe]</mark>.</p>
+<footer>
+  <div class="conteneur">
+    <p>Données : serveur AirCarto. Graphes : Chart.js. Mise à jour automatique toutes les 5 minutes.</p>
+    <p>Projet réalisé par <mark class="a-completer">[À COMPLÉTER : noms du groupe]</mark>.</p>
+  </div>
 </footer>
 
 <script>
@@ -294,12 +391,12 @@ const MOYENNE = { "-6h": "5m", "-24h": "15m", "-7d": "1h" };
 // Nom, unité, nombre de décimales, couleur de courbe et axe de chaque champ de l'API.
 // zero : l'axe démarre à 0 (utile pour les particules et l'humidité).
 const CHAMPS = {
-  pm1:  { nom: "PM1",         unite: "µg/m³", decimales: 1, couleur: "#7e6bb8", axe: "y",  zero: true },
-  pm25: { nom: "PM2.5",       unite: "µg/m³", decimales: 1, couleur: "#e07b00", axe: "y",  zero: true },
-  pm10: { nom: "PM10",        unite: "µg/m³", decimales: 1, couleur: "#1f77b4", axe: "y",  zero: true },
-  temp: { nom: "Température", unite: "°C",    decimales: 1, couleur: "#d1495b", axe: "y",  zero: false },
-  hum:  { nom: "Humidité",    unite: "%",     decimales: 0, couleur: "#2a9d8f", axe: "y1", zero: true },
-  co2:  { nom: "CO₂",         unite: "ppm",   decimales: 0, couleur: "#3d5a80", axe: "y",  zero: false },
+  pm1:  { nom: "PM1",         unite: "µg/m³", decimales: 1, couleur: "#9a7b2f", axe: "y",  zero: true },
+  pm25: { nom: "PM2.5",       unite: "µg/m³", decimales: 1, couleur: "#a8432a", axe: "y",  zero: true },
+  pm10: { nom: "PM10",        unite: "µg/m³", decimales: 1, couleur: "#2f4b5c", axe: "y",  zero: true },
+  temp: { nom: "Température", unite: "°C",    decimales: 1, couleur: "#a8432a", axe: "y",  zero: false },
+  hum:  { nom: "Humidité",    unite: "%",     decimales: 0, couleur: "#3f6f6a", axe: "y1", zero: true },
+  co2:  { nom: "CO₂",         unite: "ppm",   decimales: 0, couleur: "#2f4b5c", axe: "y",  zero: false },
 };
 
 // Limites entre les niveaux (Bon | Moyen | Élevé | Très élevé).
@@ -312,10 +409,10 @@ const SEUILS = {
   co2:  { limites: [800, 1000, 1500],   tracer: [0, 1], suffixe: "" },
 };
 const NIVEAUX = [
-  { nom: "Bon",        couleur: "#2e7d32", fond: "#e3f3e5" },
-  { nom: "Moyen",      couleur: "#7a5d00", fond: "#fff1c2" },
-  { nom: "Élevé",      couleur: "#a84f00", fond: "#ffe3c7" },
-  { nom: "Très élevé", couleur: "#b3261e", fond: "#fbdedc" },
+  { nom: "Bon",        couleur: "#2f6b3a", fond: "#e2eedd" },
+  { nom: "Moyen",      couleur: "#7a5d00", fond: "#f7ecc4" },
+  { nom: "Élevé",      couleur: "#a84a12", fond: "#f8dcc3" },
+  { nom: "Très élevé", couleur: "#9c2a22", fond: "#f3d9d5" },
 ];
 
 // =====================================================================
@@ -326,9 +423,13 @@ let periodeActuelle = "-24h";
 let cache = null;              // dernières données reçues : { periode, points, serie }
 let numeroRequete = 0;         // pour ignorer une réponse arrivée trop tard
 
+const POLICE_SANS = '"IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+const POLICE_MONO = '"IBM Plex Mono", ui-monospace, Consolas, monospace';
+
 if (typeof Chart !== "undefined") {
-  Chart.defaults.font.family = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
-  Chart.defaults.color = "#44534a";
+  Chart.defaults.font.family = POLICE_SANS;
+  Chart.defaults.font.size = 12;
+  Chart.defaults.color = "#5f6258";
 }
 
 // Crée un élément HTML avec une classe et un texte (le texte n'est jamais interprété comme du HTML).
@@ -444,7 +545,7 @@ function creerPluginSeuils(lignes) {
         if (y < chartArea.top || y > chartArea.bottom) return;
         ctx.save();
         ctx.setLineDash([6, 4]);
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = 1.25;
         ctx.strokeStyle = l.couleur;
         ctx.beginPath();
         ctx.moveTo(chartArea.left, y);
@@ -452,9 +553,9 @@ function creerPluginSeuils(lignes) {
         ctx.stroke();
         ctx.setLineDash([]);
         ctx.fillStyle = l.couleur;
-        ctx.font = "11px system-ui, sans-serif";
+        ctx.font = "11px " + POLICE_MONO;
         ctx.textAlign = "right";
-        ctx.fillText(l.texte, chartArea.right - 4, y - 4);
+        ctx.fillText(l.texte, chartArea.right - 4, y - 5);
         ctx.restore();
       });
     },
@@ -490,8 +591,8 @@ function dessiner(idCanvas, serie, champs) {
     data: serie.map(r => (r.p && estNombre(r.p[c])) ? r.p[c] : null),   // null = trou
     borderColor: CHAMPS[c].couleur,
     backgroundColor: CHAMPS[c].couleur,
-    borderWidth: 2,
-    tension: 0.2,
+    borderWidth: 1.8,
+    tension: 0.25,
     pointRadius: pointIsole,
     pointHoverRadius: 4,
     yAxisID: CHAMPS[c].axe,
@@ -501,6 +602,7 @@ function dessiner(idCanvas, serie, champs) {
   const echelles = {
     x: {
       grid: { display: false },
+      border: { color: "#1e211d" },
       ticks: { autoSkip: true, maxTicksLimit: 7, maxRotation: 0, callback: valeur => courtes[valeur] },
     },
   };
@@ -510,8 +612,10 @@ function dessiner(idCanvas, serie, champs) {
       echelles[axe] = {
         position: axe === "y" ? "left" : "right",
         beginAtZero: false,
-        title: { display: true, text: CHAMPS[c].unite },
-        grid: axe === "y" ? {} : { drawOnChartArea: false },
+        title: { display: true, text: CHAMPS[c].unite, font: { family: POLICE_MONO, size: 11 } },
+        border: { display: false },
+        ticks: { font: { family: POLICE_MONO, size: 11 } },
+        grid: axe === "y" ? { color: "#e4dfd1" } : { drawOnChartArea: false },
       };
     }
     if (CHAMPS[c].zero) echelles[axe].beginAtZero = true;
@@ -540,8 +644,20 @@ function dessiner(idCanvas, serie, champs) {
       interaction: { mode: "index", intersect: false },
       scales: echelles,
       plugins: {
-        legend: { display: utiles.length > 1, position: "bottom" },
+        legend: {
+          display: utiles.length > 1,
+          position: "bottom",
+          labels: { boxWidth: 18, boxHeight: 2, padding: 18 },
+        },
         tooltip: {
+          backgroundColor: "#1e211d",
+          titleColor: "#f4f1ea",
+          bodyColor: "#f4f1ea",
+          titleFont: { family: POLICE_SANS, weight: "600" },
+          bodyFont: { family: POLICE_MONO, size: 12 },
+          cornerRadius: 2,
+          padding: 10,
+          boxPadding: 4,
           callbacks: {
             label: ctx => ctx.parsed.y == null
               ? ctx.dataset.label
@@ -568,7 +684,7 @@ function derniereValeur(serie, champ) {
   return null;
 }
 
-// Cartes « dernière mesure », colorées selon le niveau. Renvoie l'heure de la mesure la plus récente.
+// Blocs « dernière mesure », filet coloré selon le niveau. Renvoie l'heure de la mesure la plus récente.
 function afficherDerniere(serie) {
   const conteneur = document.getElementById("valeurs");
   conteneur.replaceChildren();
@@ -591,7 +707,7 @@ function afficherDerniere(serie) {
       const badge = el("span", "badge", niv.nom);
       badge.style.background = niv.fond;
       badge.style.color = niv.couleur;
-      carte.style.borderLeftColor = niv.couleur;
+      carte.style.borderTopColor = niv.couleur;
       carte.append(badge);
     }
     conteneur.append(carte);
@@ -677,7 +793,7 @@ function afficherTout() {
    ["graphe-meteo", ["temp", "hum"]],
    ["graphe-co2", ["co2"]]].forEach(([id, champs]) => {
     const n = dessiner(id, serie, champs);
-    document.getElementById(id).closest(".carte").hidden = (n === 0);   // pas de mesure : on cache la carte
+    document.getElementById(id).closest(".bloc").hidden = (n === 0);   // pas de mesure : on cache la section
   });
 
   afficherResume(serie);
