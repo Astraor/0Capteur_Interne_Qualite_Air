@@ -405,13 +405,12 @@
 
 <div class="progression-lecture" aria-hidden="true"><span id="progression-remplissage"></span></div>
 <nav class="sommaire-story" aria-label="Progression de la lecture">
-  <a href="#hero" class="point-story actif" data-cible="hero" aria-label="Introduction" title="Introduction"><span>01</span></a>
-  <a href="#chapitre-mesures" class="point-story" data-cible="chapitre-mesures" aria-label="Dernière mesure" title="Dernière mesure"><span>02</span></a>
-  <a href="#chapitre-particules" class="point-story" data-cible="chapitre-particules" aria-label="Particules fines" title="Particules fines"><span>03</span></a>
-  <a href="#chapitre-confort" class="point-story" data-cible="chapitre-confort" aria-label="Température et humidité" title="Température et humidité"><span>04</span></a>
-  <a href="#carte-co2" class="point-story" data-cible="carte-co2" aria-label="CO₂" title="CO₂"><span>05</span></a>
-  <a href="#carte-resume" class="point-story" aria-label="Bilan" title="Bilan"><span>06</span></a>
-  <a href="#apropos" class="point-story" data-cible="apropos" aria-label="Comprendre" title="Comprendre"><span>06</span></a>
+  <a href="#hero" class="point-story actif" data-cible="hero" aria-label="Introduction" title="Introduction"><span>00</span></a>
+  <a href="#chapitre-mesures" class="point-story" data-cible="chapitre-mesures" aria-label="Dernière mesure" title="Dernière mesure"><span>01</span></a>
+  <a href="#carte-co2" class="point-story" data-cible="carte-co2" aria-label="CO₂" title="CO₂"><span>02</span></a>
+  <a href="#carte-resume" class="point-story" data-cible="carte-resume" aria-label="Bilan" title="Bilan"><span>03</span></a>
+  <a href="#apropos" class="point-story" data-cible="apropos" aria-label="Comprendre" title="Comprendre"><span>04</span></a>
+  <a href="#temphum" class="point-story" data-cible="thum" aria-label="Température et humidité" title="Température et humidité"><span>05</span></a>
 </nav>
 
 <noscript><p style="padding:16px;margin:0;background:#fff3b0">Cette page a besoin de JavaScript pour afficher les mesures.</p></noscript>
@@ -477,7 +476,7 @@
 
   <section class="bloc chapitre" id="chapitre-mesures" data-story="Dernière mesure" aria-labelledby="titre-derniere">
     <div class="bloc-tete revele">
-      <p class="numero-chapitre">01 / LE POINT DE DÉPART</p>
+      <p class="numero-chapitre">01 / Mesures</p>
       <h2 id="titre-derniere">Dernière mesure</h2>
       <p class="note" id="note-derniere"></p>
     </div>
@@ -501,9 +500,9 @@
     </div>
   </section>
 
-  <section class="bloc chapitre" id="chapitre-confort" data-story="Température et humidité" aria-labelledby="titre-meteo" hidden>
+  <section class="bloc chapitre" id="thum" data-story="Température et humidité" aria-labelledby="titre-meteo" hidden>
     <div class="bloc-tete revele">
-      <p class="numero-chapitre">03 / LE CONFORT INTÉRIEUR</p>
+      <p class="numero-chapitre">05 / LE CONFORT INTÉRIEUR</p>
       <h2 id="titre-meteo">Température et humidité <span class="u">(°C · %)</span></h2>
       <p class="note">Température sur l'axe de gauche (°C), humidité sur l'axe de droite (%).</p>
     </div>
@@ -514,7 +513,7 @@
 
   <section class="bloc chapitre" id="carte-co2" data-story="CO₂" aria-labelledby="titre-co2" hidden>
     <div class="bloc-tete revele">
-      <p class="numero-chapitre">04 / LE RENOUVELLEMENT DE L’AIR</p>
+      <p class="numero-chapitre">03 / LE RENOUVELLEMENT DE L’AIR</p>
       <h2 id="titre-co2">CO₂ <span class="u">(ppm)</span></h2>
       <p class="note">Le CO₂ indique si la pièce est bien aérée.</p>
     </div>
@@ -525,7 +524,7 @@
 
   <section class="bloc chapitre" id="carte-resume" data-story="Bilan de la période" aria-labelledby="titre-resume" hidden>
     <div class="bloc-tete revele">
-      <p class="numero-chapitre">05 / PRENDRE DU RECUL</p>
+      <p class="numero-chapitre">04 / PRENDRE DU RECUL</p>
       <h2 id="titre-resume">Résumé de la période</h2>
       <p class="note">Minimum, moyenne et maximum des points affichés sur les graphes.</p>
     </div>
@@ -541,6 +540,7 @@
       </div>
     </div>
   </section>
+
 
   <section class="bloc large chapitre" id="apropos" data-story="Comprendre les mesures" aria-labelledby="titre-comprendre">
     <p class="numero-chapitre revele">06 / ALLER PLUS LOIN</p>
