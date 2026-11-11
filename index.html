@@ -403,17 +403,20 @@
 
 <body>
 
-<div class="progression-lecture" aria-hidden="true"><span id="progression-remplissage"></span></div>
 <nav class="sommaire-story" aria-label="Progression de la lecture">
   <a href="#hero" class="point-story actif" data-cible="hero" aria-label="Introduction" title="Introduction"><span>00</span></a>
   <a href="#chapitre-mesures" class="point-story" data-cible="chapitre-mesures" aria-label="Dernière mesure" title="Dernière mesure"><span>01</span></a>
   <a href="#carte-co2" class="point-story" data-cible="carte-co2" aria-label="CO₂" title="CO₂"><span>02</span></a>
   <a href="#carte-resume" class="point-story" data-cible="carte-resume" aria-label="Bilan" title="Bilan"><span>03</span></a>
   <a href="#apropos" class="point-story" data-cible="apropos" aria-label="Comprendre" title="Comprendre"><span>04</span></a>
-  <a href="#temphum" class="point-story" data-cible="thum" aria-label="Température et humidité" title="Température et humidité"><span>05</span></a>
+  <a href="#thum" class="point-story" data-cible="thum" aria-label="Température et humidité" title="Température et humidité"><span>05</span></a>
 </nav>
 
-<noscript><p style="padding:16px;margin:0;background:#fff3b0">Cette page a besoin de JavaScript pour afficher les mesures.</p></noscript>
+<noscript>
+  <p style="padding:16px;margin:0;background:#fff3b0">
+    Cette page a besoin de JavaScript pour afficher les mesures.
+  </p>
+</noscript>
 
 <header class="hero" id="hero">
   <div class="hero-disque" aria-hidden="true"></div>
@@ -424,16 +427,25 @@
   <div class="conteneur hero-contenu">
     <div class="hero-haut">
       <p class="marque">BUT Mesures physiques · IUT Aix-Marseille</p>
-      <p id="statut" class="statut"><span class="point"></span><span id="statut-texte">Chargement…</span></p>
+
+      <p id="statut" class="statut">
+        <span class="point"></span>
+        <span id="statut-texte">Chargement…</span>
+      </p>
     </div>
 
     <h1 class="titre">
-      <span class="question apparait" style="--d:0">Quelle est la qualité de l'air <em>ici</em>&nbsp;?</span>
+      <span class="question apparait" style="--d:0">
+        Quelle est la qualité de l'air <em>ici</em>&nbsp;?
+      </span>
+
       <span class="reponse" aria-live="polite">
         <span class="prefixe apparait" style="--d:1" id="verdict-prefixe">L'air est</span>
+
         <span class="mot s1 attente" id="verdict">
           <span class="sr" id="verdict-sr">…</span>
           <span id="verdict-lettres" aria-hidden="true">…</span>
+
           <svg class="souligne" viewBox="0 0 300 22" preserveAspectRatio="none" aria-hidden="true" focusable="false">
             <path d="M3 14 C 38 5, 71 18, 108 10 S 176 4, 214 12 S 270 16, 297 7" pathLength="1"></path>
           </svg>
@@ -444,11 +456,16 @@
     <div class="hero-bas">
       <div class="hero-gauche apparait" style="--d:3">
         <p class="intro">
-          Cette page affiche les mesures de notre capteur : particules fines, température, humidité et CO₂.
-          Le capteur est installé [À COMPLÉTER : lieu]</mark>.
+          Cette page affiche les mesures de notre capteur : particules fines,
+          température, humidité et CO₂.
+          Le capteur est installé [À COMPLÉTER : lieu].
         </p>
-        <a class="descendre" href="#mesures">Voir les mesures <span aria-hidden="true">↓</span></a>
+
+        <a class="descendre" href="#mesures">
+          Voir les mesures <span aria-hidden="true">↓</span>
+        </a>
       </div>
+
       <dl class="lecture" id="lecture" hidden></dl>
     </div>
   </div>
@@ -458,10 +475,20 @@
   <div class="conteneur barre-int">
     <div class="periodes" role="group" aria-label="Période affichée">
       <span class="curseur" id="curseur" aria-hidden="true"></span>
-      <button type="button" class="periode" data-periode="-6h" aria-pressed="false">6 heures</button>
-      <button type="button" class="periode actif" data-periode="-24h" aria-pressed="true">24 heures</button>
-      <button type="button" class="periode" data-periode="-7d" aria-pressed="false">7 jours</button>
+
+      <button type="button" class="periode" data-periode="-6h" aria-pressed="false">
+        6 heures
+      </button>
+
+      <button type="button" class="periode actif" data-periode="-24h" aria-pressed="true">
+        24 heures
+      </button>
+
+      <button type="button" class="periode" data-periode="-7d" aria-pressed="false">
+        7 jours
+      </button>
     </div>
+
     <label class="option">
       <input type="checkbox" id="afficher-seuils" checked>
       <span class="interrupteur" aria-hidden="true"></span>
@@ -471,7 +498,6 @@
 </div>
 
 <main class="conteneur">
-
   <p id="etat" class="etat" role="status">Chargement…</p>
 
   <section class="bloc chapitre" id="chapitre-mesures" data-story="Dernière mesure" aria-labelledby="titre-derniere">
@@ -480,8 +506,14 @@
       <h2 id="titre-derniere">Dernière mesure</h2>
       <p class="note" id="note-derniere"></p>
     </div>
+
     <div class="bloc-corps revele" style="--d:1">
-      <div class="squelette" id="squelette" aria-hidden="true"><i></i><i></i><i></i></div>
+      <div class="squelette" id="squelette" aria-hidden="true">
+        <i></i>
+        <i></i>
+        <i></i>
+      </div>
+
       <div id="valeurs">
         <div id="rangees"></div>
         <div id="autres" class="autres"></div>
@@ -493,21 +525,15 @@
     <div class="bloc-tete revele">
       <p class="numero-chapitre">02 / CE QUE NOUS RESPIRONS</p>
       <h2 id="titre-pm">Particules fines <span class="u">(µg/m³)</span></h2>
-      <p class="note">PM1, PM2.5 et PM10 : particules de moins de 1, 2,5 et 10 micromètres.</p>
+      <p class="note">
+        PM1, PM2.5 et PM10 : particules de moins de 1, 2,5 et 10 micromètres.
+      </p>
     </div>
-    <div class="bloc-corps revele" style="--d:1">
-      <div class="zone-graphe"><canvas id="graphe-pm" role="img" aria-label="Courbes des particules fines PM1, PM2.5 et PM10 sur la période choisie"></canvas></div>
-    </div>
-  </section>
 
-  <section class="bloc chapitre" id="thum" data-story="Température et humidité" aria-labelledby="titre-meteo" hidden>
-    <div class="bloc-tete revele">
-      <p class="numero-chapitre">05 / LE CONFORT INTÉRIEUR</p>
-      <h2 id="titre-meteo">Température et humidité <span class="u">(°C · %)</span></h2>
-      <p class="note">Température sur l'axe de gauche (°C), humidité sur l'axe de droite (%).</p>
-    </div>
     <div class="bloc-corps revele" style="--d:1">
-      <div class="zone-graphe"><canvas id="graphe-meteo" role="img" aria-label="Courbes de la température et de l'humidité sur la période choisie"></canvas></div>
+      <div class="zone-graphe">
+        <canvas id="graphe-pm" role="img" aria-label="Courbes des particules fines PM1, PM2.5 et PM10 sur la période choisie"></canvas>
+      </div>
     </div>
   </section>
 
@@ -517,8 +543,11 @@
       <h2 id="titre-co2">CO₂ <span class="u">(ppm)</span></h2>
       <p class="note">Le CO₂ indique si la pièce est bien aérée.</p>
     </div>
+
     <div class="bloc-corps revele" style="--d:1">
-      <div class="zone-graphe"><canvas id="graphe-co2" role="img" aria-label="Courbe du CO₂ sur la période choisie"></canvas></div>
+      <div class="zone-graphe">
+        <canvas id="graphe-co2" role="img" aria-label="Courbe du CO₂ sur la période choisie"></canvas>
+      </div>
     </div>
   </section>
 
@@ -526,37 +555,74 @@
     <div class="bloc-tete revele">
       <p class="numero-chapitre">04 / PRENDRE DU RECUL</p>
       <h2 id="titre-resume">Résumé de la période</h2>
-      <p class="note">Minimum, moyenne et maximum des points affichés sur les graphes.</p>
+      <p class="note">
+        Minimum, moyenne et maximum des points affichés sur les graphes.
+      </p>
     </div>
+
     <div class="bloc-corps revele" style="--d:1">
       <div class="defile">
         <table>
-          <caption class="sr">Minimum, moyenne et maximum de chaque mesure sur la période affichée</caption>
+          <caption class="sr">
+            Minimum, moyenne et maximum de chaque mesure sur la période affichée
+          </caption>
+
           <thead>
-            <tr><th>Mesure</th><th>Minimum</th><th>Moyenne</th><th>Maximum</th><th>Allure</th></tr>
+            <tr>
+              <th>Mesure</th>
+              <th>Minimum</th>
+              <th>Moyenne</th>
+              <th>Maximum</th>
+              <th>Allure</th>
+            </tr>
           </thead>
+
           <tbody id="resume-corps"></tbody>
         </table>
       </div>
     </div>
   </section>
 
+  <section class="bloc chapitre" id="apropos" data-story="Comprendre" aria-labelledby="titre-apropos" hidden>
+    <div class="bloc-tete revele">
+      <p class="numero-chapitre">04 / COMPRENDRE</p>
+      <h2 id="titre-apropos">Comprendre les mesures</h2>
+      <p class="note">
+        Les particules fines, le CO₂, la température et l’humidité permettent
+        de mieux comprendre la qualité de l’air intérieur.
+      </p>
+    </div>
 
-  <section class="bloc large chapitre" id="apropos" data-story="Comprendre les mesures" aria-labelledby="titre-comprendre">
-    <p class="numero-chapitre revele">06 / ALLER PLUS LOIN</p>
-    <h2 id="titre-comprendre" class="revele">Comprendre les mesures</h2>
+    <div class="bloc-corps revele" style="--d:1">
+      <p>
+        Les particules fines PM2.5 et PM10 peuvent irriter les voies respiratoires.
+        Le CO₂ sert surtout d’indicateur du renouvellement de l’air : lorsqu’il augmente,
+        cela peut signifier que la pièce manque d’aération.
+      </p>
 
-    <div>
-      <div class="texte-ligne revele">
-        <h3>Le projet</h3>
-        <div>
-          <p>
-            <mark class="a-completer">[À COMPLÉTER : en 2 ou 3 phrases, le but du projet, le modèle de carte utilisé
-            et la date de mise en service.]</mark>
-          </p>
-        </div>
+      <p>
+        La température et l’humidité influencent le confort ressenti dans la pièce.
+        Une bonne aération permet généralement de renouveler l’air et de limiter
+        l’accumulation de CO₂.
+      </p>
+    </div>
+  </section>
+
+  <section class="bloc chapitre" id="thum" data-story="Température et humidité" aria-labelledby="titre-meteo" hidden>
+    <div class="bloc-tete revele">
+      <p class="numero-chapitre">05 / LE CONFORT INTÉRIEUR</p>
+      <h2 id="titre-meteo">Température et humidité <span class="u">(°C · %)</span></h2>
+      <p class="note">
+        Température sur l’axe de gauche (°C), humidité sur l’axe de droite (%).
+      </p>
+    </div>
+
+    <div class="bloc-corps revele" style="--d:1">
+      <div class="zone-graphe">
+        <canvas id="graphe-meteo" role="img" aria-label="Courbes de la température et de l’humidité sur la période choisie"></canvas>
       </div>
-
+    </div>
+  </section>
       <div class="texte-ligne revele">
         <h3>PM1, PM2.5 et PM10</h3>
         <div>
