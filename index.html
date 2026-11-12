@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Qualité de l'air · Notre capteur</title>
 <meta name="description" content="Mesures en direct de notre capteur de qualité de l'air : particules fines, température, humidité et CO2.">
 <meta name="theme-color" content="#0e1b24">
@@ -14,17 +14,17 @@
   document.documentElement.classList.add("js");
   setTimeout(function () {
     if (!window.__pret) document.documentElement.classList.remove("js");
-  }, 4000);
+  }, 6000);
 </script>
 
-<!-- Polices (si elles ne chargent pas, le navigateur utilise des polices de secours) -->
+<!-- Polices : chargées sans bloquer l'affichage (polices de secours en attendant) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&display=swap" rel="stylesheet">
-<link href="https://fonts.googleapis.com/css2?family=Chivo+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="preload" as="style" onload="this.onload=null;this.rel='stylesheet'" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=Chivo+Mono:wght@400;500;600&display=swap">
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=Chivo+Mono:wght@400;500;600&display=swap"></noscript>
 
-<!-- Chart.js 4.4.1 : la bibliothèque qui dessine les graphes -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<!-- Chart.js 4.4.1 : la bibliothèque qui dessine les graphes (async : ne bloque pas la page ; les graphes se dessinent dès qu'elle arrive) -->
+<script async src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" onload="window.__chartPret &amp;&amp; window.__chartPret()" onerror="window.__chartKO = true"></script>
 
 <style>
   /* La couleur du bandeau est animée par le navigateur quand le niveau change */
@@ -32,6 +32,7 @@
   @property --ciel-texte { syntax: "<color>"; inherits: true; initial-value: #f2f4f0; }
 
   :root {
+    --accent: #b74716;   /* prend la couleur du verdict (voir majBandeau) */
     --encre: #0e1b24;
     --fond: #f2f4f0;
     --fond-2: #e4e8e2;
@@ -180,7 +181,7 @@
   .tampon svg { display: block; width: 100%; height: 100%; animation: tourne 26s linear infinite; }
   .tampon text { fill: currentColor; font: 600 9px var(--mono); }
   .tampon-point { position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: currentColor; animation: bat 2s ease-in-out infinite; }
-  @media (min-width: 900px) { .tampon { display: block; } }
+  @media (min-width: 720px) { .tampon { display: block; } }
 
   /* ---------- Animations ---------- */
   @keyframes respire { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
@@ -193,6 +194,7 @@
   @keyframes tourne { to { transform: rotate(360deg); } }
   @keyframes bat { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.5); } }
   @keyframes brillance { to { background-position: -200% 0; } }
+  @keyframes fondu { from { opacity: 0; } to { opacity: 1; } }
   @keyframes brownien {
     0% { transform: translate(0, 0); } 20% { transform: translate(3px, -2px); }
     40% { transform: translate(-2px, 3px); } 60% { transform: translate(2px, 2px); }
@@ -216,6 +218,7 @@
   @media (hover: hover) { .periode:not(.actif):hover { background: rgba(14, 27, 36, .08); } }
 
   .option { display: inline-flex; align-items: center; gap: 12px; font-size: .9rem; font-weight: 500; cursor: pointer; user-select: none; }
+  .option-court, .court { display: none; }
   .option input { position: absolute; opacity: 0; width: 1px; height: 1px; }
   .interrupteur { position: relative; flex: none; width: 44px; height: 24px; border: 2px solid var(--encre); border-radius: 3px; transition: background .3s; }
   .interrupteur::after {
@@ -234,30 +237,89 @@
   }
 
   /* ---------- Story scrolling : lecture en chapitres ---------- */
+  /* La barre de progression, les numéros et les traits de chapitre prennent la couleur du verdict. */
   .progression-lecture { position: fixed; z-index: 80; inset: 0 0 auto; height: 4px; background: rgba(14,27,36,.12); pointer-events: none; }
-  .progression-lecture span { display: block; width: 0; height: 100%; background: #e2530f; transform-origin: left; }
-  .sommaire-story { position: fixed; z-index: 40; left: 14px; top: 50%; transform: translateY(-50%); display: grid; gap: 10px; padding: 10px 7px; border: 1px solid var(--filet); background: rgba(242,244,240,.92); backdrop-filter: blur(10px); border-radius: 30px; }
-  .point-story { display: grid; place-items: center; width: 27px; height: 27px; border-radius: 50%; color: var(--doux); text-decoration: none; font: 500 .58rem/1 var(--mono); border: 1px solid transparent; transition: background .25s, color .25s, transform .25s; }
-  .point-story.actif { color: var(--fond); background: var(--encre); transform: scale(1.12); }
-  .point-story:focus-visible { outline: 3px solid var(--cobalt); outline-offset: 3px; }
-  .numero-chapitre { margin: 0 0 12px; color: #b74716; font: 600 .7rem/1.3 var(--mono); letter-spacing: .08em; }
-  .chapitre { min-height: 68svh; align-content: center; scroll-margin-top: 86px; }
+  .progression-lecture span { display: block; width: 0; height: 100%; background: var(--accent); }
+  .barre { top: 4px; box-shadow: 0 -4px 0 var(--fond); }   /* la barre collante se range sous la barre de progression */
+
+  /* Sommaire : rail vertical sur ordinateur, barre de progression en bas sur téléphone et tablette */
+  .sommaire-story {
+    position: fixed; z-index: 60; left: 12px; top: 50%; transform: translateY(-50%);
+    padding: 8px 6px; border: 1px solid var(--filet); border-radius: 28px;
+    background: rgba(242,244,240,.94);
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  }
+  .sommaire-story ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .sommaire-etat { display: none; margin: 0; }
+  .point-story {
+    position: relative; display: grid; place-items: center;
+    width: 34px; height: 34px; border-radius: 50%;
+    color: var(--encre); text-decoration: none;
+    transition: background .25s, color .25s, transform .3s var(--courbe);
+  }
+  .p-num { font-family: var(--mono); font-size: .74rem; font-weight: 600; line-height: 1; letter-spacing: 0; }
+  .p-titre {
+    position: absolute; left: calc(100% + 14px); top: 50%;
+    padding: 6px 11px; border-radius: 2px;
+    background: var(--encre); color: var(--fond);
+    font-size: .8rem; font-weight: 600; line-height: 1.2; white-space: nowrap;
+    opacity: 0; transform: translate(-6px, -50%); pointer-events: none;
+    transition: opacity .2s, transform .3s var(--courbe);
+  }
+  .point-story.actif { background: var(--encre); color: var(--fond); transform: scale(1.1); }
+  .point-story:focus-visible { outline: 3px solid var(--cobalt); outline-offset: 2px; }
+  .point-story:focus-visible .p-titre { opacity: 1; transform: translate(0, -50%); }
+  @media (hover: hover) {
+    .point-story:hover .p-titre { opacity: 1; transform: translate(0, -50%); }
+    .point-story:not(.actif):hover { background: rgba(14,27,36,.1); }
+  }
+
+  /* En-tête de chapitre : gros numéro + total + accroche */
+  .numero-chapitre { margin: 0 0 14px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+  .numero-chapitre .n {
+    font-family: var(--titre); font-weight: 900; font-stretch: 62%;
+    font-size: clamp(3rem, 7vw, 4.6rem); line-height: .85; letter-spacing: -.02em;
+    font-variant-numeric: tabular-nums; color: var(--accent);
+  }
+  .numero-chapitre .total { font-family: var(--mono); font-size: .8rem; font-weight: 500; color: var(--doux); }
+  .numero-chapitre .accroche { flex-basis: 100%; margin-top: 6px; font-size: 1rem; font-weight: 600; font-stretch: 108%; line-height: 1.25; }
+
+  .chapitre { min-height: 68svh; align-content: center; scroll-margin-top: 84px; }
   .chapitre .bloc-corps { align-self: center; width: 100%; }
   .chapitre .zone-graphe { height: clamp(260px, 42vh, 430px); }
   .bloc.large.chapitre { min-height: auto; padding-top: clamp(44px, 8vw, 100px); }
-  .chapitre::before { height: 2px; }
+  .bloc.chapitre::before { height: 2px; background: var(--accent); }
+
   @media (min-width: 900px) {
-    main { padding-left: 38px !important; }
+    main.conteneur { padding-left: 76px; }   /* laisse la place au rail */
     .chapitre:not(.large) { min-height: min(78svh, 850px); }
+    /* le titre du chapitre reste visible pendant qu'on lit son contenu */
+    .chapitre:not(.large) .bloc-tete { position: sticky; top: 96px; align-self: start; }
+    /* seul le chapitre en cours est « allumé » */
+    .js .chapitre .bloc-tete h2, .js .chapitre .numero-chapitre .n { transition: color .5s ease; }
+    .js .chapitre:not(.en-cours) .bloc-tete h2, .js .chapitre:not(.en-cours) .numero-chapitre .n { color: var(--doux); }
   }
   @media (max-width: 899px) {
-    .sommaire-story { left: 50%; top: auto; bottom: 12px; transform: translateX(-50%); display: flex; gap: 5px; padding: 5px 8px; }
-    .point-story { width: 24px; height: 24px; font-size: .52rem; }
-    body { padding-bottom: 54px; }
-    .chapitre { min-height: auto; padding-top: 42px; padding-bottom: 48px; }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .point-story { transition: none; }
+    .sommaire-story {
+      left: 10px; right: 10px; top: auto; bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+      transform: none; max-width: 520px; margin: 0 auto; padding: 8px 12px 4px; border-radius: 14px;
+    }
+    .sommaire-etat {
+      display: block; margin: 0 0 2px;
+      font-family: var(--mono); font-size: .72rem; font-weight: 600; line-height: 1.3;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .sommaire-story ol { display: flex; gap: 5px; }
+    .sommaire-story li { flex: 1; min-width: 0; }
+    .point-story { display: block; width: 100%; height: 26px; border-radius: 0; background: none; color: inherit; transform: none; }
+    .point-story::before { content: ""; position: absolute; left: 0; right: 0; top: 11px; height: 4px; border-radius: 2px; background: var(--filet); transition: background .3s, top .3s, height .3s; }
+    .point-story.passe::before { background: var(--encre); }
+    .point-story.actif { background: none; color: inherit; transform: none; }
+    .point-story.actif::before { background: var(--encre); top: 9px; height: 8px; }
+    .p-titre { display: none; }
+    .p-num { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    body { padding-bottom: calc(86px + env(safe-area-inset-bottom, 0px)); }
+    .chapitre { min-height: auto; padding-top: 42px; padding-bottom: 48px; scroll-margin-top: 76px; }
   }
 
   /* ---------- Sections ---------- */
@@ -314,7 +376,8 @@
   .echelle-barre i:not(:last-child) { border-right: 3px solid var(--fond); }
   .graduation { position: absolute; top: 36px; transform: translateX(-50%); font: 500 .68rem/1 var(--mono); color: var(--doux); white-space: nowrap; }
   .graduation::before { content: ""; position: absolute; left: 50%; top: -8px; height: 5px; width: 1px; background: var(--doux); }
-  .repere { position: absolute; top: 2px; left: 0; width: 4px; height: 38px; margin-left: -2px; background: var(--encre); border-radius: 1px; transition: left 1.7s var(--courbe); }
+  .repere { position: absolute; top: 2px; left: var(--pos, 0%); width: 4px; height: 38px; margin-left: -2px; background: var(--encre); border-radius: 1px; transition: left 1.7s var(--courbe); }
+  .js .bloc:not(.vu) .repere { left: 0%; }
   .repere::before { content: ""; position: absolute; top: -6px; left: 50%; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: var(--encre); border: 2px solid var(--fond); }
 
   .autres { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 26px 32px; padding-top: 26px; border-top: 1px solid var(--filet); }
@@ -378,38 +441,54 @@
 
   /* ---------- Petits écrans ---------- */
   @media (max-width: 640px) {
-    .barre { position: static; }
     .rangee { grid-template-columns: 1fr; }
-    .zone-graphe { height: 270px; }
-    .periode { padding: 8px 14px; }
+    .chapitre .zone-graphe { height: 270px; }
     .lecture > div { grid-template-columns: 1fr; gap: 2px; }
   }
+  @media (max-width: 560px) {
+    /* la barre de période reste collée en haut, sur une seule ligne */
+    .barre-int { flex-wrap: nowrap; gap: 10px; padding-top: 8px; padding-bottom: 8px; }
+    .periode { padding: 8px 12px; }
+    .long, .option-long { display: none; }
+    .option-court, .court { display: inline; }
+    .option { gap: 8px; font-size: .85rem; }
+    .col-allure { display: none; }
+    th, td { padding: 12px 8px; }
+    .hero-bas { gap: 24px; }
+  }
+  @media (pointer: coarse) { .periode { min-height: 44px; } }
 
-  /* ---------- Mouvement réduit : tout s'affiche, rien ne bouge ---------- */
+  /* ---------- Mouvement réduit : plus de boucles, de rotations ni de glissements, mais les fondus restent ---------- */
   @media (prefers-reduced-motion: reduce) {
     html { scroll-behavior: auto; }
-    *, *::before, *::after {
-      animation-duration: .001ms !important; animation-iteration-count: 1 !important; animation-delay: 0ms !important;
-      transition-duration: .001ms !important; transition-delay: 0ms !important;
-    }
-    .js .revele { opacity: 1; transform: none; }
+    .hero-disque, .tampon svg, .tampon-point, .statut .point::after, .descendre span,
+    .rond.pm25, .rond.pm1, .squelette i, .mot.attente #verdict-lettres { animation: none; }
+    .lettre { animation: fondu .6s ease both; animation-delay: calc(var(--i, 0) * 30ms + 100ms); }
+    .apparait { animation: fondu .7s ease both; animation-delay: calc(var(--d, 0) * 90ms + 100ms); }
+    .souligne.dessine path { animation: none; stroke-dashoffset: 0; }
+    .js .revele { transform: none; transition: opacity .7s ease; transition-delay: calc(var(--d, 0) * 60ms); }
+    .js .bloc::before { transform: none; transition: none; }
+    .js .bloc:not(.vu) .zone-graphe, .js .bloc:not(.vu) .allure { clip-path: none; opacity: 0; }
+    .zone-graphe, .allure { transition: opacity .7s ease; }
+    .repere { transition: none; }
+    .point-story, .point-story::before, .p-titre { transition: none; }
   }
   @media print {
     .js .revele { opacity: 1; transform: none; }
-    .barre { position: static; }
+    .barre { position: static; box-shadow: none; }
+    .sommaire-story, .progression-lecture { display: none; }
   }
 </style>
 </head>
 
 <body>
+<div class="progression-lecture" aria-hidden="true">
+  <span id="progression-remplissage"></span>
+</div>
 
-<nav class="sommaire-story" aria-label="Progression de la lecture">
-  <a href="#hero" class="point-story actif" data-cible="hero" aria-label="Introduction" title="Introduction"><span>00</span></a>
-  <a href="#chapitre-mesures" class="point-story" data-cible="chapitre-mesures" aria-label="Dernière mesure" title="Dernière mesure"><span>01</span></a>
-  <a href="#carte-co2" class="point-story" data-cible="carte-co2" aria-label="CO₂" title="CO₂"><span>02</span></a>
-  <a href="#carte-resume" class="point-story" data-cible="carte-resume" aria-label="Bilan" title="Bilan"><span>03</span></a>
-  <a href="#apropos" class="point-story" data-cible="apropos" aria-label="Comprendre" title="Comprendre"><span>04</span></a>
-  <a href="#thum" class="point-story" data-cible="thum" aria-label="Température et humidité" title="Température et humidité"><span>05</span></a>
+<nav class="sommaire-story" id="sommaire" aria-label="Chapitres de la page" hidden>
+  <p class="sommaire-etat" id="sommaire-etat" aria-hidden="true"></p>
+  <ol id="sommaire-liste"></ol>
 </nav>
 
 <noscript>
@@ -418,7 +497,7 @@
   </p>
 </noscript>
 
-<header class="hero" id="hero">
+<header class="hero" id="hero" data-titre="Introduction">
   <div class="hero-disque" aria-hidden="true"></div>
   <canvas id="poussieres" aria-hidden="true"></canvas>
   <div class="hero-grain" aria-hidden="true"></div>
@@ -458,7 +537,7 @@
         <p class="intro">
           Cette page affiche les mesures de notre capteur : particules fines,
           température, humidité et CO₂.
-          Le capteur est installé [À COMPLÉTER : lieu].
+          Le capteur est installé <mark class="a-completer">[À COMPLÉTER : lieu]</mark>.
         </p>
 
         <a class="descendre" href="#mesures">
@@ -476,23 +555,18 @@
     <div class="periodes" role="group" aria-label="Période affichée">
       <span class="curseur" id="curseur" aria-hidden="true"></span>
 
-      <button type="button" class="periode" data-periode="-6h" aria-pressed="false">
-        6 heures
-      </button>
+      <button type="button" class="periode" data-periode="-6h" aria-label="6 heures" aria-pressed="false">6<span class="long"> heures</span><span class="court"> h</span></button>
 
-      <button type="button" class="periode actif" data-periode="-24h" aria-pressed="true">
-        24 heures
-      </button>
+      <button type="button" class="periode actif" data-periode="-24h" aria-label="24 heures" aria-pressed="true">24<span class="long"> heures</span><span class="court"> h</span></button>
 
-      <button type="button" class="periode" data-periode="-7d" aria-pressed="false">
-        7 jours
-      </button>
+      <button type="button" class="periode" data-periode="-7d" aria-label="7 jours" aria-pressed="false">7<span class="long"> jours</span><span class="court"> j</span></button>
     </div>
 
     <label class="option">
-      <input type="checkbox" id="afficher-seuils" checked>
+      <input type="checkbox" id="afficher-seuils" aria-label="Afficher les seuils sur les graphes" checked>
       <span class="interrupteur" aria-hidden="true"></span>
-      Afficher les seuils sur les graphes
+      <span class="option-long">Afficher les seuils sur les graphes</span>
+      <span class="option-court" aria-hidden="true">Seuils</span>
     </label>
   </div>
 </div>
@@ -500,9 +574,9 @@
 <main class="conteneur">
   <p id="etat" class="etat" role="status">Chargement…</p>
 
-  <section class="bloc chapitre" id="chapitre-mesures" data-story="Dernière mesure" aria-labelledby="titre-derniere">
+  <section class="bloc chapitre" id="chapitre-mesures" data-titre="Dernière mesure" aria-labelledby="titre-derniere">
     <div class="bloc-tete revele">
-      <p class="numero-chapitre">01 / Mesures</p>
+      <p class="numero-chapitre"><span class="n" data-n>00</span><span class="total" data-total>/ 00</span><span class="accroche">À l’instant</span></p>
       <h2 id="titre-derniere">Dernière mesure</h2>
       <p class="note" id="note-derniere"></p>
     </div>
@@ -521,12 +595,12 @@
     </div>
   </section>
 
-  <section class="bloc chapitre" id="chapitre-particules" data-story="Particules fines" aria-labelledby="titre-pm" hidden>
+  <section class="bloc chapitre" id="chapitre-particules" data-titre="Particules fines" aria-labelledby="titre-pm" hidden>
     <div class="bloc-tete revele">
-      <p class="numero-chapitre">02 / CE QUE NOUS RESPIRONS</p>
+      <p class="numero-chapitre"><span class="n" data-n>00</span><span class="total" data-total>/ 00</span><span class="accroche">Ce que nous respirons</span></p>
       <h2 id="titre-pm">Particules fines <span class="u">(µg/m³)</span></h2>
       <p class="note">
-        PM1, PM2.5 et PM10 : particules de moins de 1, 2,5 et 10 micromètres.
+        PM1, PM2.5 et PM10 : des particules de moins de 1, 2,5 et 10 micromètres. Plus elles sont fines, plus elles pénètrent profondément dans les poumons.
       </p>
     </div>
 
@@ -537,11 +611,11 @@
     </div>
   </section>
 
-  <section class="bloc chapitre" id="carte-co2" data-story="CO₂" aria-labelledby="titre-co2" hidden>
+  <section class="bloc chapitre" id="carte-co2" data-titre="CO₂" aria-labelledby="titre-co2" hidden>
     <div class="bloc-tete revele">
-      <p class="numero-chapitre">03 / LE RENOUVELLEMENT DE L’AIR</p>
+      <p class="numero-chapitre"><span class="n" data-n>00</span><span class="total" data-total>/ 00</span><span class="accroche">L’air se renouvelle-t-il ?</span></p>
       <h2 id="titre-co2">CO₂ <span class="u">(ppm)</span></h2>
-      <p class="note">Le CO₂ indique si la pièce est bien aérée.</p>
+      <p class="note">Le CO₂ vient surtout de notre respiration : plus il monte, moins la pièce est aérée.</p>
     </div>
 
     <div class="bloc-corps revele" style="--d:1">
@@ -551,12 +625,28 @@
     </div>
   </section>
 
-  <section class="bloc chapitre" id="carte-resume" data-story="Bilan de la période" aria-labelledby="titre-resume" hidden>
+  <section class="bloc chapitre" id="thum" data-titre="Température et humidité" aria-labelledby="titre-meteo" hidden>
     <div class="bloc-tete revele">
-      <p class="numero-chapitre">04 / PRENDRE DU RECUL</p>
+      <p class="numero-chapitre"><span class="n" data-n>00</span><span class="total" data-total>/ 00</span><span class="accroche">Le confort</span></p>
+      <h2 id="titre-meteo">Température et humidité <span class="u">(°C · %)</span></h2>
+      <p class="note">
+        Température sur l’axe de gauche (°C), humidité sur l’axe de droite (%).
+      </p>
+    </div>
+
+    <div class="bloc-corps revele" style="--d:1">
+      <div class="zone-graphe">
+        <canvas id="graphe-meteo" role="img" aria-label="Courbes de la température et de l’humidité sur la période choisie"></canvas>
+      </div>
+    </div>
+  </section>
+
+  <section class="bloc chapitre" id="carte-resume" data-titre="Bilan de la période" aria-labelledby="titre-resume" hidden>
+    <div class="bloc-tete revele">
+      <p class="numero-chapitre"><span class="n" data-n>00</span><span class="total" data-total>/ 00</span><span class="accroche">Prendre du recul</span></p>
       <h2 id="titre-resume">Résumé de la période</h2>
       <p class="note">
-        Minimum, moyenne et maximum des points affichés sur les graphes.
+        Minimum, moyenne et maximum de chaque mesure, sur la période choisie.
       </p>
     </div>
 
@@ -573,7 +663,7 @@
               <th>Minimum</th>
               <th>Moyenne</th>
               <th>Maximum</th>
-              <th>Allure</th>
+              <th class="col-allure">Allure</th>
             </tr>
           </thead>
 
@@ -583,46 +673,21 @@
     </div>
   </section>
 
-  <section class="bloc chapitre" id="apropos" data-story="Comprendre" aria-labelledby="titre-apropos" hidden>
-    <div class="bloc-tete revele">
-      <p class="numero-chapitre">04 / COMPRENDRE</p>
-      <h2 id="titre-apropos">Comprendre les mesures</h2>
-      <p class="note">
-        Les particules fines, le CO₂, la température et l’humidité permettent
-        de mieux comprendre la qualité de l’air intérieur.
-      </p>
-    </div>
+  <section class="bloc large chapitre" id="aller-plus-loin" data-titre="Comprendre les mesures" aria-labelledby="titre-comprendre">
+    <p class="numero-chapitre revele"><span class="n" data-n>00</span><span class="total" data-total>/ 00</span><span class="accroche">Pour aller plus loin</span></p>
+    <h2 id="titre-comprendre" class="revele">Comprendre les mesures</h2>
 
-    <div class="bloc-corps revele" style="--d:1">
-      <p>
-        Les particules fines PM2.5 et PM10 peuvent irriter les voies respiratoires.
-        Le CO₂ sert surtout d’indicateur du renouvellement de l’air : lorsqu’il augmente,
-        cela peut signifier que la pièce manque d’aération.
-      </p>
-
-      <p>
-        La température et l’humidité influencent le confort ressenti dans la pièce.
-        Une bonne aération permet généralement de renouveler l’air et de limiter
-        l’accumulation de CO₂.
-      </p>
-    </div>
-  </section>
-
-  <section class="bloc chapitre" id="thum" data-story="Température et humidité" aria-labelledby="titre-meteo" hidden>
-    <div class="bloc-tete revele">
-      <p class="numero-chapitre">05 / LE CONFORT INTÉRIEUR</p>
-      <h2 id="titre-meteo">Température et humidité <span class="u">(°C · %)</span></h2>
-      <p class="note">
-        Température sur l’axe de gauche (°C), humidité sur l’axe de droite (%).
-      </p>
-    </div>
-
-    <div class="bloc-corps revele" style="--d:1">
-      <div class="zone-graphe">
-        <canvas id="graphe-meteo" role="img" aria-label="Courbes de la température et de l’humidité sur la période choisie"></canvas>
+    <div>
+      <div class="texte-ligne revele">
+        <h3>Le projet</h3>
+        <div>
+          <p>
+            <mark class="a-completer">[À COMPLÉTER : en 2 ou 3 phrases, le but du projet, le modèle de carte utilisé
+            et la date de mise en service.]</mark>
+          </p>
+        </div>
       </div>
-    </div>
-  </section>
+
       <div class="texte-ligne revele">
         <h3>PM1, PM2.5 et PM10</h3>
         <div>
@@ -659,7 +724,7 @@
           <div class="defile">
             <table>
               <thead>
-                <tr><th>Niveau</th><th>PM2.5 <span class="unite">(µg/m³)</span></th><th>PM10 <span class="unite">(µg/m³)</span></th><th>CO₂ <span class="unite">(ppm)</span></th></tr>
+                <tr><th>Niveau</th><th>PM1 et PM2.5 <span class="unite">(µg/m³)</span></th><th>PM10 <span class="unite">(µg/m³)</span></th><th>CO₂ <span class="unite">(ppm)</span></th></tr>
               </thead>
               <tbody id="seuils-corps"></tbody>
             </table>
@@ -668,7 +733,7 @@
             Particules&nbsp;: valeur guide de l'OMS (2021) pour «&nbsp;Bon&nbsp;», puis cibles intermédiaires 3 et 1 de l'OMS
             pour «&nbsp;Moyen&nbsp;» et «&nbsp;Élevé&nbsp;». Ces valeurs de l'OMS portent sur des moyennes de 24 heures&nbsp;: ici elles
             servent de repère pour la dernière mesure, à titre indicatif. CO₂&nbsp;: 800&nbsp;ppm est l'objectif du HCSP&nbsp;;
-            1&nbsp;000 et 1&nbsp;500&nbsp;ppm sont des repères usuels pour l'aération des salles.
+            1&nbsp;000 et 1&nbsp;500&nbsp;ppm sont des repères usuels pour l'aération des salles. PM1&nbsp;: l'OMS ne fixe pas de valeur guide, on applique ici les mêmes limites que pour les PM2.5.
           </p>
           <p class="petit">
             Sources&nbsp;: OMS, <em>Lignes directrices mondiales sur la qualité de l'air</em>, 2021&nbsp;; HCSP, recommandations
@@ -721,7 +786,7 @@ window.__pret = true;   // dit à la page que le script a bien démarré (voir l
 // =====================================================================
 // 1) RÉGLAGES : seule la clé est obligatoire
 // =====================================================================
-const CLE = "838fcf4b7c5d3b220c9548d29d633fd3";            // clé du groupe (32 caractères)
+const CLE = "";            // clé du groupe (32 caractères)
 const DEVICE_ID = "";      // adresse MAC d'une carte, ou "" pour toutes
 const URL_API = "https://api.aircarto.fr/iut-amu/data";
 const RAFRAICHISSEMENT_MS = 60 * 1000;   // mise à jour toutes les minutes
@@ -743,11 +808,13 @@ const CHAMPS = {
 
 // Limites entre les niveaux (Bon | Moyen | Élevé | Très élevé).
 //  - PM2.5 et PM10 : valeur guide OMS 2021 (24 h), puis cibles intermédiaires 3 et 1.
+//  - PM1 : pas de valeur guide OMS, on réutilise les limites de PM2.5.
 //  - CO2 : 800 ppm (objectif HCSP), 1000 et 1500 ppm (repères usuels).
 // tracer : indices des limites dessinées en pointillés sur le graphe.
 // plancher et plafond : bornes de la jauge « dernière mesure » (4 segments égaux).
 const SEUILS = {
-  pm25: { limites: [15, 37.5, 75],      tracer: [0],    suffixe: " (OMS)", plancher: 0,   plafond: 150 },
+  pm1:  { limites: [15, 37.5, 75],      tracer: [0],    suffixe: " (OMS)", plancher: 0,   plafond: 150, libelle: "PM1 / PM2.5" },   // mêmes limites que PM2.5
+  pm25: { limites: [15, 37.5, 75],      tracer: [0],    suffixe: " (OMS)", plancher: 0,   plafond: 150, libelle: "PM1 / PM2.5" },
   pm10: { limites: [45, 75, 150],       tracer: [0],    suffixe: " (OMS)", plancher: 0,   plafond: 300 },
   co2:  { limites: [800, 1000, 1500],   tracer: [0, 1], suffixe: "",       plancher: 400, plafond: 2500 },
 };
@@ -769,7 +836,7 @@ const CONSEILS = {
 };
 
 // Nombre de grains de poussière animés dans le bandeau, selon le niveau (0 à 3).
-const GRAINS = [34, 70, 120, 190];
+const GRAINS = [70, 130, 210, 320];
 
 // =====================================================================
 // 2) PETITS OUTILS
@@ -790,9 +857,11 @@ const POLICE_SANS = '"Archivo", system-ui, -apple-system, "Segoe UI", Roboto, sa
 const POLICE_MONO = '"Chivo Mono", ui-monospace, Consolas, monospace';
 const ENCRE = "#0e1b24";
 
-if (typeof Chart !== "undefined") {
+// Chart.js est chargé en « async » : il peut arriver après le démarrage de la page.
+function reglerChart() {
+  if (typeof Chart === "undefined") return;
   Chart.defaults.font.family = POLICE_SANS;
-  Chart.defaults.font.size = 12;
+  Chart.defaults.font.size = window.innerWidth < 560 ? 11 : 12;
   Chart.defaults.color = "#52616b";
 }
 
@@ -930,6 +999,7 @@ async function chargerMesures(periode) {
 // Place chaque point sur une grille de temps régulière : s'il manque des mesures,
 // on obtient des cases vides (p = null) et donc un trou visible dans la courbe.
 function regulariser(points, pasMs) {
+  points = points.slice().sort((a, b) => new Date(a.time) - new Date(b.time));
   const t0 = new Date(points[0].time).getTime();
   const cases = [];
   points.forEach(p => {
@@ -1005,6 +1075,7 @@ function dessiner(idCanvas, serie, champs, animer) {
   const utiles = champs.filter(c => serie.some(r => r.p && estNombre(r.p[c])));
   if (utiles.length === 0) return 0;
   const seul = utiles.length === 1;
+  const etroit = window.innerWidth < 560;
 
   const longues = serie.map(r => new Date(r.t).toLocaleString("fr-FR",
     { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }));
@@ -1035,7 +1106,7 @@ function dessiner(idCanvas, serie, champs, animer) {
     x: {
       grid: { display: false },
       border: { color: ENCRE, width: 2 },
-      ticks: { autoSkip: true, maxTicksLimit: 7, maxRotation: 0, callback: valeur => courtes[valeur] },
+      ticks: { autoSkip: true, maxTicksLimit: etroit ? 4 : 7, maxRotation: 0, callback: valeur => courtes[valeur] },
     },
   };
   utiles.forEach(c => {
@@ -1044,7 +1115,7 @@ function dessiner(idCanvas, serie, champs, animer) {
       echelles[axe] = {
         position: axe === "y" ? "left" : "right",
         beginAtZero: false,
-        title: { display: true, text: CHAMPS[c].unite, font: { family: POLICE_MONO, size: 11 } },
+        title: { display: !etroit, text: CHAMPS[c].unite, font: { family: POLICE_MONO, size: 11 } },
         border: { display: false },
         ticks: { font: { family: POLICE_MONO, size: 11 } },
         grid: axe === "y" ? { color: "#d9ddd8" } : { drawOnChartArea: false },
@@ -1059,11 +1130,11 @@ function dessiner(idCanvas, serie, champs, animer) {
     utiles.forEach(c => {
       const s = SEUILS[c];
       if (!s) return;
-      s.tracer.forEach(i => lignes.push({
-        valeur: s.limites[i],
-        couleur: NIVEAUX[i + 1].couleur,
-        texte: CHAMPS[c].nom + " : " + nb(s.limites[i]) + s.suffixe,
-      }));
+      s.tracer.forEach(i => {
+        const texte = (s.libelle || CHAMPS[c].nom) + " : " + nb(s.limites[i]) + s.suffixe;
+        if (lignes.some(l => l.texte === texte)) return;   // PM1 et PM2.5 partagent la même ligne
+        lignes.push({ valeur: s.limites[i], couleur: NIVEAUX[i + 1].couleur, texte });
+      });
     });
   }
 
@@ -1080,7 +1151,7 @@ function dessiner(idCanvas, serie, champs, animer) {
         legend: {
           display: utiles.length > 1,
           position: "bottom",
-          labels: { boxWidth: 18, boxHeight: 3, padding: 18, font: { family: POLICE_SANS, weight: "600" } },
+          labels: { boxWidth: etroit ? 14 : 18, boxHeight: 3, padding: etroit ? 12 : 18, font: { family: POLICE_SANS, weight: "600" } },
         },
         tooltip: {
           backgroundColor: ENCRE,
@@ -1117,14 +1188,29 @@ function derniereValeur(serie, champ) {
   return null;
 }
 
+// Vrai quand le chapitre « Dernière mesure » est déjà apparu à l'écran (ou si les animations d'apparition sont coupées).
+function chapitreMesuresVu() {
+  if (!document.documentElement.classList.contains("js")) return true;
+  const bloc = document.getElementById("chapitre-mesures");
+  return !bloc || bloc.classList.contains("vu");
+}
+
 // Fait « compter » un chiffre de son ancienne valeur à la nouvelle.
+// Tant que le chapitre n'est pas visible, on pose la valeur finale : le décompte se joue à l'apparition.
 function animerNombre(carte, vers, decimales) {
   const de = carte.valeur === null ? 0 : carte.valeur;
   carte.valeur = vers;
+  carte.cible = vers;
+  carte.decimales = decimales;
   if (carte.anim) cancelAnimationFrame(carte.anim);
   carte.anim = 0;
   if (reduit() || de === vers) {
     carte.nombreEl.textContent = nb(vers, decimales);
+    return;
+  }
+  if (!chapitreMesuresVu()) {
+    carte.nombreEl.textContent = nb(vers, decimales);
+    carte.rejouer = true;
     return;
   }
   const debut = performance.now();
@@ -1136,6 +1222,17 @@ function animerNombre(carte, vers, decimales) {
     carte.anim = k < 1 ? requestAnimationFrame(pas) : 0;
   };
   carte.anim = requestAnimationFrame(pas);
+}
+
+// Au moment où le chapitre apparaît, les chiffres comptent de 0 à leur valeur.
+function rejouerCompteurs() {
+  Object.keys(cartes).forEach(c => {
+    const carte = cartes[c];
+    if (!carte.rejouer) return;
+    carte.rejouer = false;
+    carte.valeur = 0;
+    animerNombre(carte, carte.cible, carte.decimales);
+  });
 }
 
 // La jauge : quatre segments de couleur, les limites en dessous, un repère qui glisse.
@@ -1156,7 +1253,6 @@ function creerEchelle(champ) {
     echelle.append(graduation);
   });
   const repere = el("span", "repere");
-  repere.style.left = "0%";
   echelle.append(repere);
   return { echelle, repere };
 }
@@ -1194,7 +1290,7 @@ function majCarte(carte, d, perime) {
     carte.badgeEl.textContent = niv.nom;
     carte.badgeEl.style.background = niv.fond;
     carte.badgeEl.style.color = niv.couleur;
-    carte.repereEl.style.left = positionJauge(carte.champ, d.valeur) + "%";
+    carte.repereEl.style.setProperty("--pos", positionJauge(carte.champ, d.valeur) + "%");
     carte.echelleEl.setAttribute("aria-label",
       info.nom + " : " + nb(d.valeur, info.decimales) + " " + info.unite + ", niveau " + niv.nom.toLowerCase());
   }
@@ -1300,6 +1396,7 @@ function majBandeau(cle, prefixe, mot, couleurs, indiceGrains, titre) {
   const hero = document.getElementById("hero");
   hero.style.setProperty("--ciel", couleurs.ciel);
   hero.style.setProperty("--ciel-texte", couleurs.texte);
+  document.documentElement.style.setProperty("--accent", couleurs.couleur || "#b74716");   // barre de progression, numéros, traits
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute("content", couleurs.ciel);
 
@@ -1439,7 +1536,7 @@ function afficherResume(serie) {
     tr.append(th);
     [Math.min(...vals), moyenne, Math.max(...vals)].forEach(v =>
       tr.append(el("td", "", nb(v, info.decimales))));
-    const cellule = el("td");
+    const cellule = el("td", "col-allure");
     cellule.append(allure(serie.map(r => (r.p && estNombre(r.p[c])) ? r.p[c] : null)));
     tr.append(cellule);
     corps.append(tr);
@@ -1479,7 +1576,7 @@ function viderGraphes() {
 
 // Les sections qui dépendent des mesures (tout sauf « Comprendre les mesures »).
 function sectionsDonnees() {
-  return document.querySelectorAll("main > .bloc:not(#apropos)");
+  return document.querySelectorAll("main > .bloc:not(#aller-plus-loin)");
 }
 
 function viderTout() {
@@ -1489,6 +1586,7 @@ function viderTout() {
   Object.keys(cartes).forEach(c => { cartes[c].racine.remove(); delete cartes[c]; });
   document.getElementById("note-derniere").textContent = "";
   document.getElementById("resume-corps").replaceChildren();
+  actualiserChapitres();
 }
 
 // Redessine toute la page à partir des dernières données reçues (sans nouvelle requête).
@@ -1518,8 +1616,11 @@ function afficherTout() {
   afficherResume(serie);
 
   let texte = points.length + " points, moyenne sur " + libelleDuree(MOYENNE[periode]) + ".";
-  if (typeof Chart === "undefined") texte += " Graphes indisponibles : Chart.js n'a pas pu être chargé.";
+  if (typeof Chart === "undefined") {
+    texte += window.__chartKO ? " Graphes indisponibles : Chart.js n'a pas pu être chargé." : " Graphes en cours de chargement…";
+  }
   majEtat("etat", texte);
+  actualiserChapitres();
 }
 
 // =====================================================================
@@ -1545,7 +1646,8 @@ function creerNuage() {
   let vivants = 0;
   let base = GRAINS[0];
   let cible = base;
-  let souris = null;
+  let pointeur = null;     // dernières coordonnées du doigt/curseur (écran)
+  let curseur = null;      // position lissée dans le bandeau : { x, y, vx, vy, vit }
   let visible = true;
   let tourne = false;
   let image = 0;
@@ -1554,7 +1656,7 @@ function creerNuage() {
   let compte = 0;
 
   function ajusterCible() {
-    cible = Math.max(12, Math.round(base * Math.min(1, larg / 900 + 0.3)));
+    cible = Math.max(28, Math.round(base * Math.min(1, larg / 900 + 0.45)));
   }
 
   function lireCouleur() {
@@ -1568,7 +1670,7 @@ function creerNuage() {
     const t = TYPES[hasard < 0.55 ? 0 : hasard < 0.85 ? 1 : 2];
     return {
       x: Math.random() * larg, y: Math.random() * haut,
-      vx: 0, vy: 0,
+      vx: 0, vy: 0, lum: 0,
       dx: (Math.random() - 0.5) * 0.22, dy: 0.03 - Math.random() * 0.16,
       r: t.r * (0.8 + Math.random() * 0.5), amax: t.alpha, a: 0, ag: t.agitation, vivant: true,
     };
@@ -1580,12 +1682,44 @@ function creerNuage() {
     for (let i = 0; i < grains.length; i++) {
       const g = grains[i];
       if (g.a <= 0) continue;
-      ctx.globalAlpha = g.a;
+      ctx.globalAlpha = Math.min(1, g.a * (1 + g.lum * 0.9));
       ctx.beginPath();
-      ctx.arc(g.x, g.y, g.r, 0, 6.2832);
+      ctx.arc(g.x, g.y, g.r * (1 + g.lum * 0.35), 0, 6.2832);
       ctx.fill();
     }
     ctx.globalAlpha = 1;
+  }
+
+  // Position lissée du curseur + vitesse : un geste rapide repousse plus fort et plus loin.
+  function suivreCurseur(dt) {
+    if (!pointeur) { curseur = null; return false; }
+    const r = hero.getBoundingClientRect();   // relu à chaque image : reste juste quand la page défile
+    const cx = pointeur.x - r.left, cy = pointeur.y - r.top;
+    if (!curseur) curseur = { x: cx, y: cy, vx: 0, vy: 0, vit: 0 };
+    const k = 1 - Math.exp(-0.35 * dt);
+    const px = curseur.x, py = curseur.y;
+    curseur.x += (cx - curseur.x) * k;
+    curseur.y += (cy - curseur.y) * k;
+    const vx = (curseur.x - px) / dt, vy = (curseur.y - py) / dt;
+    curseur.vx += (vx - curseur.vx) * 0.25;
+    curseur.vy += (vy - curseur.vy) * 0.25;
+    curseur.vit = Math.min(30, Math.hypot(curseur.vx, curseur.vy));
+    return true;
+  }
+
+  // Un clic ou un appui souffle les grains alentour.
+  function souffler(clientX, clientY) {
+    const r = hero.getBoundingClientRect();
+    const x = clientX - r.left, y = clientY - r.top;
+    for (let i = 0; i < grains.length; i++) {
+      const g = grains[i];
+      const ox = g.x - x, oy = g.y - y, d2 = ox * ox + oy * oy;
+      if (d2 < 78400 && d2 > 1) {
+        const d = Math.sqrt(d2), f = (1 - d / 280) * 5;
+        g.vx += ox / d * f;
+        g.vy += oy / d * f;
+      }
+    }
   }
 
   function avancer(dt) {
@@ -1599,22 +1733,30 @@ function creerNuage() {
         if (grains[k].vivant) { grains[k].vivant = false; vivants--; n--; }
       }
     }
+    const actif = suivreCurseur(dt);
+    const rayon = actif ? 150 + curseur.vit * 4 : 0;     // 150 px au repos, jusqu'à 270 px en mouvement rapide
+    const force = actif ? 0.45 + curseur.vit * 0.04 : 0;
+    const frottement = Math.pow(0.96, dt);
     for (let i = grains.length - 1; i >= 0; i--) {
       const g = grains[i];
       g.a += (g.vivant ? 0.02 : -0.03) * dt;
       if (g.vivant && g.a > g.amax) g.a = g.amax;
       if (!g.vivant && g.a <= 0) { grains.splice(i, 1); continue; }
       // agitation aléatoire (mouvement brownien) + lente dérive
-      g.vx = g.vx * 0.96 + (Math.random() - 0.5) * 0.22 * g.ag;
-      g.vy = g.vy * 0.96 + (Math.random() - 0.5) * 0.22 * g.ag;
-      if (souris) {
-        const ox = g.x - souris.x, oy = g.y - souris.y, d2 = ox * ox + oy * oy;
-        if (d2 < 14400 && d2 > 1) {
-          const d = Math.sqrt(d2), f = (1 - d / 120) * 0.5;
-          g.vx += ox / d * f;
-          g.vy += oy / d * f;
+      g.vx = g.vx * frottement + (Math.random() - 0.5) * 0.22 * g.ag * dt;
+      g.vy = g.vy * frottement + (Math.random() - 0.5) * 0.22 * g.ag * dt;
+      g.lum *= 0.92;
+      if (actif) {
+        const ox = g.x - curseur.x, oy = g.y - curseur.y, d2 = ox * ox + oy * oy;
+        if (d2 < rayon * rayon && d2 > 1) {
+          const d = Math.sqrt(d2), p = 1 - d / rayon, f = p * p * force * dt;
+          g.vx += ox / d * f + curseur.vx * p * 0.05 * dt;   // repoussé, et entraîné dans le sillage
+          g.vy += oy / d * f + curseur.vy * p * 0.05 * dt;
+          if (p > g.lum) g.lum = p;
         }
       }
+      const v = Math.hypot(g.vx, g.vy);
+      if (v > 12) { g.vx *= 12 / v; g.vy *= 12 / v; }
       g.x += (g.vx + g.dx) * dt;
       g.y += (g.vy + g.dy) * dt;
       if (g.x < -10) g.x = larg + 10; else if (g.x > larg + 10) g.x = -10;
@@ -1676,13 +1818,13 @@ function creerNuage() {
         new IntersectionObserver(e => { visible = e[0].isIntersecting; actualiser(); }).observe(hero);
       }
       document.addEventListener("visibilitychange", actualiser);
-      hero.addEventListener("pointermove", e => {
-        const r = hero.getBoundingClientRect();
-        souris = { x: e.clientX - r.left, y: e.clientY - r.top };
-      });
-      hero.addEventListener("pointerleave", () => { souris = null; });
-      hero.addEventListener("pointercancel", () => { souris = null; });
-      hero.addEventListener("pointerup", e => { if (e.pointerType !== "mouse") souris = null; });
+      const suivre = e => { pointeur = { x: e.clientX, y: e.clientY }; };
+      const oublier = () => { pointeur = null; curseur = null; };
+      hero.addEventListener("pointermove", suivre);
+      hero.addEventListener("pointerdown", e => { suivre(e); if (tourne) souffler(e.clientX, e.clientY); });
+      hero.addEventListener("pointerleave", oublier);
+      hero.addEventListener("pointercancel", oublier);
+      hero.addEventListener("pointerup", e => { if (e.pointerType !== "mouse") oublier(); });
       actualiser();
     },
     // niveau : 0 (bon) à 3 (très élevé)
@@ -1718,47 +1860,134 @@ function initTampon() {
   ajusterTampon();
 }
 
-// Progression de lecture : barre supérieure et chapitre actif.
+// =====================================================================
+// Story scrolling : chapitres numérotés, sommaire et sortie du bandeau
+// =====================================================================
+const sommaire = { signature: "", sections: [], liens: [], actif: "hero" };
+let majDefilement = function () {};
+
+// Le bandeau + les chapitres actuellement visibles (un chapitre sans données est masqué : il n'a pas de numéro).
+function listeChapitres() {
+  const hero = document.getElementById("hero");
+  const chapitres = Array.from(document.querySelectorAll("main > .chapitre")).filter(s => !s.hidden);
+  return [hero].concat(chapitres);
+}
+
+function construireSommaire(sections) {
+  const nav = document.getElementById("sommaire");
+  const liste = document.getElementById("sommaire-liste");
+  if (!nav || !liste) return;
+  liste.replaceChildren();
+  sommaire.liens = sections.map((section, i) => {
+    const titre = section.dataset.titre || (i === 0 ? "Introduction" : "Chapitre " + i);
+    const lien = el("a", "point-story");
+    lien.href = "#" + section.id;
+    lien.dataset.cible = section.id;
+    lien.setAttribute("aria-label", i === 0 ? titre : "Chapitre " + i + " : " + titre);
+    lien.append(el("span", "p-num", String(i).padStart(2, "0")), el("span", "p-titre", titre));
+    const item = el("li");
+    item.append(lien);
+    liste.append(item);
+    return lien;
+  });
+  nav.hidden = sections.length < 2;
+}
+
+// Marque le chapitre en cours : sommaire, texte d'état (téléphone) et éclairage du chapitre.
+function appliquerActif(id) {
+  const total = sommaire.liens.length - 1;
+  const index = sommaire.liens.findIndex(l => l.dataset.cible === id);
+  sommaire.liens.forEach((lien, i) => {
+    lien.classList.toggle("actif", i === index);
+    lien.classList.toggle("passe", index >= 0 && i < index);
+    if (i === index) lien.setAttribute("aria-current", "step"); else lien.removeAttribute("aria-current");
+  });
+  document.querySelectorAll("main > .chapitre").forEach(s => s.classList.toggle("en-cours", s.id === id));
+  const section = document.getElementById(id);
+  const etat = document.getElementById("sommaire-etat");
+  if (etat && section && index >= 0) {
+    etat.textContent = index === 0
+      ? (section.dataset.titre || "Introduction")
+      : String(index).padStart(2, "0") + " / " + String(total).padStart(2, "0") + " · " + (section.dataset.titre || "");
+  }
+}
+
+// À rappeler dès que des chapitres apparaissent ou disparaissent : renumérote, reconstruit le sommaire.
+function actualiserChapitres() {
+  const sections = listeChapitres();
+  const total = sections.length - 1;
+  sections.forEach((section, i) => {
+    if (i === 0) return;
+    const n = section.querySelector("[data-n]");
+    const t = section.querySelector("[data-total]");
+    if (n) n.textContent = String(i).padStart(2, "0");
+    if (t) t.textContent = "/ " + String(total).padStart(2, "0");
+  });
+  sommaire.sections = sections;
+  const signature = sections.map(s => s.id).join("|");
+  if (signature !== sommaire.signature) {
+    sommaire.signature = signature;
+    construireSommaire(sections);
+    if (!sections.some(s => s.id === sommaire.actif)) sommaire.actif = "hero";
+    appliquerActif(sommaire.actif);
+  }
+  majDefilement();
+}
+
+// Chapitre en cours = le dernier dont le haut a passé la ligne des 40 % de l'écran.
+function calculerActif(sections) {
+  const doc = document.documentElement;
+  if (window.scrollY + window.innerHeight >= doc.scrollHeight - 4 && sections.length > 1) return sections[sections.length - 1].id;
+  const ligne = window.innerHeight * 0.4;
+  let id = sections[0].id;
+  sections.forEach(s => { if (s.getBoundingClientRect().top <= ligne) id = s.id; });
+  return id;
+}
+
 function initStoryScrolling() {
   const barre = document.getElementById("progression-remplissage");
-  const liens = Array.from(document.querySelectorAll(".point-story"));
-  const sections = liens.map(l => document.getElementById(l.dataset.cible)).filter(Boolean);
+  const hero = document.getElementById("hero");
+  const contenu = hero ? hero.querySelector(".hero-contenu") : null;
   let enAttente = false;
-  function actualiserProgression() {
+
+  function actualiser() {
+    enAttente = false;
     const doc = document.documentElement;
     const maximum = doc.scrollHeight - window.innerHeight;
-    const avancement = maximum > 0 ? Math.min(100, Math.max(0, window.scrollY / maximum * 100)) : 0;
-    if (barre) barre.style.width = avancement + "%";
-    enAttente = false;
-  }
-  window.addEventListener("scroll", () => {
-    if (!enAttente) { enAttente = true; requestAnimationFrame(actualiserProgression); }
-  }, { passive: true });
-  window.addEventListener("resize", actualiserProgression);
-  actualiserProgression();
+    const y = window.scrollY;
+    if (barre) barre.style.width = (maximum > 0 ? Math.min(100, Math.max(0, y / maximum * 100)) : 0) + "%";
 
-  if (!("IntersectionObserver" in window)) return;
-  const observer = new IntersectionObserver(entrees => {
-    const visibles = entrees.filter(e => e.isIntersecting && !e.target.hidden);
-    if (!visibles.length) return;
-    visibles.sort((a, b) => b.intersectionRatio - a.intersectionRatio);
-    const id = visibles[0].target.id;
-    liens.forEach(l => {
-      const actif = l.dataset.cible === id;
-      l.classList.toggle("actif", actif);
-      if (actif) l.setAttribute("aria-current", "step");
-      else l.removeAttribute("aria-current");
-    });
-  }, { rootMargin: "-28% 0px -48% 0px", threshold: [0, .15, .35, .6] });
-  sections.forEach(section => observer.observe(section));
-  const hero = document.getElementById("hero");
-  if (hero) observer.observe(hero);
+    // Le texte du bandeau s'efface en douceur quand on commence à lire les chapitres.
+    if (contenu) {
+      const p = reduit() ? 0 : Math.min(1, Math.max(0, y / ((hero.offsetHeight || 1) * 0.8)));
+      contenu.style.transform = p ? "translate3d(0," + (-p * 56).toFixed(1) + "px,0)" : "";
+      contenu.style.opacity = p ? (1 - 0.95 * Math.pow(p, 1.4)).toFixed(3) : "";
+    }
+
+    if (sommaire.sections.length > 1) {
+      const id = calculerActif(sommaire.sections);
+      if (id !== sommaire.actif) { sommaire.actif = id; appliquerActif(id); }
+    }
+  }
+  majDefilement = actualiser;
+
+  window.addEventListener("scroll", () => {
+    if (!enAttente) { enAttente = true; requestAnimationFrame(actualiser); }
+  }, { passive: true });
+  window.addEventListener("resize", actualiser);
+  if ("ResizeObserver" in window) new ResizeObserver(actualiser).observe(document.body);   // la page grandit quand les chapitres apparaissent
+  actualiser();
 }
 
 // Les éléments apparaissent en glissant quand on arrive dessus en défilant.
 function initRevelations() {
   const cibles = Array.from(document.querySelectorAll(".revele, .bloc"));
-  const montrer = e => e.classList.add("vu");
+  const montrer = e => {
+    e.classList.add("vu");
+    // l'en-tête d'un chapitre ne reste jamais caché alors que son contenu est à l'écran (arrivée par un lien, défilement rapide)
+    if (e.classList.contains("bloc")) e.querySelectorAll(".revele").forEach(c => c.classList.add("vu"));
+    if (e.id === "chapitre-mesures") rejouerCompteurs();
+  };
   if (!("IntersectionObserver" in window)) { cibles.forEach(montrer); return; }
 
   const observateur = new IntersectionObserver(entrees => {
@@ -1819,6 +2048,7 @@ async function rafraichir() {
       document.getElementById("squelette").hidden = true;
       sectionsDonnees().forEach(s => { s.hidden = true; });
       afficherVerdictVide();
+      actualiserChapitres();
     }
   }
 }
@@ -1842,8 +2072,10 @@ function initControles() {
 }
 
 function demarrer() {
+  securise(reglerChart);
   // Les apparitions au défilement d'abord : si autre chose échoue, le contenu reste visible.
   securise(initStoryScrolling);
+  securise(actualiserChapitres);
   securise(initRevelations);
   securise(remplirSeuils);
   securise(initControles);
@@ -1859,22 +2091,29 @@ function demarrer() {
   });
 
   // Après le chargement des polices, tout ce qui a été mesuré est recalculé.
-  if (document.fonts && document.fonts.ready) {
-    document.fonts.ready.then(() => {
-      securise(ajusterVerdict);
-      securise(placerCurseur);
-      securise(ajusterTampon);
-      Object.keys(graphes).forEach(id => securise(() => graphes[id].update("none")));
-    });
+  // "loadingdone" couvre le cas où document.fonts.ready se résout avant que les polices soient demandées.
+  const apresPolices = () => {
+    securise(ajusterVerdict);
+    securise(placerCurseur);
+    securise(ajusterTampon);
+    Object.keys(graphes).forEach(id => securise(() => graphes[id].update("none")));
+  };
+  if (document.fonts) {
+    if (document.fonts.ready) document.fonts.ready.then(apresPolices);
+    if (document.fonts.addEventListener) document.fonts.addEventListener("loadingdone", apresPolices);
   }
 
   let minuterie = 0;
+  let etroitAvant = window.innerWidth < 560;
   window.addEventListener("resize", () => {
     clearTimeout(minuterie);
     minuterie = setTimeout(() => {
       securise(ajusterVerdict);
       securise(placerCurseur);
       securise(ajusterTampon);
+      // passage portrait <-> paysage : les graphes se redessinent avec la bonne densité d'étiquettes
+      const etroit = window.innerWidth < 560;
+      if (etroit !== etroitAvant) { etroitAvant = etroit; securise(reglerChart); securise(afficherTout); }
     }, 120);
   });
 
@@ -1886,6 +2125,12 @@ function demarrer() {
   rafraichir();
   setInterval(rafraichir, RAFRAICHISSEMENT_MS);
 }
+
+// Chart.js arrive peut-être après les mesures : dans ce cas, les graphes se dessinent à son arrivée.
+window.__chartPret = function () {
+  securise(reglerChart);
+  if (cache) { animerProchain = true; securise(afficherTout); }
+};
 
 demarrer();
 </script>
