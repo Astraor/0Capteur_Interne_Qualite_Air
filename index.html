@@ -850,7 +850,7 @@ window.__pret = true;   // dit à la page que le script a bien démarré (voir l
 // =====================================================================
 // 1) RÉGLAGES : seule la clé est obligatoire
 // =====================================================================
-const CLE = "838fcf4b7c5d3b220c9548d29d633fd3";            // clé du groupe (32 caractères)
+const CLE = "";            // clé du groupe (32 caractères)
 const DEVICE_ID = "";      // adresse MAC d'une carte, ou "" pour toutes
 const URL_API = "https://api.aircarto.fr/iut-amu/data";
 const RAFRAICHISSEMENT_MS = 60 * 1000;   // mise à jour toutes les minutes
@@ -858,6 +858,23 @@ const RAFRAICHISSEMENT_MS = 60 * 1000;   // mise à jour toutes les minutes
 // Une moyenne par intervalle selon la période : assez de points pour une
 // courbe lisible, pas trop pour rester rapide.
 const MOYENNE = { "-6h": "5m", "-24h": "15m", "-7d": "1h" };
+
+// ---- Heure réelle des mesures (stockage hors ligne de la carte) ----
+// Le serveur date chaque mesure à sa RÉCEPTION. Quand la carte renvoie après une coupure des mesures
+// gardées en mémoire, elles arrivent avec la mauvaise heure. La carte joint donc le champ x_age_s
+// (secondes écoulées entre la mesure et son envoi) : heure réelle = heure de réception − x_age_s.
+// Pour que la correction soit juste, il faut des points NON moyennés par le serveur (sinon une mesure
+// rejouée se mélange à une mesure en direct dans la même moyenne). On demande donc :
+//   - FREQ_API : "" = points bruts (une mesure toutes les 30 s) ; sinon, une moyenne fine du serveur ;
+//   - FREQ_SECOURS : utilisée si le serveur refuse la requête sans "freq".
+// La moyenne affichée (MOYENNE ci-dessus) est ensuite recalculée ici, par la page.
+const CHAMP_AGE = "x_age_s";
+const ALIAS = { temp: "x_temp_pm", hum: "x_hum_pm" };   // champs de secours envoyés par la carte
+const FREQ_API = { "-6h": "", "-24h": "", "-7d": "5m" };
+const FREQ_SECOURS = { "-6h": "1m", "-24h": "1m", "-7d": "5m" };
+const DUREE_PERIODE = { "-6h": 6 * 3600000, "-24h": 24 * 3600000, "-7d": 7 * 86400000 };
+const AGE_MAX_S = 30 * 86400;     // un âge plus grand est jugé invalide (champ ignoré)
+const SEUIL_REJOUE_S = 120;       // au-delà, la mesure est comptée comme « rejouée après une coupure »
 
 // Nom, unité, nombre de décimales, couleur de courbe et axe de chaque champ de l'API.
 // zero : l'axe démarre à 0 (utile pour les particules et l'humidité).
@@ -1034,11 +1051,12 @@ function majEtat(classe, texte) {
 // =====================================================================
 // 3) LECTURE DES MESURES
 // =====================================================================
-async function chargerMesures(periode) {
-  if (!CLE) {
-    throw new Error("la clé du groupe n'est pas renseignée (ligne « const CLE » du script).");
-  }
-  const params = new URLSearchParams({ key: CLE, start: periode, freq: MOYENNE[periode] });
+let brutPossible = true;   // passe à false si le serveur refuse la requête sans "freq"
+
+// Un appel à l'API. freq = "" : pas de moyenne côté serveur.
+async function appelerApi(periode, freq) {
+  const params = new URLSearchParams({ key: CLE, start: periode });
+  if (freq) params.set("freq", freq);
   if (DEVICE_ID) params.set("device_id", DEVICE_ID);
 
   let reponse;
@@ -1055,26 +1073,85 @@ async function chargerMesures(periode) {
   }
   if (!json.ok) {
     // Le serveur explique toujours l'erreur dans "message"
-    throw new Error(json.message || "erreur du serveur.");
+    const erreur = new Error(json.message || "erreur du serveur.");
+    erreur.serveur = true;
+    throw erreur;
   }
   return json.points || [];
 }
 
-// Place chaque point sur une grille de temps régulière : s'il manque des mesures,
-// on obtient des cases vides (p = null) et donc un trou visible dans la courbe.
-function regulariser(points, pasMs) {
-  points = points.slice().sort((a, b) => new Date(a.time) - new Date(b.time));
-  const t0 = new Date(points[0].time).getTime();
-  const cases = [];
-  points.forEach(p => {
-    const i = Math.round((new Date(p.time).getTime() - t0) / pasMs);
-    if (Number.isFinite(i) && i >= 0) cases[i] = p;
-  });
-  const serie = [];
-  for (let i = 0; i < cases.length; i++) {
-    serie.push({ t: t0 + i * pasMs, p: cases[i] || null });
+async function chargerMesures(periode) {
+  if (!CLE) {
+    throw new Error("la clé du groupe n'est pas renseignée (ligne « const CLE » du script).");
   }
-  return serie;
+  const voulue = FREQ_API[periode];
+  if (voulue === "" && brutPossible) {
+    try {
+      return await appelerApi(periode, "");
+    } catch (e) {
+      if (!e.serveur) throw e;        // problème réseau : inutile de réessayer autrement
+      brutPossible = false;           // le serveur veut un "freq" : on bascule sur la moyenne fine
+      console.warn("Points bruts refusés par le serveur (" + e.message + ") : moyenne fine à la place.");
+    }
+  }
+  return appelerApi(periode, voulue === "" ? FREQ_SECOURS[periode] : voulue);
+}
+
+// Heure réelle d'un point : heure de réception (champ "time") moins x_age_s.
+// age = null si le point n'a pas de x_age_s valide (la page garde alors l'heure du serveur).
+function heureReelle(p) {
+  const recu = new Date(p.time).getTime();
+  if (!Number.isFinite(recu)) return null;
+  const brut = p[CHAMP_AGE];
+  const age = (brut === null || brut === undefined || brut === "") ? NaN : Number(brut);
+  const valide = Number.isFinite(age) && age >= 0 && age <= AGE_MAX_S;
+  return { t: recu - (valide ? age * 1000 : 0), age: valide ? age : null };
+}
+
+// Corrige l'heure de chaque point, puis place les mesures sur une grille de temps régulière
+// (pasMs) en faisant la moyenne de chaque case. S'il manque des mesures, on obtient des cases
+// vides (p = null) et donc un trou visible dans la courbe. "dernier" = heure réelle de la
+// dernière mesure de la case. Renvoie { serie, rejouees, sansAge } ou null s'il ne reste rien.
+function construireSerie(points, periode, maintenant) {
+  const pasMs = enMs(MOYENNE[periode]);
+  const debut = maintenant - DUREE_PERIODE[periode];
+  const lus = [];
+  let rejouees = 0, sansAge = 0;
+  points.forEach(p => {
+    const h = heureReelle(p);
+    if (!h) return;
+    if (h.age === null) sansAge++;
+    else if (h.age > SEUIL_REJOUE_S) rejouees++;
+    const t = Math.min(h.t, maintenant);   // une horloge en avance ne crée pas de mesure « dans le futur »
+    if (t < debut) return;                 // mesurée avant la période affichée
+    lus.push({ t, p });
+  });
+  if (lus.length === 0) return null;
+  lus.sort((a, b) => a.t - b.t);
+
+  const t0 = Math.floor(lus[0].t / pasMs) * pasMs;
+  const n = Math.floor((lus[lus.length - 1].t - t0) / pasMs) + 1;
+  const cases = new Array(n).fill(null);
+  const noms = Object.keys(CHAMPS);
+  lus.forEach(({ t, p }) => {
+    const i = Math.floor((t - t0) / pasMs);
+    const c = cases[i] || (cases[i] = { somme: {}, nb: {}, dernier: 0 });
+    c.dernier = Math.max(c.dernier, t);
+    noms.forEach(k => {
+      // La carte envoie la température et l'humidité du NextPM sous x_temp_pm / x_hum_pm :
+      // on s'en sert quand le champ standard (temp / hum) n'existe pas.
+      const v = estNombre(p[k]) ? p[k] : (ALIAS[k] && estNombre(p[ALIAS[k]]) ? p[ALIAS[k]] : null);
+      if (v !== null) { c.somme[k] = (c.somme[k] || 0) + v; c.nb[k] = (c.nb[k] || 0) + 1; }
+    });
+  });
+  const serie = cases.map((c, i) => {
+    const t = t0 + i * pasMs;
+    if (!c) return { t, p: null };
+    const moyenne = {};
+    Object.keys(c.nb).forEach(k => { moyenne[k] = c.somme[k] / c.nb[k]; });
+    return { t, p: moyenne, dernier: c.dernier };
+  });
+  return { serie, rejouees, sansAge };
 }
 
 // =====================================================================
@@ -1247,7 +1324,7 @@ function dessiner(idCanvas, serie, champs, animer) {
 function derniereValeur(serie, champ) {
   for (let i = serie.length - 1; i >= 0; i--) {
     const p = serie[i].p;
-    if (p && estNombre(p[champ])) return { valeur: p[champ], t: serie[i].t };
+    if (p && estNombre(p[champ])) return { valeur: p[champ], t: serie[i].dernier || serie[i].t };   // heure réelle de la mesure, pas le début de la case
   }
   return null;
 }
@@ -1656,7 +1733,7 @@ function viderTout() {
 // Redessine toute la page à partir des dernières données reçues (sans nouvelle requête).
 function afficherTout() {
   if (!cache) return;
-  const { periode, points, serie } = cache;
+  const { periode, points, serie, rejouees, sansAge } = cache;
   const pasMs = enMs(MOYENNE[periode]);
   const animer = animerProchain && !reduit();
   animerProchain = false;
@@ -1680,6 +1757,15 @@ function afficherTout() {
   afficherResume(serie);
 
   let texte = points.length + " points, moyenne sur " + libelleDuree(MOYENNE[periode]) + ".";
+  if (rejouees > 0) {
+    texte += " " + rejouees + " mesure" + (rejouees > 1 ? "s" : "") + " rejouée" + (rejouees > 1 ? "s" : "") +
+      " après une coupure, replacée" + (rejouees > 1 ? "s" : "") + " à l'heure réelle.";
+  }
+  if (sansAge === points.length) {
+    texte += " Champ " + CHAMP_AGE + " absent des données : heures non corrigées.";
+  } else if (sansAge > 0) {
+    texte += " " + sansAge + " point" + (sansAge > 1 ? "s" : "") + " sans " + CHAMP_AGE + " (heure du serveur gardée).";
+  }
   if (typeof Chart === "undefined") {
     texte += window.__chartKO ? " Graphes indisponibles : Chart.js n'a pas pu être chargé." : " Graphes en cours de chargement…";
   }
@@ -2143,7 +2229,8 @@ async function rafraichir() {
     if (numero !== numeroRequete) return;   // une demande plus récente a pris le relais
     derniereMaj = Date.now();
 
-    if (points.length === 0) {
+    const resultat = points.length === 0 ? null : construireSerie(points, periode, Date.now());
+    if (!resultat) {
       viderTout();
       document.getElementById("squelette").hidden = true;
       definirStatut("erreur", "Aucune mesure sur cette période");
@@ -2151,7 +2238,7 @@ async function rafraichir() {
       majEtat("etat erreur", "Aucune mesure sur cette période : la carte envoie-t-elle ?");
       return;
     }
-    cache = { periode, points, serie: regulariser(points, enMs(MOYENNE[periode])) };
+    cache = { periode, points, serie: resultat.serie, rejouees: resultat.rejouees, sansAge: resultat.sansAge };
     afficherTout();
   } catch (erreur) {
     if (numero !== numeroRequete) return;
