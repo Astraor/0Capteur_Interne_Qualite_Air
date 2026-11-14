@@ -49,7 +49,13 @@
   }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
-  html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+  /* text-size-adjust : empêche le téléphone de gonfler le texte en mode paysage.
+     Le préfixe -webkit- reste nécessaire sur iPhone/iPad ; -moz- sur Firefox Android. */
+  html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; -moz-text-size-adjust: 100%; text-size-adjust: 100%; }
+  /* Barre de défilement de la page masquée (la navigation passe par les repères 00, 01…).
+     La page reste défilable à la molette, au clavier et au toucher. */
+  html { scrollbar-width: none; }
+  html::-webkit-scrollbar, body::-webkit-scrollbar { display: none; width: 0; height: 0; }
   body {
     margin: 0;
     font-family: var(--sans);
@@ -57,12 +63,11 @@
     line-height: 1.6;
     color: var(--encre);
     background: var(--fond);
-    -webkit-font-smoothing: antialiased;
   }
   a { color: inherit; }
   a:focus-visible, button:focus-visible { outline: 3px solid var(--cobalt); outline-offset: 3px; }
   .conteneur { max-width: 1180px; margin: 0 auto; padding: 0 var(--gouttiere); }
-  .sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  .sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 
   /* ---------- Bandeau : la couleur suit le niveau de qualité de l'air ---------- */
   .hero {
@@ -214,7 +219,7 @@
   .periode.actif { color: var(--fond); }
   @media (hover: hover) { .periode:not(.actif):hover { background: rgba(14, 27, 36, .08); } }
 
-  .option { display: inline-flex; align-items: center; gap: 12px; font-size: .9rem; font-weight: 500; cursor: pointer; user-select: none; }
+  .option { display: inline-flex; align-items: center; gap: 12px; font-size: .9rem; font-weight: 500; cursor: pointer; -webkit-user-select: none; user-select: none; }
   .option-court, .court { display: none; }
   .option input { position: absolute; opacity: 0; width: 1px; height: 1px; }
   .interrupteur { position: relative; flex: none; width: 44px; height: 24px; border: 2px solid var(--encre); border-radius: 3px; transition: background .3s; }
@@ -236,15 +241,14 @@
   /* ---------- Story scrolling : lecture en chapitres ---------- */
   /* La barre de progression, les numéros et les traits de chapitre prennent la couleur du verdict. */
   .progression-lecture { position: fixed; z-index: 80; inset: 0 0 auto; height: 4px; background: rgba(14,27,36,.12); pointer-events: none; }
-  .progression-lecture span { display: block; width: 0; height: 100%; background: var(--accent); }
+  .progression-lecture span { display: block; width: 100%; height: 100%; background: var(--accent); transform: scaleX(0); transform-origin: 0 50%; will-change: transform; }
   .barre { top: 4px; box-shadow: 0 -4px 0 var(--fond); }   /* la barre collante se range sous la barre de progression */
 
   /* Sommaire : rail vertical sur ordinateur, barre de progression en bas sur téléphone et tablette */
   .sommaire-story {
     position: fixed; z-index: 60; left: 12px; top: 50%; transform: translateY(-50%);
     padding: 8px 6px; border: 1px solid var(--filet); border-radius: 28px;
-    background: rgba(242,244,240,.94);
-    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+    background: var(--fond);   /* opaque : un flou d'arrière-plan sur un élément fixe oblige à tout recalculer à chaque image de défilement */
   }
   .sommaire-story ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
   .sommaire-etat { display: none; margin: 0; }
@@ -314,7 +318,7 @@
     .point-story.actif { background: none; color: inherit; transform: none; }
     .point-story.actif::before { background: var(--encre); top: 9px; height: 8px; }
     .p-titre { display: none; }
-    .p-num { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    .p-num { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     body { padding-bottom: calc(86px + env(safe-area-inset-bottom, 0px)); }
     .chapitre { min-height: auto; padding-top: 42px; padding-bottom: 48px; scroll-margin-top: 76px; }
   }
@@ -386,7 +390,7 @@
   .zone-graphe canvas { display: block; }
 
   /* ---------- Tableaux ---------- */
-  .defile { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .defile { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: .95rem; }
   th, td { padding: 14px; border-bottom: 1px solid var(--filet); text-align: right; white-space: nowrap; }
   th:first-child, td:first-child { text-align: left; padding-left: 0; }
@@ -459,17 +463,11 @@
   /* Le bandeau reste épinglé pendant ~130 % d'écran de défilement. --sortie (0 → 1) orchestre la scène :
      le disque enfle, le bas du bandeau s'envole, le verdict zoome et se dissout, puis le bandeau se range en carte. */
   .js .piste { height: 230vh; height: 230svh; }
-  .js .hero { position: sticky; top: 0; height: 100vh; height: 100svh; min-height: 0; scale: calc(1 - var(--sortie, 0) * .07); border-radius: calc(var(--sortie, 0) * 40px); }
-  .hero-disque { scale: calc(1 + var(--sortie, 0) * 2.4); translate: 0 calc(var(--sortie, 0) * 16vmin); opacity: calc(.07 + var(--sortie, 0) * .09); }
-  .hero-haut { opacity: clamp(0, calc(1 - var(--sortie, 0) * 4), 1); translate: 0 calc(var(--sortie, 0) * -40px); }
-  .hero-bas { opacity: clamp(0, calc(1 - var(--sortie, 0) * 3), 1); translate: 0 calc(var(--sortie, 0) * -120px); }
-  .hero .titre {
-    transform-origin: 0 55%;
-    scale: calc(1 + var(--sortie, 0) * .5);
-    opacity: clamp(0, calc((.95 - var(--sortie, 0)) * 2.2), 1);
-    filter: blur(calc(max(0, var(--sortie, 0) - .45) * 18px));
-  }
-  .hero > canvas { opacity: clamp(0, calc(1.25 - var(--sortie, 0)), 1); }
+  .js .hero { position: sticky; top: 0; height: 100vh; height: 100svh; min-height: 0; }
+  /* Chaque élément de la scène a sa propre couche : le défilement ne fait que les déplacer / les fondre
+     (aucun recalcul de mise en page, aucun repeint). Les valeurs sont écrites par le script (initStoryScrolling). */
+  .js .hero, .js .hero-disque, .js .hero-haut, .js .hero-bas, .js .hero .titre, .js .hero > canvas { will-change: transform, opacity; }
+  .hero .titre { transform-origin: 0 55%; }
 
   /* Manifeste : la phrase s'allume mot à mot pendant qu'on défile (épinglée à l'écran) */
   .js .manifeste { height: 260vh; height: 260svh; }
@@ -484,14 +482,18 @@
   .js .mot-m.allume { color: var(--encre); }
 
   /* Les chapitres se déploient en suivant le défilement : --e va de 0 (hors écran) à 1 (en place) */
-  .js .chapitre .numero-chapitre .n { display: inline-block; transform-origin: 0 100%; scale: calc(1 + (1 - var(--e, 1)) * .9); }
-  .js .chapitre .bloc-corps { transform-origin: 50% 0; translate: 0 calc((1 - var(--e, 1)) * 70px); scale: calc(.93 + var(--e, 1) * .07); }
+  .js .chapitre .numero-chapitre .n { display: inline-block; transform-origin: 0 100%; }
+  .js .chapitre .bloc-corps { transform-origin: 50% 0; }
   @media (prefers-reduced-motion: reduce), print {
     .js .piste, .js .manifeste { height: auto; }
-    .js .hero { position: relative; height: auto; min-height: min(88svh, 820px); scale: none; border-radius: 0; }
+    .js .hero { position: relative; height: auto; min-height: min(88svh, 820px); }
     .js .manifeste-scene { position: static; height: auto; padding-top: 12vh; padding-bottom: 12vh; }
     .js .mot-m { color: var(--encre); }
-    .js .chapitre .numero-chapitre .n, .js .chapitre .bloc-corps { scale: none; translate: none; }
+    /* les valeurs écrites par le script sont neutralisées (!important l'emporte sur le style en ligne) */
+    .js .hero, .js .hero-disque, .js .hero-haut, .js .hero-bas, .js .hero .titre, .js .hero > canvas,
+    .js .chapitre .numero-chapitre .n, .js .chapitre .bloc-corps { scale: none !important; translate: none !important; filter: none !important; will-change: auto; }
+    .js .hero { border-radius: 0 !important; }
+    .js .hero-haut, .js .hero-bas, .js .hero .titre, .js .hero > canvas { opacity: 1 !important; }
   }
   /* trait de progression sous le numéro de chapitre : se remplit pendant la lecture du chapitre */
   .chapitre .numero-chapitre::after {
@@ -503,13 +505,15 @@
     .point-story.actif::after {
       content: ""; position: absolute; inset: -4px; border-radius: 50%; pointer-events: none;
       background: conic-gradient(var(--accent) calc(var(--p, 0) * 360deg), var(--filet) 0);
-      -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px));
       mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px));
     }
   }
   @media (max-width: 899px) {
     .point-story.actif::before { background: linear-gradient(90deg, var(--accent) calc(var(--p, 0) * 100%), var(--encre) 0); }
   }
+
+  /* Animations en boucle : mises en pause quand leur zone est hors écran (le script pose la classe .en-pause) */
+  .en-pause, .en-pause *, .en-pause *::before, .en-pause *::after { animation-play-state: paused !important; }
 
   /* ---------- Mouvement réduit : plus de boucles, de rotations ni de glissements, mais les fondus restent ---------- */
   @media (prefers-reduced-motion: reduce) {
@@ -864,9 +868,7 @@ const MOYENNE = { "-6h": "5m", "-24h": "15m", "-7d": "1h" };
 //   - FREQ_API : "" = points bruts (une mesure toutes les 30 s) ; sinon, une moyenne fine du serveur ;
 //   - FREQ_SECOURS : utilisée si le serveur refuse la requête sans "freq".
 // La moyenne affichée (MOYENNE ci-dessus) est ensuite recalculée ici, par la page.
-const CHAMP_AGE = "x_age_s";
-const ALIAS = { temp: "x_temp_pm", hum: "x_hum_pm" };   // champs de secours envoyés par la carte
-const FREQ_API = { "-6h": "", "-24h": "", "-7d": "5m" };
+const CHAMP_AGE = "x_age_s";const FREQ_API = { "-6h": "", "-24h": "", "-7d": "5m" };
 const FREQ_SECOURS = { "-6h": "1m", "-24h": "1m", "-7d": "5m" };
 const DUREE_PERIODE = { "-6h": 6 * 3600000, "-24h": 24 * 3600000, "-7d": 7 * 86400000 };
 const AGE_MAX_S = 30 * 86400;     // un âge plus grand est jugé invalide (champ ignoré)
@@ -1134,10 +1136,7 @@ function construireSerie(points, periode, maintenant) {
     const c = cases[i] || (cases[i] = { somme: {}, nb: {}, dernier: 0 });
     c.dernier = Math.max(c.dernier, t);
     noms.forEach(k => {
-      // La carte envoie la température et l'humidité du NextPM sous x_temp_pm / x_hum_pm :
-      // on s'en sert quand le champ standard (temp / hum) n'existe pas.
-      const v = estNombre(p[k]) ? p[k] : (ALIAS[k] && estNombre(p[ALIAS[k]]) ? p[ALIAS[k]] : null);
-      if (v !== null) { c.somme[k] = (c.somme[k] || 0) + v; c.nb[k] = (c.nb[k] || 0) + 1; }
+      if (estNombre(p[k])) { c.somme[k] = (c.somme[k] || 0) + p[k]; c.nb[k] = (c.nb[k] || 0) + 1; }
     });
   });
   const serie = cases.map((c, i) => {
@@ -1202,15 +1201,18 @@ function degrade(chart, couleur) {
 }
 
 // Dessine (ou redessine) un graphe avec une courbe par champ. Renvoie le nombre de courbes.
-function dessiner(idCanvas, serie, champs, animer) {
+function detruireGraphe(idCanvas) {
   if (graphes[idCanvas]) {
     graphes[idCanvas].destroy();
     delete graphes[idCanvas];
   }
-  if (typeof Chart === "undefined") return 0;
+}
+
+function dessiner(idCanvas, serie, champs, animer) {
+  if (typeof Chart === "undefined") { detruireGraphe(idCanvas); return 0; }
   // seulement les champs réellement mesurés
   const utiles = champs.filter(c => serie.some(r => r.p && estNombre(r.p[c])));
-  if (utiles.length === 0) return 0;
+  if (utiles.length === 0) { detruireGraphe(idCanvas); return 0; }
   const seul = utiles.length === 1;
   const etroit = window.innerWidth < 560;
 
@@ -1238,12 +1240,26 @@ function dessiner(idCanvas, serie, champs, animer) {
     };
   });
 
+  // Mise à jour automatique (toutes les minutes) : on remplace seulement les données du graphe existant.
+  // Avant, les 3 graphes étaient détruits puis reconstruits entièrement, ce qui figeait la page un instant,
+  // y compris en plein défilement.
+  const signature = utiles.join(",") + "|" + etroit + "|" + document.getElementById("afficher-seuils").checked;
+  const ancien = graphes[idCanvas];
+  if (ancien && !animer && ancien.__signature === signature) {
+    ancien.__courtes = courtes;
+    ancien.data.labels = longues;
+    ancien.data.datasets.forEach((d, i) => { d.data = jeux[i].data; });
+    ancien.update("none");
+    return utiles.length;
+  }
+  detruireGraphe(idCanvas);
+
   // Un axe vertical par unité (température à gauche, humidité à droite)
   const echelles = {
     x: {
       grid: { display: false },
       border: { color: ENCRE, width: 2 },
-      ticks: { autoSkip: true, maxTicksLimit: etroit ? 4 : 7, maxRotation: 0, callback: valeur => courtes[valeur] },
+      ticks: { autoSkip: true, maxTicksLimit: etroit ? 4 : 7, maxRotation: 0, callback(valeur) { const c = this.chart && this.chart.__courtes; return (c || courtes)[valeur]; } },
     },
   };
   utiles.forEach(c => {
@@ -1281,6 +1297,9 @@ function dessiner(idCanvas, serie, champs, animer) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      // Pas de « touchmove » : un doigt qui fait défiler la page par-dessus un graphe ne le redessine plus à chaque
+      // pixel (le toucher simple affiche toujours l'info-bulle).
+      events: ["mousemove", "mouseout", "click", "touchstart"],
       animation: animer ? { duration: 1200, easing: "easeOutQuart" } : false,
       interaction: { mode: "index", intersect: false },
       scales: echelles,
@@ -1309,6 +1328,8 @@ function dessiner(idCanvas, serie, champs, animer) {
     },
     plugins: [creerPluginSeuils(lignes)],
   });
+  graphes[idCanvas].__signature = signature;
+  graphes[idCanvas].__courtes = courtes;
   return utiles.length;
 }
 
@@ -1788,6 +1809,13 @@ function creerNuage() {
     { r: 4.2, alpha: 0.3,  agitation: 0.4 },
   ];
   const REBOND = 0.85;     // part de vitesse conservée après un choc contre un bord
+  // Inertie : un grain lancé par le curseur doit glisser longtemps avant de s'arrêter.
+  // Avant : 0,96 par image (la moitié de la vitesse perdue en 0,3 s) et une lueur éteinte en 0,2 s,
+  // donc tout était figé moins d'une seconde après le geste.
+  const FROTTEMENT = 0.985;         // part de vitesse conservée à chaque image (calculée pour 60 images/s)
+  const FROTTEMENT_RAPIDE = 0.94;   // freinage en plus au-dessus de 4 px/image : pas de grains « fusées »
+  const PERSISTANCE_LUEUR = 0.965;  // la lueur d'un grain touché s'éteint doucement
+  const AGITATION = 0.14;           // agitation brownienne : réduite (0,22 avant) car le frottement plus faible l'amplifie
   let larg = 0, haut = 0;
   let grains = [];
   let vivants = 0;
@@ -1801,6 +1829,15 @@ function creerNuage() {
   let precedent = 0;
   let rvb = "14,27,36";
   let compte = 0;
+  let rect = null, rectLu = 0;
+
+  // Position du bandeau à l'écran. Relue au plus ~10 fois par seconde : la relire à chaque image, juste après
+  // les écritures du défilement, forçait le navigateur à recalculer les styles en plein scroll.
+  function rectHero() {
+    const t = performance.now();
+    if (!rect || t - rectLu > 100) { rect = hero.getBoundingClientRect(); rectLu = t; }
+    return rect;
+  }
 
   function ajusterCible() {
     cible = Math.max(28, Math.round(base * Math.min(1, larg / 900 + 0.45)));
@@ -1840,7 +1877,7 @@ function creerNuage() {
   // Position lissée du curseur + vitesse : un geste rapide repousse plus fort et plus loin.
   function suivreCurseur(dt) {
     if (!pointeur) { curseur = null; return false; }
-    const r = hero.getBoundingClientRect();   // relu à chaque image : reste juste quand la page défile
+    const r = rectHero();
     const cx = pointeur.x - r.left, cy = pointeur.y - r.top;
     if (!curseur) curseur = { x: cx, y: cy, vx: 0, vy: 0, vit: 0 };
     const k = 1 - Math.exp(-0.35 * dt);
@@ -1883,27 +1920,30 @@ function creerNuage() {
     const actif = suivreCurseur(dt);
     const rayon = actif ? 150 + curseur.vit * 4 : 0;     // 150 px au repos, jusqu'à 270 px en mouvement rapide
     const force = actif ? 0.45 + curseur.vit * 0.04 : 0;
-    const frottement = Math.pow(0.96, dt);
+    const frottement = Math.pow(FROTTEMENT, dt);
+    const freinRapide = Math.pow(FROTTEMENT_RAPIDE, dt);
+    const lueur = Math.pow(PERSISTANCE_LUEUR, dt);
     for (let i = grains.length - 1; i >= 0; i--) {
       const g = grains[i];
       g.a += (g.vivant ? 0.02 : -0.03) * dt;
       if (g.vivant && g.a > g.amax) g.a = g.amax;
       if (!g.vivant && g.a <= 0) { grains.splice(i, 1); continue; }
       // agitation aléatoire (mouvement brownien) + lente dérive
-      g.vx = g.vx * frottement + (Math.random() - 0.5) * 0.22 * g.ag * dt;
-      g.vy = g.vy * frottement + (Math.random() - 0.5) * 0.22 * g.ag * dt;
-      g.lum *= 0.92;
+      g.vx = g.vx * frottement + (Math.random() - 0.5) * AGITATION * g.ag * dt;
+      g.vy = g.vy * frottement + (Math.random() - 0.5) * AGITATION * g.ag * dt;
+      g.lum *= lueur;
       if (actif) {
         const ox = g.x - curseur.x, oy = g.y - curseur.y, d2 = ox * ox + oy * oy;
         if (d2 < rayon * rayon && d2 > 1) {
           const d = Math.sqrt(d2), p = 1 - d / rayon, f = p * p * force * dt;
-          g.vx += ox / d * f + curseur.vx * p * 0.05 * dt;   // repoussé, et entraîné dans le sillage
-          g.vy += oy / d * f + curseur.vy * p * 0.05 * dt;
+          g.vx += ox / d * f + curseur.vx * p * 0.08 * dt;   // repoussé, et entraîné dans le sillage
+          g.vy += oy / d * f + curseur.vy * p * 0.08 * dt;
           if (p > g.lum) g.lum = p;
         }
       }
       const v = Math.hypot(g.vx, g.vy);
       if (v > 12) { g.vx *= 12 / v; g.vy *= 12 / v; }
+      else if (v > 4) { g.vx *= freinRapide; g.vy *= freinRapide; }
       g.x += (g.vx + g.dx) * dt;
       g.y += (g.vy + g.dy) * dt;
       // Rebond sur les bords : la vitesse ET la dérive changent de sens, sinon le grain resterait collé au mur.
@@ -1920,7 +1960,7 @@ function creerNuage() {
     if (!tourne) return;
     const dt = precedent ? Math.min(3, (temps - precedent) / 16.667) : 1;
     precedent = temps;
-    if (++compte % 8 === 1) lireCouleur();
+    if (++compte % 20 === 1) lireCouleur();
     avancer(dt);
     dessiner();
     image = requestAnimationFrame(boucle);
@@ -1950,7 +1990,8 @@ function creerNuage() {
   }
 
   function mesurer() {
-    const ratio = Math.min(window.devicePixelRatio || 1, 2);
+    const tactile = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+    const ratio = Math.min(window.devicePixelRatio || 1, tactile ? 1.5 : 2);   // téléphone : canvas moins lourd, les grains sont des points flous de toute façon
     larg = hero.clientWidth;
     haut = hero.clientHeight;
     canvas.width = Math.max(1, Math.round(larg * ratio));
@@ -2085,39 +2126,16 @@ function actualiserChapitres() {
   majDefilement();
 }
 
-// Chapitre en cours = le dernier dont le haut a passé la ligne des 40 % de l'écran.
-function calculerActif(sections) {
-  const doc = document.documentElement;
-  if (window.scrollY + window.innerHeight >= doc.scrollHeight - 4 && sections.length > 1) return sections[sections.length - 1].id;
-  const ligne = window.innerHeight * 0.4;
-  let id = sections[0].id;
-  sections.forEach(s => { if (s.getBoundingClientRect().top <= ligne) id = s.id; });
-  return id;
-}
-
-// Avancement de la lecture dans chaque section (0 à 1) : alimente le trait sous le numéro du chapitre
-// et l'anneau (ordinateur) ou la barre (téléphone) du sommaire.
-function majProgres(sections) {
-  const vh = window.innerHeight, ligne = vh * 0.4, fixe = reduit();
-  const piste = document.getElementById("piste");
-  sections.forEach((s, i) => {
-    const hero = i === 0 && piste;
-    const r = (hero ? piste : s).getBoundingClientRect();
-    const h = Math.max(1, hero ? piste.offsetHeight - s.offsetHeight : r.height);
-    const brut = i === 0 ? -r.top / h : (ligne - r.top) / h;
-    const p = Math.min(1, Math.max(0, brut)).toFixed(3);
-    const e = (i === 0 || fixe) ? "1" : Math.min(1, Math.max(0, (vh - r.top) / (vh * 0.55))).toFixed(3);
-    const cle = p + "|" + e;
-    if (s.__p === cle) return;
-    s.__p = cle;
-    if (i > 0) { s.style.setProperty("--p", p); s.style.setProperty("--e", e); }
-    if (sommaire.liens[i]) sommaire.liens[i].style.setProperty("--p", p);
-  });
-}
-
+// Moteur de défilement.
+// Avant : à chaque image, le script relisait la position de chaque section (getBoundingClientRect) en alternant
+// avec des écritures de styles, ce qui forçait le navigateur à recalculer la mise en page plusieurs fois par image.
+// Maintenant : la géométrie est mesurée UNE fois (au chargement, au redimensionnement, quand la page change de
+// hauteur), puis chaque image ne lit que window.scrollY, calcule, et écrit en dernier, uniquement des
+// transform / opacity sur les éléments concernés (le navigateur les traite sur le processeur graphique).
 function initStoryScrolling() {
   const barre = document.getElementById("progression-remplissage");
   const hero = document.getElementById("hero");
+  const piste = document.getElementById("piste");
   const manifeste = document.getElementById("manifeste");
   const texteM = document.getElementById("manifeste-texte");
   const motsM = [];
@@ -2132,46 +2150,174 @@ function initStoryScrolling() {
       motsM.push(m);
     });
   }
+
+  const scene = hero ? {
+    disque: hero.querySelector(".hero-disque"),
+    haut: hero.querySelector(".hero-haut"),
+    bas: hero.querySelector(".hero-bas"),
+    titre: hero.querySelector(".titre"),
+    canvas: hero.querySelector("canvas"),
+  } : null;
+  // Le flou du titre est coûteux : réservé aux ordinateurs (souris), pas aux écrans tactiles.
+  const flou = !!(window.matchMedia && window.matchMedia("(hover: hover) and (pointer: fine)").matches);
+  const borne = v => (v < 0 ? 0 : v > 1 ? 1 : v);
+
+  const memo = { barre: -1, scene: -1 };
+  const fiches = new WeakMap();   // éléments utiles de chaque chapitre, cherchés une seule fois
+  let geo = null;
+  let geoSale = true;             // vrai : la géométrie doit être remesurée à la prochaine image
   let enAttente = false;
+  let largeurRef = window.innerWidth, hauteurRef = window.innerHeight;
 
-  function actualiser() {
-    enAttente = false;
-    const doc = document.documentElement;
-    const maximum = doc.scrollHeight - window.innerHeight;
-    const y = window.scrollY;
-    if (barre) barre.style.width = (maximum > 0 ? Math.min(100, Math.max(0, y / maximum * 100)) : 0) + "%";
-
-    // Bandeau épinglé : --sortie (0 → 1) pilote toute la scène en CSS.
-    if (hero) {
-      const piste = document.getElementById("piste");
-      const longueur = piste ? piste.offsetHeight - hero.offsetHeight : 0;
-      const p = (reduit() || longueur <= 0) ? 0 : Math.min(1, Math.max(0, -piste.getBoundingClientRect().top / longueur));
-      const v = p.toFixed(3);
-      if (hero.__s !== v) { hero.__s = v; hero.style.setProperty("--sortie", v); }
+  function fiche(section) {
+    let f = fiches.get(section);
+    if (!f) {
+      f = {
+        el: section,
+        numero: section.querySelector(".numero-chapitre"),
+        n: section.querySelector(".numero-chapitre .n"),
+        corps: section.querySelector(".bloc-corps"),
+        cle: "", anime: false, top: 0, h: 1,
+      };
+      fiches.set(section, f);
     }
+    return f;
+  }
+
+  // Seul endroit qui lit la mise en page. Toutes les positions sont converties en coordonnées de la page.
+  function mesurer() {
+    const y0 = window.scrollY;
+    const hautDe = e => e.getBoundingClientRect().top + y0;
+    geo = {
+      doc: document.documentElement.scrollHeight,
+      pisteTop: piste ? hautDe(piste) : 0,
+      pisteH: piste ? piste.offsetHeight : 0,
+      heroH: hero ? hero.offsetHeight : 0,
+      manifTop: manifeste ? hautDe(manifeste) : 0,
+      manifH: manifeste ? manifeste.offsetHeight : 0,
+      secs: sommaire.sections.map((s, i) => {
+        const f = fiche(s);
+        if (i > 0) { f.top = hautDe(s); f.h = Math.max(1, s.offsetHeight); }
+        return f;
+      }),
+    };
+    largeurRef = window.innerWidth;
+    hauteurRef = window.innerHeight;
+  }
+
+  // Bandeau épinglé : p (0 → 1) pilote toute la scène. Une écriture par élément, jamais de lecture.
+  function ecrireScene(p) {
+    hero.style.scale = (1 - p * 0.07).toFixed(4);
+    hero.style.borderRadius = p > 0.001 ? (p * 40).toFixed(1) + "px" : "0px";
+    if (!scene) return;
+    if (scene.disque) {
+      scene.disque.style.scale = (1 + p * 2.4).toFixed(3);
+      scene.disque.style.translate = "0 " + (p * 16).toFixed(2) + "vmin";
+      scene.disque.style.opacity = (0.07 + p * 0.09).toFixed(3);
+    }
+    if (scene.haut) {
+      scene.haut.style.opacity = borne(1 - p * 4).toFixed(3);
+      scene.haut.style.translate = "0 " + (p * -40).toFixed(1) + "px";
+    }
+    if (scene.bas) {
+      scene.bas.style.opacity = borne(1 - p * 3).toFixed(3);
+      scene.bas.style.translate = "0 " + (p * -120).toFixed(1) + "px";
+    }
+    if (scene.titre) {
+      scene.titre.style.scale = (1 + p * 0.5).toFixed(4);
+      scene.titre.style.opacity = borne((0.95 - p) * 2.2).toFixed(3);
+      scene.titre.style.filter = (flou && p > 0.45) ? "blur(" + ((p - 0.45) * 18).toFixed(1) + "px)" : "";
+    }
+    if (scene.canvas) scene.canvas.style.opacity = borne(1.25 - p).toFixed(3);
+  }
+
+  // Un chapitre se déploie en entrant (e : 0 → 1) ; p = avancement de sa lecture (trait sous le numéro).
+  function ecrireChapitre(f, p, e) {
+    if (f.numero) f.numero.style.setProperty("--p", p);
+    const anime = e < 1;
+    if (f.n) f.n.style.scale = anime ? (1 + (1 - e) * 0.9).toFixed(3) : "";
+    if (f.corps) {
+      f.corps.style.translate = anime ? "0 " + ((1 - e) * 70).toFixed(1) + "px" : "";
+      f.corps.style.scale = anime ? (0.93 + e * 0.07).toFixed(4) : "";
+      if (f.anime !== anime) { f.anime = anime; f.corps.style.willChange = anime ? "transform" : ""; }
+    }
+  }
+
+  function image() {
+    enAttente = false;
+    if (geoSale) { mesurer(); geoSale = false; }
+    const g = geo, y = window.scrollY, vh = window.innerHeight, fixe = reduit();   // innerHeight : lecture sans coût, toujours à jour
+
+    // Barre de progression de la page
+    const maximum = g.doc - vh;
+    const pb = maximum > 0 ? Math.round(borne(y / maximum) * 2000) / 2000 : 0;
+    if (barre && pb !== memo.barre) { memo.barre = pb; barre.style.transform = "scaleX(" + pb + ")"; }
+
+    // Bandeau
+    const longueur = g.pisteH - g.heroH;
+    const ps = (fixe || longueur <= 0) ? 0 : borne((y - g.pisteTop) / longueur);
+    const pq = Math.round(ps * 1000) / 1000;
+    if (hero && pq !== memo.scene) { memo.scene = pq; ecrireScene(pq); }
 
     // Manifeste : les mots s'allument un à un.
     if (motsM.length) {
-      const r = manifeste.getBoundingClientRect();
-      const q = reduit() ? 1 : Math.min(1, Math.max(0, (-r.top / Math.max(1, r.height - window.innerHeight) - 0.05) / 0.75));
+      const q = fixe ? 1 : borne(((y - g.manifTop) / Math.max(1, g.manifH - vh) - 0.05) / 0.75);
       const n = Math.round(q * motsM.length);
       if (n !== allumes) { allumes = n; motsM.forEach((m, i) => m.classList.toggle("allume", i < n)); }
     }
 
-    if (sommaire.sections.length > 1) {
-      const id = calculerActif(sommaire.sections);
+    // Chapitres : chapitre en cours (le dernier dont le haut a passé la ligne des 40 % de l'écran), sommaire, progression.
+    const secs = g.secs;
+    if (secs.length > 1) {
+      const ligne = vh * 0.4;
+      let id = secs[0].el.id;
+      if (y + vh >= g.doc - 4) id = secs[secs.length - 1].el.id;
+      else for (let i = 1; i < secs.length; i++) if (secs[i].top - y <= ligne) id = secs[i].el.id;
       if (id !== sommaire.actif) { sommaire.actif = id; appliquerActif(id); }
-      majProgres(sommaire.sections);
+
+      for (let i = 0; i < secs.length; i++) {
+        const f = secs[i];
+        let p, e = 1;
+        if (i === 0) {
+          p = longueur > 0 ? borne((y - g.pisteTop) / Math.max(1, longueur)) : 0;
+        } else {
+          const haut = f.top - y;
+          p = borne((ligne - haut) / f.h);
+          if (!fixe) e = borne((vh - haut) / (vh * 0.55));
+        }
+        p = Math.round(p * 100) / 100;      // pas de 1 % : inutile de repeindre plus souvent
+        e = Math.round(e * 200) / 200;
+        const cle = p + "|" + e;
+        if (f.cle === cle) continue;
+        f.cle = cle;
+        if (i > 0) ecrireChapitre(f, p, e);
+        const lien = sommaire.liens[i];
+        if (lien) lien.style.setProperty("--p", p);
+      }
     }
   }
-  majDefilement = actualiser;
 
+  const planifier = () => { if (!enAttente) { enAttente = true; requestAnimationFrame(image); } };
+  majDefilement = () => { geoSale = true; planifier(); };
+
+  // Filet de sécurité : une dernière image 120 ms après le dernier événement de défilement, pour que l'état final
+  // (chapitre actif, bandeau) soit toujours juste, même si le navigateur n'envoie pas d'événement à l'arrêt.
+  let minuterieFin = 0;
   window.addEventListener("scroll", () => {
-    if (!enAttente) { enAttente = true; requestAnimationFrame(actualiser); }
+    planifier();
+    clearTimeout(minuterieFin);
+    minuterieFin = setTimeout(planifier, 120);
   }, { passive: true });
-  window.addEventListener("resize", actualiser);
-  if ("ResizeObserver" in window) new ResizeObserver(actualiser).observe(document.body);   // la page grandit quand les chapitres apparaissent
-  actualiser();
+  window.addEventListener("resize", () => {
+    // Sur téléphone, la barre d'adresse qui se range modifie la hauteur pendant le défilement :
+    // on ne remesure que si la largeur change ou si la hauteur change vraiment.
+    if (window.innerWidth !== largeurRef || Math.abs(window.innerHeight - hauteurRef) > 160) { geoSale = true; planifier(); }
+  });
+  if ("ResizeObserver" in window) {
+    new ResizeObserver(() => { geoSale = true; planifier(); }).observe(document.body);   // la page grandit quand les chapitres apparaissent
+  }
+  geoSale = true;
+  image();
 }
 
 // Les éléments apparaissent en glissant quand on arrive dessus en défilant.
@@ -2249,6 +2395,15 @@ async function rafraichir() {
   }
 }
 
+// Le bandeau et la figure des tailles de particules ont des animations en boucle : hors écran, on les met en pause.
+function pauseHorsEcran() {
+  if (!("IntersectionObserver" in window)) return;
+  const observateur = new IntersectionObserver(entrees => {
+    entrees.forEach(en => en.target.classList.toggle("en-pause", !en.isIntersecting));
+  });
+  [document.getElementById("hero"), document.querySelector(".tailles")].forEach(e => { if (e) observateur.observe(e); });
+}
+
 function initControles() {
   document.querySelectorAll(".periode").forEach(bouton => {
     bouton.addEventListener("click", () => {
@@ -2281,6 +2436,7 @@ function demarrer() {
     if (curseur) curseur.classList.add("pret");   // le curseur ne glisse qu'après sa mise en place
   });
   securise(initTampon);
+  securise(pauseHorsEcran);
   securise(() => { nuage = creerNuage(); if (nuage) nuage.init(); });
   securise(() => {
     document.getElementById("frequence").textContent = libelleFrequence(RAFRAICHISSEMENT_MS);
@@ -2301,9 +2457,13 @@ function demarrer() {
 
   let minuterie = 0;
   let etroitAvant = window.innerWidth < 560;
+  let largeurAvant = window.innerWidth;
   window.addEventListener("resize", () => {
     clearTimeout(minuterie);
     minuterie = setTimeout(() => {
+      // La barre d'adresse d'un téléphone change seulement la hauteur : rien de tout cela ne dépend de la hauteur.
+      if (window.innerWidth === largeurAvant) return;
+      largeurAvant = window.innerWidth;
       securise(ajusterVerdict);
       securise(placerCurseur);
       securise(ajusterTampon);
