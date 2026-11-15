@@ -1048,12 +1048,12 @@
 window.__pret = true;   // dit à la page que le script a bien démarré (voir le <head>)
 
 // =====================================================================
-// 1) RÉGLAGES
+// 1) RÉGLAGES : seule la clé est obligatoire
 // =====================================================================
-const CLE = "CLE-RETIREE-DE-L-HISTORIQUE"; // clé du groupe (32 caractères)
+const CLE = "CLE-RETIREE-DE-L-HISTORIQUE";            // clé du groupe (32 caractères)
 const DEVICE_ID = "";      // adresse MAC d'une carte, ou "" pour toutes
 const URL_API = "https://api.aircarto.fr/iut-amu/data";
-const RAFRAICHISSEMENT_MS = 5 * 60 * 1000;   // mise à jour toutes les 5 minutes
+const RAFRAICHISSEMENT_MS = 5 * 60 * 1000;   // mise à jour toutes les 5 minutes (le serveur n'accepte pas plus souvent)
 
 // Une moyenne par intervalle selon la période : assez de points pour une
 // courbe lisible, pas trop pour rester rapide.
@@ -2233,6 +2233,11 @@ function creerNuage() {
   // frottement : ~8 px/s pour PM1, ~15 px/s pour PM2.5, ~28 px/s pour PM10. Un grain qui touche le sol à faible vitesse
   // se dépose (il s'efface) et un autre naît ailleurs, au hasard : la répartition reste homogène au fil du temps.
   const GRAVITE = 0.0014;
+  // Collisions entre grains : chocs élastiques (masse ∝ surface). Détection par grille de cases : seuls les voisins
+  // proches sont comparés, donc le coût reste faible même avec plus de 600 grains.
+  const CELLULE = 16;       // px : plus grand que le plus gros diamètre de collision
+  const RESTITUTION = 0.9;  // part de la vitesse relative rendue par un choc (1 = parfaitement élastique)
+  let tete = new Int32Array(0), suiv = new Int32Array(0), colonnes = 0, lignes = 0;
   const AGITATION = 0.14;           // agitation brownienne : réduite (0,22 avant) car le frottement plus faible l'amplifie
   let larg = 0, haut = 0;
   let grains = [];
@@ -2278,6 +2283,9 @@ function creerNuage() {
       r: t.r * (0.8 + Math.random() * 0.5), amax: t.alpha, a: 0, ag: t.agitation, vivant: true, grav: 0,
     };
     grain.grav = GRAVITE * grain.r / 2.2;
+    grain.m = grain.r * grain.r;          // masse
+    grain.rc = grain.r * 1.2 + 1.5;       // rayon de collision (un peu plus large que le point dessiné)
+    grain.cx = -1; grain.cy = -1;
     if (plein) grain.a = grain.amax;
     return grain;
   }
@@ -2326,6 +2334,66 @@ function creerNuage() {
         const d = Math.sqrt(d2), f = (1 - d / R) * 4;
         g.vx += ox / d * f;
         g.vy += oy / d * f;
+      }
+    }
+  }
+
+  // Choc entre deux grains : on les écarte (proportionnellement à l'inverse de leur masse) puis on échange leurs
+  // vitesses le long de la ligne qui les joint. La dérive propre de chaque grain compte dans la vitesse d'approche.
+  function choc(a, b) {
+    const dx = a.x - b.x, dy = a.y - b.y;
+    const somme = a.rc + b.rc;
+    const d2 = dx * dx + dy * dy;
+    if (d2 >= somme * somme) return;
+    let d = Math.sqrt(d2), nx, ny;
+    if (d < 1e-4) { const t = Math.random() * 6.2832; nx = Math.cos(t); ny = Math.sin(t); d = 0; }
+    else { nx = dx / d; ny = dy / d; }
+    const ma = a.m, mb = b.m, mt = ma + mb;
+    const recouvrement = somme - d;
+    a.x += nx * recouvrement * mb / mt; a.y += ny * recouvrement * mb / mt;
+    b.x -= nx * recouvrement * ma / mt; b.y -= ny * recouvrement * ma / mt;
+    const vn = ((a.vx + a.dx) - (b.vx + b.dx)) * nx + ((a.vy + a.dy) - (b.vy + b.dy)) * ny;
+    if (vn < 0) {   // ils se rapprochent : choc
+      const J = -(1 + RESTITUTION) * vn / (1 / ma + 1 / mb);
+      a.vx += J / ma * nx; a.vy += J / ma * ny;
+      b.vx -= J / mb * nx; b.vy -= J / mb * ny;
+      const l = Math.min(1, -vn * 0.9);   // un choc un peu vif fait briller les deux grains
+      if (l > 0.12) { if (a.lum < l) a.lum = l; if (b.lum < l) b.lum = l; }
+    }
+    // les écarter ne doit pas les sortir du cadre
+    if (a.x < a.r) a.x = a.r; else if (a.x > larg - a.r) a.x = larg - a.r;
+    if (a.y < a.r) a.y = a.r; else if (a.y > haut - a.r) a.y = haut - a.r;
+    if (b.x < b.r) b.x = b.r; else if (b.x > larg - b.r) b.x = larg - b.r;
+    if (b.y < b.r) b.y = b.r; else if (b.y > haut - b.r) b.y = haut - b.r;
+  }
+
+  function collisions() {
+    const n = grains.length;
+    if (n < 2 || larg <= 0 || haut <= 0) return;
+    const cols = Math.max(1, Math.ceil(larg / CELLULE)), lig = Math.max(1, Math.ceil(haut / CELLULE));
+    if (cols !== colonnes || lig !== lignes) { colonnes = cols; lignes = lig; tete = new Int32Array(cols * lig); }
+    if (suiv.length < n) suiv = new Int32Array(n + 64);
+    tete.fill(-1);
+    for (let i = 0; i < n; i++) {   // chaque grain entre dans la liste de sa case
+      const g = grains[i];
+      if (!g.vivant || g.a < 0.15) { g.cx = -1; continue; }   // un grain qui apparaît ou s'efface ne gêne pas les autres
+      let cx = (g.x / CELLULE) | 0, cy = (g.y / CELLULE) | 0;
+      if (cx < 0) cx = 0; else if (cx >= cols) cx = cols - 1;
+      if (cy < 0) cy = 0; else if (cy >= lig) cy = lig - 1;
+      g.cx = cx; g.cy = cy;
+      const c = cy * cols + cx;
+      suiv[i] = tete[c];
+      tete[c] = i;
+    }
+    for (let i = 0; i < n; i++) {   // chaque paire est examinée une seule fois (j > i)
+      const g = grains[i];
+      if (g.cx < 0) continue;
+      const x0 = g.cx > 0 ? g.cx - 1 : 0, x1 = g.cx < cols - 1 ? g.cx + 1 : cols - 1;
+      const y0 = g.cy > 0 ? g.cy - 1 : 0, y1 = g.cy < lig - 1 ? g.cy + 1 : lig - 1;
+      for (let cy = y0; cy <= y1; cy++) {
+        for (let cx = x0; cx <= x1; cx++) {
+          for (let j = tete[cy * cols + cx]; j !== -1; j = suiv[j]) if (j > i) choc(g, grains[j]);
+        }
       }
     }
   }
@@ -2385,6 +2453,7 @@ function creerNuage() {
         else { g.vy = -Math.abs(g.vy) * REBOND; g.dy = -Math.abs(g.dy); if (g.lum < 0.3) g.lum = 0.3; }   // arrivé vite (geste) : rebondit
       }
     }
+    collisions();
   }
 
   function boucle(temps) {
