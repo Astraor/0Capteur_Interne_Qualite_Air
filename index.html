@@ -197,11 +197,6 @@
   @keyframes bat { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.5); } }
   @keyframes brillance { to { background-position: -200% 0; } }
   @keyframes fondu { from { opacity: 0; } to { opacity: 1; } }
-  @keyframes brownien {
-    0% { transform: translate(0, 0); } 20% { transform: translate(3px, -2px); }
-    40% { transform: translate(-2px, 3px); } 60% { transform: translate(2px, 2px); }
-    80% { transform: translate(-3px, -1px); } 100% { transform: translate(0, 0); }
-  }
 
   /* ---------- Barre de contrôle (reste collée en haut) ---------- */
   .barre { position: sticky; top: 0; z-index: 30; background: var(--fond); border-bottom: 2px solid var(--encre); }
@@ -218,6 +213,30 @@
   }
   .periode.actif { color: var(--fond); }
   @media (hover: hover) { .periode:not(.actif):hover { background: rgba(14, 27, 36, .08); } }
+  .periode[aria-expanded="true"]:not(.actif) { background: rgba(14, 27, 36, .12); }
+
+  /* Durée personnalisée : panneau sous la barre */
+  .perso { border-top: 1px solid var(--filet); }
+  .perso-int { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; padding-top: 10px; padding-bottom: 12px; }
+  .perso label { font-size: .85rem; font-weight: 600; }
+  .perso input, .perso select {
+    min-height: 40px; padding: 6px 10px;
+    border: 2px solid var(--encre); border-radius: 3px;
+    background: var(--fond); color: var(--encre);
+    font: 600 1rem/1.2 var(--mono);   /* 16 px : évite le zoom automatique de l'iPhone dans les champs */
+  }
+  .perso input { width: 5.5em; }
+  .perso select { font-family: var(--sans); font-size: .9rem; }
+  .perso input:focus-visible, .perso select:focus-visible { outline: 3px solid var(--cobalt); outline-offset: 2px; }
+  .perso-ok {
+    min-height: 40px; padding: 8px 18px;
+    border: 2px solid var(--encre); border-radius: 3px;
+    background: var(--encre); color: var(--fond);
+    font: 600 .85rem/1 var(--sans); font-stretch: 112%; cursor: pointer;
+  }
+  .perso-aide { flex-basis: 100%; margin: 0; font: 500 .75rem/1.4 var(--mono); color: var(--doux); }
+  .perso-aide.erreur { color: #9c1f17; font-weight: 600; }
+  @media (pointer: coarse) { .perso input, .perso select, .perso-ok { min-height: 44px; } }
 
   .option { display: inline-flex; align-items: center; gap: 12px; font-size: .9rem; font-weight: 500; cursor: pointer; -webkit-user-select: none; user-select: none; }
   .option-court, .court { display: none; }
@@ -387,7 +406,13 @@
   /* ---------- Graphes ---------- */
   .zone-graphe { position: relative; height: 340px; clip-path: inset(0 0 0 0); transition: clip-path 1.5s var(--courbe) .25s; }
   .js .bloc:not(.vu) .zone-graphe { clip-path: inset(0 100% 0 0); }
-  .zone-graphe canvas { display: block; }
+  /* Tactile : un glissement horizontal parcourt les points du graphe, un glissement vertical fait défiler la page.
+     Pas de sélection ni de menu contextuel quand on maintient le doigt appuyé. */
+  .zone-graphe canvas {
+    display: block; touch-action: pan-y;
+    -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none;
+    -webkit-user-select: none; user-select: none;
+  }
 
   /* ---------- Tableaux ---------- */
   .defile { overflow-x: auto; }
@@ -423,14 +448,17 @@
   /* Tailles comparées : 1 µm = 2 px */
   .tailles { margin: 22px 0 4px; display: flex; flex-wrap: wrap; gap: 18px 34px; align-items: flex-end; }
   .taille { display: grid; justify-items: center; gap: 4px; text-align: center; }
-  .taille .zone { height: 144px; display: grid; place-items: center; }
+  .taille .zone { position: relative; height: 144px; min-width: 112px; display: grid; place-items: center; }
+  /* Le script dessine alors le point et sa traînée sur un canvas ; le point fixe du HTML sert de repli. */
+  .taille .zone canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .taille .zone.anime .rond { opacity: 0; }
   .taille b { font-size: .82rem; font-weight: 700; }
   .taille small { font: 500 .72rem/1 var(--mono); color: var(--doux); }
   .rond { display: block; border-radius: 50%; background: var(--encre); }
   .rond.cheveu { width: 140px; height: 140px; background: none; border: 2px solid var(--encre); }
   .rond.pm10 { width: 20px; height: 20px; }
-  .rond.pm25 { width: 5px; height: 5px; background: var(--cobalt); animation: brownien 1.9s steps(1, end) infinite; }
-  .rond.pm1 { width: 2px; height: 2px; background: var(--cobalt); animation: brownien 1.3s steps(1, end) infinite reverse; }
+  .rond.pm25 { width: 5px; height: 5px; background: var(--cobalt); }
+  .rond.pm1 { width: 2px; height: 2px; background: var(--cobalt); }
   .tailles figcaption { flex-basis: 100%; font-size: .78rem; color: var(--doux); }
 
   /* ---------- Pied de page ---------- */
@@ -438,6 +466,15 @@
   .pied-int { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 20px 40px; }
   .pied p { margin: 0 0 6px; max-width: 62ch; font-size: .88rem; color: rgba(242, 244, 240, .78); }
   .pied :focus-visible { outline-color: #fff; }
+  .pied-texte { flex: 1 1 560px; min-width: 0; }
+  .pied-donnees { margin: 0 0 18px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px 28px; max-width: 86ch; }
+  .pied-donnees dt { margin-top: 12px; font: 600 .7rem/1.4 var(--mono); letter-spacing: .07em; text-transform: uppercase; color: rgba(242, 244, 240, .6); }
+  .pied-donnees dd { margin: 0; font-size: .88rem; color: rgba(242, 244, 240, .82); }
+  @media (min-width: 700px) {
+    .pied-donnees { grid-template-columns: 130px minmax(0, 1fr); }
+    .pied-donnees dt, .pied-donnees dd { margin-top: 0; padding: 9px 0; border-top: 1px solid rgba(242, 244, 240, .16); }
+    .pied-donnees dt { padding-top: 11px; }
+  }
   .haut { font-size: .85rem; font-weight: 700; font-stretch: 115%; text-decoration: none; border-bottom: 2px solid currentColor; padding-bottom: 3px; }
 
   /* ---------- Petits écrans ---------- */
@@ -458,6 +495,8 @@
     .hero-bas { gap: 24px; }
   }
   @media (pointer: coarse) { .periode { min-height: 44px; } }
+  @media (max-width: 380px) { .periode { padding: 8px 9px; } }
+  @media (max-width: 340px) { .barre-int { flex-wrap: wrap; } }
 
   /* ---------- Story scrolling : mouvements liés au défilement ---------- */
   /* Le bandeau reste épinglé pendant ~130 % d'écran de défilement. --sortie (0 → 1) orchestre la scène :
@@ -519,7 +558,7 @@
   @media (prefers-reduced-motion: reduce) {
     html { scroll-behavior: auto; }
     .hero-disque, .tampon svg, .tampon-point, .statut .point::after, .descendre span,
-    .rond.pm25, .rond.pm1, .squelette i, .mot.attente #verdict-lettres { animation: none; }
+    .squelette i, .mot.attente #verdict-lettres { animation: none; }
     .lettre { animation: fondu .6s ease both; animation-delay: calc(var(--i, 0) * 30ms + 100ms); }
     .apparait { animation: fondu .7s ease both; animation-delay: calc(var(--d, 0) * 90ms + 100ms); }
     .souligne.dessine path { animation: none; stroke-dashoffset: 0; }
@@ -625,6 +664,8 @@
       <button type="button" class="periode actif" data-periode="-24h" aria-label="24 heures" aria-pressed="true">24<span class="long"> heures</span><span class="court"> h</span></button>
 
       <button type="button" class="periode" data-periode="-7d" aria-label="7 jours" aria-pressed="false">7<span class="long"> jours</span><span class="court"> j</span></button>
+
+      <button type="button" class="periode" id="bouton-perso" data-periode="perso" aria-label="Durée personnalisée" aria-pressed="false" aria-expanded="false" aria-controls="perso"><span id="perso-texte">Perso</span></button>
     </div>
 
     <label class="option">
@@ -634,6 +675,20 @@
       <span class="option-court" aria-hidden="true">Seuils</span>
     </label>
   </div>
+
+  <form class="perso" id="perso" aria-label="Durée personnalisée" novalidate hidden>
+    <div class="conteneur perso-int">
+      <label for="perso-n">Afficher les</label>
+      <input id="perso-n" type="number" inputmode="decimal" min="0" step="any" value="3" autocomplete="off">
+      <select id="perso-u" aria-label="Unité de la durée">
+        <option value="m">dernières minutes</option>
+        <option value="h" selected>dernières heures</option>
+        <option value="d">derniers jours</option>
+      </select>
+      <button type="submit" class="perso-ok">Afficher</button>
+      <p class="perso-aide" id="perso-aide" role="status"></p>
+    </div>
+  </form>
 </div>
 
 <main class="conteneur">
@@ -765,7 +820,7 @@
             <div class="taille"><div class="zone"><span class="rond pm10"></span></div><b>PM10</b><small>10 µm</small></div>
             <div class="taille"><div class="zone"><span class="rond pm25"></span></div><b>PM2.5</b><small>2,5 µm</small></div>
             <div class="taille"><div class="zone"><span class="rond pm1"></span></div><b>PM1</b><small>1 µm</small></div>
-            <figcaption>Diamètres comparés, à l'échelle.</figcaption>
+            <figcaption>Diamètres comparés, à l'échelle. Les trajets sont illustratifs : plus une particule est fine, plus elle se laisse agiter.</figcaption>
           </figure>
         </div>
       </div>
@@ -835,11 +890,41 @@
 
 <footer class="pied">
   <div class="conteneur pied-int">
-    <div>
-      <p>Données : serveur AirCarto. Graphes : Chart.js. Mise à jour automatique <span id="frequence">toutes les minutes</span>.</p>
+    <div class="pied-texte">
+      <dl class="pied-donnees">
+        <dt>Source</dt>
+        <dd>Capteur de qualité de l'air, qui envoie ses mesures au serveur AirCarto (api.aircarto.fr), environ toutes les 30&nbsp;secondes.</dd>
+
+        <dt>Mesures</dt>
+        <dd>Particules fines PM1, PM2.5 et PM10 (µg/m³), température (°C), humidité relative (%) et CO₂ (ppm).</dd>
+
+        <dt>Traitement</dt>
+        <dd>
+          Chaque mesure est replacée à son heure réelle : le serveur la date à sa réception, et après une coupure la carte
+          indique l'âge des mesures gardées en mémoire. La page en fait ensuite la moyenne par tranche de temps
+          (5&nbsp;min sur 6&nbsp;h, 15&nbsp;min sur 24&nbsp;h, 1&nbsp;h sur 7&nbsp;jours&nbsp;; pour une durée personnalisée, le pas est
+          choisi pour garder environ 180 points au plus). Un trou dans une courbe signifie qu'aucune mesure n'a été reçue.
+        </dd>
+
+        <dt>Actualisation</dt>
+        <dd>
+          Automatique <span id="frequence">toutes les 5 minutes</span> (limite imposée par le serveur).
+          Dernière actualisation de la page&nbsp;: <span id="pied-maj">—</span>.
+        </dd>
+
+        <dt>Niveaux</dt>
+        <dd>
+          Seuils de l'OMS (2021) pour les particules et du HCSP pour le CO₂, détaillés dans «&nbsp;Comprendre les mesures&nbsp;».
+          Capteur à bas coût&nbsp;: les valeurs sont indicatives et n'ont pas de valeur réglementaire.
+        </dd>
+
+        <dt>Outils</dt>
+        <dd>Graphes&nbsp;: Chart.js 4.4.1. Polices&nbsp;: Archivo et Chivo Mono (Google Fonts).</dd>
+      </dl>
+
       <p>Projet réalisé par Gabriel, Simon, Guillaume et Titouan.</p>
     </div>
-    <a class="haut" href="#hero">Haut de page <span aria-hidden="true">↑</span></a>
+    <a class="haut" href="#piste">Haut de page <span aria-hidden="true">↑</span></a>
   </div>
 </footer>
 
@@ -853,7 +938,7 @@ window.__pret = true;   // dit à la page que le script a bien démarré (voir l
 const CLE = "CLE-RETIREE-DE-L-HISTORIQUE";            // clé du groupe (32 caractères)
 const DEVICE_ID = "";      // adresse MAC d'une carte, ou "" pour toutes
 const URL_API = "https://api.aircarto.fr/iut-amu/data";
-const RAFRAICHISSEMENT_MS = 60 * 1000;   // mise à jour toutes les minutes
+const RAFRAICHISSEMENT_MS = 5 * 60 * 1000;   // mise à jour toutes les 5 minutes (le serveur n'accepte pas plus souvent)
 
 // Une moyenne par intervalle selon la période : assez de points pour une
 // courbe lisible, pas trop pour rester rapide.
@@ -871,6 +956,13 @@ const MOYENNE = { "-6h": "5m", "-24h": "15m", "-7d": "1h" };
 const CHAMP_AGE = "x_age_s";const FREQ_API = { "-6h": "", "-24h": "", "-7d": "5m" };
 const FREQ_SECOURS = { "-6h": "1m", "-24h": "1m", "-7d": "5m" };
 const DUREE_PERIODE = { "-6h": 6 * 3600000, "-24h": 24 * 3600000, "-7d": 7 * 86400000 };
+
+// Durée personnalisée (bouton « Perso ») : bornes acceptées, en minutes.
+const PERSO_MIN = 5;
+const PERSO_MAX = 7 * 24 * 60;
+// Pour une durée personnalisée, la moyenne affichée prend le plus fin de ces pas qui donne au plus POINTS_MAX points.
+const PAS_AFFICHAGE = ["1m", "2m", "5m", "10m", "15m", "30m", "1h", "2h", "3h", "6h"];
+const POINTS_MAX = 180;
 const AGE_MAX_S = 30 * 86400;     // un âge plus grand est jugé invalide (champ ignoré)
 const SEUIL_REJOUE_S = 120;       // au-delà, la mesure est comptée comme « rejouée après une coupure »
 
@@ -928,6 +1020,8 @@ let cache = null;              // dernières données reçues : { periode, point
 let numeroRequete = 0;         // pour ignorer une réponse arrivée trop tard
 let animerProchain = true;     // les graphes ne s'animent qu'au 1er affichage et au changement de période
 let derniereMaj = 0;
+let tDerniere = 0;             // heure de la mesure la plus récente affichée (0 = rien à afficher)
+let pasAffiche = 0;            // pas de la moyenne affichée, en ms
 let verdictAffiche = null;     // évite de rejouer l'animation du verdict quand il ne change pas
 let nuage = null;              // les grains de poussière du bandeau
 let ajusterTampon = function () {};
@@ -942,6 +1036,14 @@ function reglerChart() {
   Chart.defaults.font.family = POLICE_SANS;
   Chart.defaults.font.size = window.innerWidth < 560 ? 11 : 12;
   Chart.defaults.color = "#52616b";
+  // Position d'info-bulle « haut » (écrans tactiles) : fixée en haut du graphe, à la verticale du point touché,
+  // pour que le doigt ne la cache pas.
+  if (Chart.Tooltip && Chart.Tooltip.positioners) {
+    Chart.Tooltip.positioners.haut = function (elements) {
+      if (!elements.length) return false;
+      return { x: elements[0].element.x, y: this.chart.chartArea.top };
+    };
+  }
 }
 
 // Vrai si la personne a demandé moins de mouvement dans les réglages de son système.
@@ -975,7 +1077,37 @@ function nb(valeur, decimales) {
 // "5m" -> 300000 ; "1h" -> 3600000
 function enMs(freq) {
   const n = parseInt(freq, 10);
+  if (freq.endsWith("d")) return n * 86400000;
   return freq.endsWith("h") ? n * 3600000 : n * 60000;
+}
+
+// "-90m" -> 5 400 000 ms ; "-3h" ; "-2d". Renvoie 0 si la clé n'a pas ce format.
+function dureeDeCle(cle) {
+  const m = /^-(\d+)([mhd])$/.exec(cle);
+  return m ? enMs(m[1] + m[2]) : 0;
+}
+
+// Tout ce qui dépend de la période, au même endroit : durée, moyenne affichée et "freq" demandée au serveur.
+// Les 3 périodes prédéfinies lisent les tableaux du début du script ; une durée personnalisée est calculée.
+function reglagesPeriode(cle) {
+  if (MOYENNE[cle]) {
+    return { duree: DUREE_PERIODE[cle], moyenne: MOYENNE[cle], freq: FREQ_API[cle], secours: FREQ_SECOURS[cle] };
+  }
+  const duree = dureeDeCle(cle) || DUREE_PERIODE["-24h"];
+  const moyenne = PAS_AFFICHAGE.find(p => duree / enMs(p) <= POINTS_MAX) || PAS_AFFICHAGE[PAS_AFFICHAGE.length - 1];
+  const longue = duree > DUREE_PERIODE["-24h"];   // au-delà de 24 h : moyenne de 5 min côté serveur, comme pour 7 jours
+  return { duree, moyenne, freq: longue ? "5m" : "", secours: longue ? "5m" : "1m" };
+}
+
+// "-90m" -> "1 h 30" ; "-3h" -> "3 h" ; "-2d" -> "2 j" (espaces insécables)
+function libelleCle(cle) {
+  const min = Math.round(dureeDeCle(cle) / 60000);
+  if (min >= 1440 && min % 1440 === 0) return (min / 1440) + "\u00a0j";
+  if (min >= 60) {
+    const h = Math.floor(min / 60), reste = min % 60;
+    return h + "\u00a0h" + (reste ? "\u00a0" + String(reste).padStart(2, "0") : "");
+  }
+  return min + "\u00a0min";
 }
 
 // "15m" -> "15 min" ; "1h" -> "1 h"
@@ -1082,7 +1214,8 @@ async function chargerMesures(periode) {
   if (!CLE) {
     throw new Error("la clé du groupe n'est pas renseignée (ligne « const CLE » du script).");
   }
-  const voulue = FREQ_API[periode];
+  const reglages = reglagesPeriode(periode);
+  const voulue = reglages.freq;
   if (voulue === "" && brutPossible) {
     try {
       return await appelerApi(periode, "");
@@ -1092,7 +1225,7 @@ async function chargerMesures(periode) {
       console.warn("Points bruts refusés par le serveur (" + e.message + ") : moyenne fine à la place.");
     }
   }
-  return appelerApi(periode, voulue === "" ? FREQ_SECOURS[periode] : voulue);
+  return appelerApi(periode, voulue === "" ? reglages.secours : voulue);
 }
 
 // Heure réelle d'un point : heure de réception (champ "time") moins x_age_s.
@@ -1111,8 +1244,9 @@ function heureReelle(p) {
 // vides (p = null) et donc un trou visible dans la courbe. "dernier" = heure réelle de la
 // dernière mesure de la case. Renvoie { serie, rejouees, sansAge } ou null s'il ne reste rien.
 function construireSerie(points, periode, maintenant) {
-  const pasMs = enMs(MOYENNE[periode]);
-  const debut = maintenant - DUREE_PERIODE[periode];
+  const reglages = reglagesPeriode(periode);
+  const pasMs = enMs(reglages.moyenne);
+  const debut = maintenant - reglages.duree;
   const lus = [];
   let rejouees = 0, sansAge = 0;
   points.forEach(p => {
@@ -1183,6 +1317,31 @@ function creerPluginSeuils(lignes) {
   };
 }
 
+// Vrai sur un écran tactile (doigt) : l'info-bulle se range alors en haut du graphe.
+function ecranTactile() {
+  return !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+}
+
+// Trait vertical sur le point parcouru : utile au doigt, qui cache le point lui-même.
+const pluginCurseur = {
+  id: "curseurVertical",
+  afterDatasetsDraw(chart) {
+    const actifs = chart.tooltip ? chart.tooltip.getActiveElements() : [];
+    if (!actifs.length) return;
+    const x = actifs[0].element.x;
+    const { ctx, chartArea } = chart;
+    ctx.save();
+    ctx.globalAlpha = 0.4;
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = ENCRE;
+    ctx.beginPath();
+    ctx.moveTo(x, chartArea.top);
+    ctx.lineTo(x, chartArea.bottom);
+    ctx.stroke();
+    ctx.restore();
+  },
+};
+
 // Un point isolé (entouré de trous) serait invisible : on le dessine quand même.
 function pointIsole(contexte) {
   const d = contexte.dataset.data;
@@ -1215,6 +1374,7 @@ function dessiner(idCanvas, serie, champs, animer) {
   if (utiles.length === 0) { detruireGraphe(idCanvas); return 0; }
   const seul = utiles.length === 1;
   const etroit = window.innerWidth < 560;
+  const aHaut = ecranTactile() && !!(Chart.Tooltip && Chart.Tooltip.positioners && Chart.Tooltip.positioners.haut);
 
   const longues = serie.map(r => new Date(r.t).toLocaleString("fr-FR",
     { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }));
@@ -1297,9 +1457,9 @@ function dessiner(idCanvas, serie, champs, animer) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      // Pas de « touchmove » : un doigt qui fait défiler la page par-dessus un graphe ne le redessine plus à chaque
-      // pixel (le toucher simple affiche toujours l'info-bulle).
-      events: ["mousemove", "mouseout", "click", "touchstart"],
+      // « touchmove » : un doigt qui glisse horizontalement sur le graphe parcourt les points un par un.
+      // Le défilement vertical de la page reste possible (touch-action: pan-y dans le CSS).
+      events: ["mousemove", "mouseout", "click", "touchstart", "touchmove"],
       animation: animer ? { duration: 1200, easing: "easeOutQuart" } : false,
       interaction: { mode: "index", intersect: false },
       scales: echelles,
@@ -1310,6 +1470,9 @@ function dessiner(idCanvas, serie, champs, animer) {
           labels: { boxWidth: etroit ? 14 : 18, boxHeight: 3, padding: etroit ? 12 : 18, font: { family: POLICE_SANS, weight: "600" } },
         },
         tooltip: {
+          position: aHaut ? "haut" : "average",
+          yAlign: aHaut ? "top" : undefined,
+          animation: { duration: 90 },
           backgroundColor: ENCRE,
           titleColor: "#f2f4f0",
           bodyColor: "#f2f4f0",
@@ -1326,7 +1489,7 @@ function dessiner(idCanvas, serie, champs, animer) {
         },
       },
     },
-    plugins: [creerPluginSeuils(lignes)],
+    plugins: [creerPluginSeuils(lignes), pluginCurseur],
   });
   graphes[idCanvas].__signature = signature;
   graphes[idCanvas].__courtes = courtes;
@@ -1481,14 +1644,7 @@ function afficherDerniere(serie, pasMs) {
     majCarte(cartes[c], d, plusRecent - d.t > perime);
   });
 
-  const note = document.getElementById("note-derniere");
-  if (plusRecent) {
-    const quand = new Date(plusRecent).toLocaleString("fr-FR",
-      { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
-    note.textContent = "Mesure du " + quand + " (" + depuis(Date.now() - plusRecent) + ").";
-  } else {
-    note.textContent = "Aucune valeur reçue sur cette période.";
-  }
+  document.getElementById("note-derniere").textContent = texteNote(plusRecent);
   return plusRecent;
 }
 
@@ -1641,6 +1797,26 @@ function majStatut(tDerniere, pasMs) {
   }
 }
 
+function texteNote(t) {
+  if (!t) return "Aucune valeur reçue sur cette période.";
+  const quand = new Date(t).toLocaleString("fr-FR",
+    { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
+  return "Mesure du " + quand + " (" + depuis(Date.now() - t) + ").";
+}
+
+// Entre deux mises à jour (5 min), les « il y a X min » continuent de s'écouler : on les rafraîchit sans nouvelle requête.
+function majTempsRelatif() {
+  if (!tDerniere || document.hidden) return;
+  majStatut(tDerniere, pasAffiche);
+  if (ligneLecture.mesure) ligneLecture.mesure.dd.textContent = depuis(Date.now() - tDerniere);
+  document.getElementById("note-derniere").textContent = texteNote(tDerniere);
+}
+
+function majPiedMaj() {
+  const e = document.getElementById("pied-maj");
+  if (e) e.textContent = new Date(derniereMaj).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
 // Petite courbe pour le tableau résumé (les trous restent des trous).
 function allure(valeurs) {
   const NS = "http://www.w3.org/2000/svg";
@@ -1739,6 +1915,7 @@ function sectionsDonnees() {
 
 function viderTout() {
   cache = null;
+  tDerniere = 0;
   viderGraphes();
   sectionsDonnees().forEach(s => { s.hidden = true; });
   Object.keys(cartes).forEach(c => { cartes[c].racine.remove(); delete cartes[c]; });
@@ -1751,12 +1928,14 @@ function viderTout() {
 function afficherTout() {
   if (!cache) return;
   const { periode, points, serie, rejouees, sansAge } = cache;
-  const pasMs = enMs(MOYENNE[periode]);
+  const pasMs = enMs(reglagesPeriode(periode).moyenne);
   const animer = animerProchain && !reduit();
   animerProchain = false;
 
   document.getElementById("squelette").hidden = true;
   const plusRecent = afficherDerniere(serie, pasMs);
+  tDerniere = plusRecent;
+  pasAffiche = pasMs;
   majStatut(plusRecent, pasMs);
   afficherVerdict(calculerPire(serie, plusRecent, pasMs), plusRecent, capteurMuet(plusRecent, pasMs));
 
@@ -1773,7 +1952,7 @@ function afficherTout() {
 
   afficherResume(serie);
 
-  let texte = points.length + " points, moyenne sur " + libelleDuree(MOYENNE[periode]) + ".";
+  let texte = points.length + " points, moyenne sur " + libelleDuree(reglagesPeriode(periode).moyenne) + ".";
   if (rejouees > 0) {
     texte += " " + rejouees + " mesure" + (rejouees > 1 ? "s" : "") + " rejouée" + (rejouees > 1 ? "s" : "") +
       " après une coupure, replacée" + (rejouees > 1 ? "s" : "") + " à l'heure réelle.";
@@ -2075,6 +2254,10 @@ function construireSommaire(sections) {
     const lien = el("a", "point-story");
     lien.href = "#" + (i === 0 && document.getElementById("piste") ? "piste" : section.id);
     lien.dataset.cible = section.id;
+    if (i === 0) lien.addEventListener("click", e => {
+      e.preventDefault();
+      window.scrollTo({ top: 0, behavior: reduit() ? "auto" : "smooth" });
+    });
     lien.setAttribute("aria-label", i === 0 ? titre : "Chapitre " + i + " : " + titre);
     lien.append(el("span", "p-num", String(i).padStart(2, "0")), el("span", "p-titre", titre));
     const item = el("li");
@@ -2279,10 +2462,14 @@ function initStoryScrolling() {
         const f = secs[i];
         let p, e = 1;
         if (i === 0) {
-          p = longueur > 0 ? borne((y - g.pisteTop) / Math.max(1, longueur)) : 0;
+          // 00 = bandeau + manifeste : 100 % quand le texte du manifeste a fini de défiler (fin de son épinglage)
+          const fin = Math.max(g.manifTop + g.manifH - vh, g.pisteTop + longueur);
+          p = borne((y - g.pisteTop) / Math.max(1, fin - g.pisteTop));
         } else {
           const haut = f.top - y;
-          p = borne((ligne - haut) / f.h);
+          const debut = f.top - ligne;                          // défilement où le chapitre commence à se remplir
+          const fin = Math.min(f.top + f.h - ligne, maximum);   // … et où il est plein, au plus tard en bas de page
+          p = borne((y - debut) / Math.max(1, fin - debut));
           if (!fixe) e = borne((vh - haut) / (vh * 0.55));
         }
         p = Math.round(p * 100) / 100;      // pas de 1 % : inutile de repeindre plus souvent
@@ -2351,6 +2538,123 @@ function initRevelations() {
   }
 }
 
+// Figure « Comprendre les mesures » : PM1, PM2.5 et PM10 s'agitent chacune dans leur case. Plus la particule est
+// fine, plus elle s'agite (marche au hasard rappelée vers le centre, d'où un mouvement brownien fluide) et une traînée
+// garde la trace de son trajet. Les diamètres restent à l'échelle (1 µm = 2 px). Les points fixes du HTML servent de
+// repli : sans JavaScript ou avec « mouvement réduit », ce sont eux qui s'affichent.
+function initFigureParticules() {
+  const figure = document.querySelector(".tailles");
+  if (!figure || reduit()) return;
+  const defs = [
+    { classe: "pm1",  couleur: "#2347a8", diametre: 2,  agitation: 0.55, trace: 56, fil: 1 },
+    { classe: "pm25", couleur: "#2347a8", diametre: 5,  agitation: 0.33, trace: 48, fil: 1.2 },
+    { classe: "pm10", couleur: ENCRE,     diametre: 20, agitation: 0.12, trace: 30, fil: 2 },
+  ];
+  const PAS = 1000 / 60;   // la simulation avance par pas de 1/60 s, quelle que soit la fréquence de l'écran
+  const AMORTI = 0.85;     // part de la vitesse conservée à chaque pas
+  const RAPPEL = 0.004;    // rappel vers le centre de la case : la particule reste dans son cadre
+  const particules = [];
+
+  defs.forEach(d => {
+    const point = figure.querySelector(".rond." + d.classe);
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext ? canvas.getContext("2d") : null;
+    if (!point || !ctx) return;
+    const zone = point.parentElement;
+    canvas.setAttribute("aria-hidden", "true");
+    zone.append(canvas);
+    zone.classList.add("anime");
+    particules.push(Object.assign({ zone, canvas, ctx, x: 0, y: 0, vx: 0, vy: 0, l: 0, h: 0, chemin: [] }, d));
+  });
+  if (!particules.length) return;
+
+  const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) * 2;   // ≈ loi normale, écart-type 1
+
+  function dessiner() {
+    particules.forEach(p => {
+      if (!p.l || !p.h) return;
+      const c = p.ctx;
+      c.clearRect(-p.l / 2, -p.h / 2, p.l, p.h);
+      const n = p.chemin.length / 2;
+      c.strokeStyle = p.couleur;
+      c.lineWidth = p.fil;
+      c.lineCap = "round";
+      for (let i = 1; i < n; i++) {   // la traînée s'efface vers le passé
+        c.globalAlpha = (i / n) * 0.5;
+        c.beginPath();
+        c.moveTo(p.chemin[2 * i - 2], p.chemin[2 * i - 1]);
+        c.lineTo(p.chemin[2 * i], p.chemin[2 * i + 1]);
+        c.stroke();
+      }
+      c.globalAlpha = 1;
+      c.fillStyle = p.couleur;
+      c.beginPath();
+      c.arc(p.x, p.y, p.diametre / 2, 0, 6.2832);
+      c.fill();
+    });
+  }
+
+  function avancer(p) {
+    const bx = Math.max(0, p.l / 2 - p.diametre / 2 - 4);
+    const by = Math.max(0, p.h / 2 - p.diametre / 2 - 4);
+    p.vx = p.vx * AMORTI + gauss() * p.agitation - p.x * RAPPEL;
+    p.vy = p.vy * AMORTI + gauss() * p.agitation - p.y * RAPPEL;
+    p.x += p.vx;
+    p.y += p.vy;
+    if (p.x > bx) { p.x = bx; p.vx = -Math.abs(p.vx) * 0.5; } else if (p.x < -bx) { p.x = -bx; p.vx = Math.abs(p.vx) * 0.5; }
+    if (p.y > by) { p.y = by; p.vy = -Math.abs(p.vy) * 0.5; } else if (p.y < -by) { p.y = -by; p.vy = Math.abs(p.vy) * 0.5; }
+    p.chemin.push(p.x, p.y);
+    if (p.chemin.length > p.trace * 2) p.chemin.splice(0, 2);
+  }
+
+  function mesurer() {
+    const ratio = Math.min(window.devicePixelRatio || 1, 2);
+    particules.forEach(p => {
+      p.l = p.zone.clientWidth;
+      p.h = p.zone.clientHeight;
+      p.canvas.width = Math.max(1, Math.round(p.l * ratio));
+      p.canvas.height = Math.max(1, Math.round(p.h * ratio));
+      p.ctx.setTransform(ratio, 0, 0, ratio, p.l * ratio / 2, p.h * ratio / 2);   // origine au centre de la case
+    });
+    dessiner();
+  }
+
+  let visible = true, tourne = false, image = 0, precedent = 0, reste = 0;
+  function boucle(temps) {
+    image = 0;
+    if (!tourne) return;
+    reste += Math.min(100, precedent ? temps - precedent : PAS);
+    precedent = temps;
+    let pas = 0;
+    while (reste >= PAS && pas < 4) { particules.forEach(avancer); reste -= PAS; pas++; }
+    if (reste >= PAS) reste = 0;   // après un long retard (onglet en veille), on ne rattrape pas
+    dessiner();
+    image = requestAnimationFrame(boucle);
+  }
+  function actualiser() {
+    const doitTourner = visible && !document.hidden && !reduit();
+    if (doitTourner && !tourne) {
+      tourne = true; precedent = 0; reste = 0;
+      image = requestAnimationFrame(boucle);
+    } else if (!doitTourner && tourne) {
+      tourne = false;
+      if (image) cancelAnimationFrame(image);
+      image = 0;
+    }
+  }
+
+  mesurer();
+  for (let i = 0; i < 90; i++) particules.forEach(avancer);   // chaque particule démarre avec une traînée déjà formée
+  dessiner();
+  if ("ResizeObserver" in window) new ResizeObserver(mesurer).observe(figure);
+  else window.addEventListener("resize", mesurer);
+  if ("IntersectionObserver" in window) {
+    new IntersectionObserver(entrees => { visible = entrees[entrees.length - 1].isIntersecting; actualiser(); }).observe(figure);
+  }
+  document.addEventListener("visibilitychange", actualiser);
+  actualiser();
+}
+
 // Le fond noir des boutons de période glisse de l'un à l'autre.
 function placerCurseur() {
   const actif = document.querySelector(".periode.actif");
@@ -2370,6 +2674,7 @@ async function rafraichir() {
     const points = await chargerMesures(periode);
     if (numero !== numeroRequete) return;   // une demande plus récente a pris le relais
     derniereMaj = Date.now();
+    majPiedMaj();
 
     const resultat = points.length === 0 ? null : construireSerie(points, periode, Date.now());
     if (!resultat) {
@@ -2384,6 +2689,7 @@ async function rafraichir() {
     afficherTout();
   } catch (erreur) {
     if (numero !== numeroRequete) return;
+    tDerniere = 0;   // le minuteur des « il y a X min » ne doit pas écraser ce message d'erreur
     definirStatut("erreur", "Données indisponibles");
     majEtat("etat erreur", "Erreur : " + erreur.message);
     if (!cache) {
@@ -2404,21 +2710,84 @@ function pauseHorsEcran() {
   [document.getElementById("hero"), document.querySelector(".tailles")].forEach(e => { if (e) observateur.observe(e); });
 }
 
+// Applique une période (clé de l'API : "-6h", "-90m"…). Si aucun bouton ne lui correspond, c'est une durée personnalisée.
+function choisirPeriode(cle) {
+  const bouton = document.querySelector('.periode[data-periode="' + cle + '"]');
+  const perso = document.getElementById("bouton-perso");
+  animerProchain = (cle !== periodeActuelle);
+  periodeActuelle = cle;
+  document.querySelectorAll(".periode").forEach(b => {
+    const actif = bouton ? (b === bouton) : (b === perso);
+    b.classList.toggle("actif", actif);
+    b.setAttribute("aria-pressed", String(actif));
+  });
+  if (perso) {
+    const libelle = bouton ? "" : libelleCle(cle);
+    document.getElementById("perso-texte").textContent = libelle || "Perso";
+    perso.setAttribute("aria-label", libelle ? "Durée personnalisée : " + libelle : "Durée personnalisée");
+  }
+  placerCurseur();
+  majEtat("etat", "Chargement…");
+  rafraichir();
+}
+
+function fermerPerso(rendreLeFocus) {
+  const panneau = document.getElementById("perso");
+  const bouton = document.getElementById("bouton-perso");
+  if (!panneau || !bouton || panneau.hidden) return;
+  panneau.hidden = true;
+  bouton.setAttribute("aria-expanded", "false");
+  if (rendreLeFocus) bouton.focus();
+}
+
+// Bouton « Perso » : un nombre + une unité (minutes, heures, jours), de 5 minutes à 7 jours.
+function initPerso() {
+  const panneau = document.getElementById("perso");
+  const bouton = document.getElementById("bouton-perso");
+  if (!panneau || !bouton) return;
+  const champN = document.getElementById("perso-n");
+  const champU = document.getElementById("perso-u");
+  const aide = document.getElementById("perso-aide");
+  const TEXTE_AIDE = "De 5 minutes à 7 jours.";
+  const message = (texte, erreur) => {
+    aide.textContent = texte;
+    aide.classList.toggle("erreur", !!erreur);
+  };
+  message(TEXTE_AIDE, false);
+
+  bouton.addEventListener("click", () => {
+    const ouvrir = panneau.hidden;
+    panneau.hidden = !ouvrir;
+    bouton.setAttribute("aria-expanded", String(ouvrir));
+    if (ouvrir) { message(TEXTE_AIDE, false); champN.focus(); champN.select(); }
+  });
+  panneau.addEventListener("keydown", e => { if (e.key === "Escape") fermerPerso(true); });
+  panneau.addEventListener("submit", e => {
+    e.preventDefault();
+    const n = Number(String(champN.value).replace(",", "."));
+    const facteur = { m: 1, h: 60, d: 1440 }[champU.value] || 1;
+    const minutes = Math.round(n * facteur);
+    if (!Number.isFinite(n) || n <= 0 || minutes < PERSO_MIN || minutes > PERSO_MAX) {
+      message("Choisissez une durée entre 5 minutes et 7 jours.", true);
+      champN.focus();
+      return;
+    }
+    const cle = (minutes % 1440 === 0) ? "-" + (minutes / 1440) + "d"
+              : (minutes % 60 === 0) ? "-" + (minutes / 60) + "h"
+              : "-" + minutes + "m";
+    fermerPerso(false);
+    choisirPeriode(cle);   // "-24h" retombe sur le bouton « 24 heures », par exemple
+  });
+}
+
 function initControles() {
-  document.querySelectorAll(".periode").forEach(bouton => {
+  document.querySelectorAll('.periode[data-periode^="-"]').forEach(bouton => {
     bouton.addEventListener("click", () => {
-      animerProchain = (bouton.dataset.periode !== periodeActuelle);
-      periodeActuelle = bouton.dataset.periode;
-      document.querySelectorAll(".periode").forEach(b => {
-        const actif = (b === bouton);
-        b.classList.toggle("actif", actif);
-        b.setAttribute("aria-pressed", String(actif));
-      });
-      placerCurseur();
-      majEtat("etat", "Chargement…");
-      rafraichir();
+      fermerPerso(false);
+      choisirPeriode(bouton.dataset.periode);
     });
   });
+  initPerso();
   document.getElementById("afficher-seuils").addEventListener("change", afficherTout);
 }
 
@@ -2437,6 +2806,14 @@ function demarrer() {
   });
   securise(initTampon);
   securise(pauseHorsEcran);
+  securise(initFigureParticules);
+  securise(() => {   // « Haut de page » : le bandeau est épinglé (sticky), l'ancre #hero ne menait donc pas tout en haut
+    const haut = document.querySelector(".haut");
+    if (haut) haut.addEventListener("click", e => {
+      e.preventDefault();
+      window.scrollTo({ top: 0, behavior: reduit() ? "auto" : "smooth" });
+    });
+  });
   securise(() => { nuage = creerNuage(); if (nuage) nuage.init(); });
   securise(() => {
     document.getElementById("frequence").textContent = libelleFrequence(RAFRAICHISSEMENT_MS);
@@ -2480,6 +2857,7 @@ function demarrer() {
 
   rafraichir();
   setInterval(rafraichir, RAFRAICHISSEMENT_MS);
+  setInterval(majTempsRelatif, 30000);
 }
 
 // Chart.js arrive peut-être après les mesures : dans ce cas, les graphes se dessinent à son arrivée.
