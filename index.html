@@ -55,6 +55,9 @@
   /* Barre de défilement de la page masquée (la navigation passe par les repères 00, 01…).
      La page reste défilable à la molette, au clavier et au toucher. */
   html { scrollbar-width: none; }
+  /* Immersion sur téléphone : ni rebond ni « tirer pour rafraîchir » en haut ou en bas de page, ni zoom au double toucher. */
+  html, body { overscroll-behavior: none; }
+  body { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
   html::-webkit-scrollbar, body::-webkit-scrollbar { display: none; width: 0; height: 0; }
   body {
     margin: 0;
@@ -93,6 +96,22 @@
     opacity: .07;
     animation: respire 10s ease-in-out infinite;
   }
+  /* Jeu avec les particules au doigt : le bouton (téléphone/tablette seulement) fige le défilement le temps du jeu. */
+  .jeu-poussiere { display: none; }
+  @media (pointer: coarse) {
+    .jeu-poussiere {
+      display: inline-flex; align-items: center; gap: 8px; align-self: flex-start;
+      margin-top: 14px; min-height: 44px; padding: 10px 16px;
+      border: 2px solid currentColor; border-radius: 999px;
+      background: transparent; color: inherit; cursor: pointer;
+      font: 600 .8rem/1.1 var(--mono); letter-spacing: .02em;
+      -webkit-user-select: none; user-select: none;
+    }
+    .jeu-poussiere[aria-pressed="true"] { background: currentColor; }
+    .jeu-poussiere[aria-pressed="true"] span { color: var(--ciel); }
+    .hero.jeu { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { .jeu-poussiere { display: none !important; } }
   .hero > canvas { position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
   .hero-grain {
     position: absolute; inset: 0; z-index: 1; pointer-events: none; opacity: .16;
@@ -501,8 +520,14 @@
   /* ---------- Story scrolling : mouvements liés au défilement ---------- */
   /* Le bandeau reste épinglé pendant ~130 % d'écran de défilement. --sortie (0 → 1) orchestre la scène :
      le disque enfle, le bas du bandeau s'envole, le verdict zoome et se dissout, puis le bandeau se range en carte. */
-  .js .piste { height: 230vh; height: 230svh; }
+  .js .piste { height: 230vh; height: 230svh; }   /* longueur de défilement : reste fixe (svh), la page ne saute donc jamais */
   .js .hero { position: sticky; top: 0; height: 100vh; height: 100svh; min-height: 0; }
+  /* Sur téléphone, la barre d'adresse se masque en défilant : avec svh, une bande de la page apparaissait sous le bandeau
+     épinglé. dvh suit la hauteur réellement visible, la scène remplit toujours l'écran. */
+  @supports (height: 100dvh) {
+    .js .hero { height: 100dvh; }
+    .js .manifeste-scene { height: 100dvh; }
+  }
   /* Chaque élément de la scène a sa propre couche : le défilement ne fait que les déplacer / les fondre
      (aucun recalcul de mise en page, aucun repeint). Les valeurs sont écrites par le script (initStoryScrolling). */
   .js .hero, .js .hero-disque, .js .hero-haut, .js .hero-bas, .js .hero .titre, .js .hero > canvas { will-change: transform, opacity; }
@@ -640,6 +665,10 @@
         <a class="descendre" href="#mesures">
           Voir les mesures <span aria-hidden="true">↓</span>
         </a>
+
+        <button type="button" class="jeu-poussiere" id="jeu-poussiere" aria-pressed="false">
+          <span id="jeu-texte">Jouer avec les particules</span>
+        </button>
       </div>
 
       <dl class="lecture" id="lecture" hidden></dl>
@@ -2058,7 +2087,8 @@ function creerNuage() {
     if (!pointeur) { curseur = null; return false; }
     const r = rectHero();
     const cx = pointeur.x - r.left, cy = pointeur.y - r.top;
-    if (!curseur) curseur = { x: cx, y: cy, vx: 0, vy: 0, vit: 0 };
+    if (!curseur) curseur = { x: cx, y: cy, vx: 0, vy: 0, vit: 0, ech: 1 };
+    curseur.ech = pointeur.ech;
     const k = 1 - Math.exp(-0.35 * dt);
     const px = curseur.x, py = curseur.y;
     curseur.x += (cx - curseur.x) * k;
@@ -2071,14 +2101,15 @@ function creerNuage() {
   }
 
   // Un clic ou un appui souffle les grains alentour.
-  function souffler(clientX, clientY) {
+  function souffler(clientX, clientY, ech) {
     const r = hero.getBoundingClientRect();
     const x = clientX - r.left, y = clientY - r.top;
+    const R = 110 * ech;   // 280 px avant : un clic soufflait la moitié de l'écran
     for (let i = 0; i < grains.length; i++) {
       const g = grains[i];
       const ox = g.x - x, oy = g.y - y, d2 = ox * ox + oy * oy;
-      if (d2 < 78400 && d2 > 1) {
-        const d = Math.sqrt(d2), f = (1 - d / 280) * 5;
+      if (d2 < R * R && d2 > 1) {
+        const d = Math.sqrt(d2), f = (1 - d / R) * 4;
         g.vx += ox / d * f;
         g.vy += oy / d * f;
       }
@@ -2097,8 +2128,11 @@ function creerNuage() {
       }
     }
     const actif = suivreCurseur(dt);
-    const rayon = actif ? 150 + curseur.vit * 4 : 0;     // 150 px au repos, jusqu'à 270 px en mouvement rapide
-    const force = actif ? 0.45 + curseur.vit * 0.04 : 0;
+    // Rayon réduit : avant 150 px au repos et jusqu'à 270 px, toutes les particules voisines bougeaient et on ne
+    // distinguait plus celle qu'on visait. Désormais ~40 px au repos, 80 px au plus. Le doigt, plus large, a ×1,5.
+    const ech = actif ? curseur.ech : 1;
+    const rayon = actif ? (40 + curseur.vit * 1.3) * ech : 0;
+    const force = actif ? 0.4 + curseur.vit * 0.03 : 0;
     const frottement = Math.pow(FROTTEMENT, dt);
     const freinRapide = Math.pow(FROTTEMENT_RAPIDE, dt);
     const lueur = Math.pow(PERSISTANCE_LUEUR, dt);
@@ -2189,13 +2223,36 @@ function creerNuage() {
         new IntersectionObserver(e => { visible = e[0].isIntersecting; actualiser(); }).observe(hero);
       }
       document.addEventListener("visibilitychange", actualiser);
-      const suivre = e => { pointeur = { x: e.clientX, y: e.clientY }; };
+      const suivre = e => { pointeur = { x: e.clientX, y: e.clientY, ech: e.pointerType === "mouse" ? 1 : 1.5 }; };
       const oublier = () => { pointeur = null; curseur = null; };
+      const surControle = e => !!(e.target.closest && e.target.closest("a, button"));
       hero.addEventListener("pointermove", suivre);
-      hero.addEventListener("pointerdown", e => { suivre(e); if (tourne) souffler(e.clientX, e.clientY); });
+      hero.addEventListener("pointerdown", e => {
+        if (surControle(e)) return;
+        suivre(e);
+        if (tourne) souffler(e.clientX, e.clientY, pointeur.ech);
+      });
       hero.addEventListener("pointerleave", oublier);
       hero.addEventListener("pointercancel", oublier);
       hero.addEventListener("pointerup", e => { if (e.pointerType !== "mouse") oublier(); });
+
+      // Mode jeu (écrans tactiles) : tant qu'il est actif, le doigt ne fait plus défiler la page, il déplace les grains.
+      // Le bouton le coupe ; il s'arrête aussi tout seul si le bandeau quitte l'écran ou si l'onglet est masqué.
+      const bouton = document.getElementById("jeu-poussiere");
+      const texte = document.getElementById("jeu-texte");
+      const jeu = actif => {
+        hero.classList.toggle("jeu", actif);
+        if (bouton) bouton.setAttribute("aria-pressed", String(actif));
+        if (texte) texte.textContent = actif ? "Reprendre le défilement" : "Jouer avec les particules";
+        if (!actif) oublier();
+      };
+      if (bouton) {
+        bouton.addEventListener("click", () => jeu(!hero.classList.contains("jeu")));
+        document.addEventListener("visibilitychange", () => { if (document.hidden) jeu(false); });
+        if ("IntersectionObserver" in window) {
+          new IntersectionObserver(e => { if (!e[0].isIntersecting) jeu(false); }).observe(hero);
+        }
+      }
       actualiser();
     },
     // niveau : 0 (bon) à 3 (très élevé)
