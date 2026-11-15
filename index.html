@@ -308,7 +308,12 @@
   }
   .perso-aide { flex-basis: 100%; margin: 0; font: 500 .75rem/1.4 var(--mono); color: var(--doux); }
   .perso-aide.erreur { color: #9c1f17; font-weight: 600; }
-  @media (pointer: coarse) { .perso input, .perso select, .perso-ok { min-height: 44px; } }
+  .actions-resume { margin: 14px 0 0; }
+  .bouton-csv { min-height: 40px; padding: 8px 16px; border: 2px solid var(--encre); border-radius: 3px; background: transparent; color: var(--encre); font: 600 .85rem/1 var(--sans); cursor: pointer; }
+  @media (hover: hover) { .bouton-csv:hover { background: var(--encre); color: var(--fond); } }
+  .bouton-csv:focus-visible { outline: 3px solid var(--cobalt); outline-offset: 2px; }
+  .alerte-hum { color: #9c1f17; font-weight: 600; }
+  @media (pointer: coarse) { .perso input, .perso select, .perso-ok, .bouton-csv { min-height: 44px; } }
 
   .option { display: inline-flex; align-items: center; gap: 12px; font-size: .9rem; font-weight: 500; cursor: pointer; -webkit-user-select: none; user-select: none; }
   .option-court, .court { display: none; }
@@ -634,6 +639,7 @@
     .point-story.actif::after {
       content: ""; position: absolute; inset: -4px; border-radius: 50%; pointer-events: none;
       background: conic-gradient(var(--accent) calc(var(--p, 0) * 360deg), var(--filet) 0);
+      -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px));
       mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px));
     }
   }
@@ -810,6 +816,7 @@
       <p class="numero-chapitre"><span class="n" data-n>00</span><span class="total" data-total>/ 00</span><span class="accroche">À l’instant</span></p>
       <h2 id="titre-derniere">Dernière mesure</h2>
       <p class="note" id="note-derniere"></p>
+      <p class="note alerte-hum" id="alerte-hum" hidden></p>
     </div>
 
     <div class="bloc-corps revele" style="--d:1">
@@ -847,6 +854,7 @@
       <p class="numero-chapitre"><span class="n" data-n>00</span><span class="total" data-total>/ 00</span><span class="accroche">L’air se renouvelle-t-il ?</span></p>
       <h2 id="titre-co2">CO₂ <span class="u">(ppm)</span></h2>
       <p class="note">Le CO₂ vient surtout de notre respiration : plus il monte, moins la pièce est aérée.</p>
+      <p class="note" id="note-co2" hidden></p>
     </div>
 
     <div class="bloc-corps revele" style="--d:1">
@@ -877,7 +885,8 @@
       <p class="numero-chapitre"><span class="n" data-n>00</span><span class="total" data-total>/ 00</span><span class="accroche">Prendre du recul</span></p>
       <h2 id="titre-resume">Résumé de la période</h2>
       <p class="note">
-        Minimum, moyenne et maximum de chaque mesure, sur la période choisie.
+        Minimum, moyenne et maximum de chaque mesure, sur la période choisie. Calculés sur les mesures elles-mêmes
+        (au-delà de 24 h, le serveur ne fournit que des moyennes de 5 min : les pics y sont un peu lissés).
       </p>
     </div>
 
@@ -890,17 +899,18 @@
 
           <thead>
             <tr>
-              <th>Mesure</th>
-              <th>Minimum</th>
-              <th>Moyenne</th>
-              <th>Maximum</th>
-              <th class="col-allure">Allure</th>
+              <th scope="col">Mesure</th>
+              <th scope="col">Minimum</th>
+              <th scope="col">Moyenne</th>
+              <th scope="col">Maximum</th>
+              <th scope="col" class="col-allure">Allure</th>
             </tr>
           </thead>
 
           <tbody id="resume-corps"></tbody>
         </table>
       </div>
+      <p class="actions-resume"><button type="button" class="bouton-csv" id="export-csv">Exporter en CSV</button></p>
     </div>
   </section>
 
@@ -954,7 +964,7 @@
           <div class="defile">
             <table>
               <thead>
-                <tr><th>Niveau</th><th>PM1 et PM2.5 <span class="unite">(µg/m³)</span></th><th>PM10 <span class="unite">(µg/m³)</span></th><th>CO₂ <span class="unite">(ppm)</span></th></tr>
+                <tr><th scope="col">Niveau</th><th scope="col">PM1 et PM2.5 <span class="unite">(µg/m³)</span></th><th scope="col">PM10 <span class="unite">(µg/m³)</span></th><th scope="col">CO₂ <span class="unite">(ppm)</span></th></tr>
               </thead>
               <tbody id="seuils-corps"></tbody>
             </table>
@@ -1064,7 +1074,8 @@ const MOYENNE = { "-6h": "5m", "-24h": "15m", "-7d": "1h" };
 //   - FREQ_API : "" = points bruts (une mesure toutes les 30 s) ; sinon, une moyenne fine du serveur ;
 //   - FREQ_SECOURS : utilisée si le serveur refuse la requête sans "freq".
 // La moyenne affichée (MOYENNE ci-dessus) est ensuite recalculée ici, par la page.
-const CHAMP_AGE = "x_age_s";const FREQ_API = { "-6h": "", "-24h": "", "-7d": "5m" };
+const CHAMP_AGE = "x_age_s";
+const FREQ_API = { "-6h": "", "-24h": "", "-7d": "5m" };
 const FREQ_SECOURS = { "-6h": "1m", "-24h": "1m", "-7d": "5m" };
 const DUREE_PERIODE = { "-6h": 6 * 3600000, "-24h": 24 * 3600000, "-7d": 7 * 86400000 };
 
@@ -1147,19 +1158,12 @@ function reglerChart() {
   Chart.defaults.font.family = POLICE_SANS;
   Chart.defaults.font.size = window.innerWidth < 560 ? 11 : 12;
   Chart.defaults.color = "#52616b";
-  // Position d'info-bulle « haut » (écrans tactiles) : fixée en haut du graphe, à la verticale du point touché,
-  // pour que le doigt ne la cache pas.
-  if (Chart.Tooltip && Chart.Tooltip.positioners) {
-    Chart.Tooltip.positioners.haut = function (elements) {
-      if (!elements.length) return false;
-      return { x: elements[0].element.x, y: this.chart.chartArea.top };
-    };
-  }
 }
 
 // Vrai si la personne a demandé moins de mouvement dans les réglages de son système.
+const requeteMouvementReduit = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;   // créée une seule fois : .matches reste à jour
 function reduit() {
-  return !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  return !!(requeteMouvementReduit && requeteMouvementReduit.matches);
 }
 
 // Une animation qui plante ne doit jamais empêcher le reste de la page de marcher.
@@ -1292,19 +1296,36 @@ function majEtat(classe, texte) {
 // =====================================================================
 // 3) LECTURE DES MESURES
 // =====================================================================
-let brutPossible = true;   // passe à false si le serveur refuse la requête sans "freq"
+let brutRefuseJusqua = 0;   // le serveur a refusé les points bruts : moyenne fine utilisée jusqu'à cette heure (Infinity = définitivement)
+let decalageHorloge = 0;    // ms à ajouter à l'horloge du visiteur pour retrouver l'heure réelle (horloge en retard)
+let echecsSuite = 0;        // nombre de mises à jour ratées d'affilée
+let controleur = null;      // AbortController de la requête en cours
+const cachePeriodes = new Map();   // période -> { points, t, decalage } : au plus 1 requête par période toutes les 5 min
+const DELAI_MAX_MS = 20000;        // au-delà, on abandonne la requête
+
+// Heure réelle « maintenant » : l'horloge du visiteur, corrigée si elle retarde sur celle du capteur.
+function maintenant() { return Date.now() + decalageHorloge; }
+
+// Si la dernière mesure est « dans le futur » pour le visiteur, c'est que son horloge retarde : on rattrape l'écart.
+function estimerDecalage(points) {
+  let dernier = 0;
+  points.forEach(p => { const h = heureReelle(p); if (h && h.t > dernier) dernier = h.t; });
+  return dernier > 0 ? Math.max(0, Math.min(dernier - Date.now(), 6 * 3600000)) : 0;
+}
 
 // Un appel à l'API. freq = "" : pas de moyenne côté serveur.
-async function appelerApi(periode, freq) {
+async function appelerApi(periode, freq, signal) {
   const params = new URLSearchParams({ key: CLE, start: periode });
   if (freq) params.set("freq", freq);
   if (DEVICE_ID) params.set("device_id", DEVICE_ID);
 
   let reponse;
   try {
-    reponse = await fetch(URL_API + "?" + params);
+    reponse = await fetch(URL_API + "?" + params, signal ? { signal } : undefined);
   } catch (e) {
-    throw new Error("impossible de joindre le serveur (connexion internet ?).");
+    throw new Error(e && e.name === "AbortError"
+      ? "le serveur met trop de temps à répondre."
+      : "impossible de joindre le serveur (connexion internet ?).");
   }
   let json;
   try {
@@ -1321,22 +1342,27 @@ async function appelerApi(periode, freq) {
   return json.points || [];
 }
 
-async function chargerMesures(periode) {
+async function chargerMesures(periode, signal) {
   if (!CLE) {
     throw new Error("la clé du groupe n'est pas renseignée (ligne « const CLE » du script).");
   }
   const reglages = reglagesPeriode(periode);
   const voulue = reglages.freq;
-  if (voulue === "" && brutPossible) {
+  if (voulue === "" && Date.now() >= brutRefuseJusqua) {
     try {
-      return await appelerApi(periode, "");
+      return await appelerApi(periode, "", signal);
     } catch (e) {
-      if (!e.serveur) throw e;        // problème réseau : inutile de réessayer autrement
-      brutPossible = false;           // le serveur veut un "freq" : on bascule sur la moyenne fine
+      if (!e.serveur) throw e;        // réseau, délai dépassé : inutile de réessayer autrement
+      // Le serveur a refusé la requête sans « freq ». On essaie la moyenne fine : si elle passe, c'est bien le mode brut
+      // qui est refusé. Si elle échoue aussi (clé invalide, limite de requêtes, panne), l'erreur est la vraie :
+      // elle remonte et le mode brut reste possible pour la prochaine fois.
+      const donnees = await appelerApi(periode, reglages.secours, signal);
+      brutRefuseJusqua = /freq/i.test(e.message) ? Infinity : Date.now() + 30 * 60000;
       console.warn("Points bruts refusés par le serveur (" + e.message + ") : moyenne fine à la place.");
+      return donnees;
     }
   }
-  return appelerApi(periode, voulue === "" ? reglages.secours : voulue);
+  return appelerApi(periode, voulue === "" ? reglages.secours : voulue, signal);
 }
 
 // Heure réelle d'un point : heure de réception (champ "time") moins x_age_s.
@@ -1541,7 +1567,10 @@ function dessiner(idCanvas, serie, champs, animer) {
   const longues = serie.map(r => new Date(r.t).toLocaleString("fr-FR",
     { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }));
   const courtes = serie.map(r => new Date(r.t).toLocaleString("fr-FR",
-    { weekday: "short", hour: "2-digit", minute: "2-digit" }));
+    // au-delà de 3 jours, le jour de la semaine seul devient ambigu : on ajoute le jour du mois
+    (serie.length > 1 && serie[serie.length - 1].t - serie[0].t > 3 * 86400000)
+      ? { weekday: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }
+      : { weekday: "short", hour: "2-digit", minute: "2-digit" }));
 
   const jeux = utiles.map(c => {
     const couleur = CHAMPS[c].couleur;
@@ -1775,7 +1804,7 @@ function majCarte(carte, d, perime) {
     carte.echelleEl.setAttribute("aria-label",
       info.nom + " : " + nb(d.valeur, info.decimales) + " " + info.unite + ", niveau " + niv.nom.toLowerCase());
   }
-  carte.detailEl.textContent = perime ? "Dernière valeur reçue " + depuis(Date.now() - d.t) : info.detail;
+  carte.detailEl.textContent = perime ? "Dernière valeur reçue " + depuis(maintenant() - d.t) : info.detail;
 }
 
 // Blocs « dernière mesure ». Renvoie l'heure de la mesure la plus récente.
@@ -1905,7 +1934,7 @@ function majLecture(pire, plusRecent, ancien) {
     });
   }
   dl.hidden = false;
-  ligneLecture.mesure.dd.textContent = plusRecent ? depuis(Date.now() - plusRecent) : "—";
+  ligneLecture.mesure.dd.textContent = plusRecent ? depuis(maintenant() - plusRecent) : "—";
   if (pire) {
     const info = CHAMPS[pire.champ];
     ligneLecture.decisif.dd.textContent =
@@ -1931,6 +1960,12 @@ function afficherVerdict(pire, plusRecent, ancien) {
   majLecture(pire, plusRecent, ancien);
 }
 
+// Après plusieurs mises à jour ratées d'affilée, l'ancien verdict ne doit plus passer pour l'état actuel.
+function afficherVerdictHorsLigne() {
+  majBandeau("horsligne", "Pas de verdict :", "serveur injoignable", NEUTRE, 0, "Qualité de l'air · Serveur injoignable");
+  document.getElementById("lecture").hidden = true;
+}
+
 function afficherVerdictVide() {
   majBandeau("vide", "Pas de verdict :", "aucune donnée", NEUTRE, 0, "Qualité de l'air · Notre capteur");
   document.getElementById("lecture").hidden = true;
@@ -1938,16 +1973,68 @@ function afficherVerdictVide() {
 
 // Vrai si la dernière mesure est trop ancienne pour parler de l'air « en ce moment ».
 function capteurMuet(tDerniere, pasMs) {
-  return tDerniere > 0 && Date.now() - tDerniere > pasMs + 2 * 3600000;
+  return tDerniere > 0 && maintenant() - tDerniere > pasMs + 2 * 3600000;
 }
 
 // Pastille d'en-tête : capteur en ligne, en retard ou muet.
+// Humidité élevée : les capteurs optiques de particules gonflent alors leurs valeurs.
+function afficherHumidite(serieV) {
+  const e = document.getElementById("alerte-hum");
+  if (!e) return;
+  const h = derniereValeur(serieV, "hum");
+  const pm = derniereValeur(serieV, "pm25") || derniereValeur(serieV, "pm1") || derniereValeur(serieV, "pm10");
+  if (h && pm && h.valeur > 80) {
+    e.textContent = "Humidité élevée (" + nb(h.valeur, 0) + " %) : à ce niveau, le capteur peut surestimer les particules.";
+    e.hidden = false;
+  } else {
+    e.hidden = true;
+  }
+}
+
+// CO₂ : tendance sur 15 minutes (pente d'une droite ajustée, en ppm/min), seuil à venir, et pic de la période avec son heure.
+function afficherCO2(serieV, lus) {
+  const note = document.getElementById("note-co2");
+  if (!note) return;
+  const pts = serieV.filter(r => r.p && estNombre(r.p.co2));
+  const morceaux = [];
+  if (pts.length > 0) {
+    const fin = pts[pts.length - 1].t;
+    const recents = pts.filter(r => fin - r.t <= 15 * 60000);
+    if (recents.length >= 4) {
+      let sx = 0, sy = 0, sxy = 0, sxx = 0;
+      recents.forEach(r => { const x = (r.t - fin) / 60000; sx += x; sy += r.p.co2; sxy += x * r.p.co2; sxx += x * x; });
+      const n = recents.length, den = n * sxx - sx * sx;
+      if (den > 0) {
+        const pente = (n * sxy - sx * sy) / den;
+        if (Math.abs(pente) < 0.5) {
+          morceaux.push("Tendance : stable");
+        } else {
+          morceaux.push("Tendance : " + (pente > 0 ? "+" : "−") + nb(Math.abs(pente), 1) + " ppm/min sur 15 min");
+          const actuel = pts[pts.length - 1].p.co2;
+          const seuil = pente > 0 ? SEUILS.co2.limites.find(l => l > actuel) : null;
+          if (seuil && (seuil - actuel) / pente <= 120) {
+            morceaux.push("à ce rythme, " + nb(seuil, 0) + " ppm dans environ " + Math.max(1, Math.round((seuil - actuel) / pente)) + " min : pensez à aérer");
+          }
+        }
+      }
+    }
+  }
+  let pic = null;
+  lus.forEach(r => { if (estNombre(r.p.co2) && (!pic || r.p.co2 > pic.v)) pic = { v: r.p.co2, t: r.t }; });
+  if (pic) {
+    const quand = new Date(pic.t).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    morceaux.push("Pic de la période : " + nb(pic.v, 0) + " ppm le " + quand);
+  }
+  note.textContent = morceaux.join(" · ");
+  note.hidden = morceaux.length === 0;
+}
+
 function majStatut(tDerniere, pasMs) {
   if (!tDerniere) {
     definirStatut("erreur", "Aucune valeur reçue");
     return;
   }
-  const age = Date.now() - tDerniere;
+  const age = maintenant() - tDerniere;
   if (capteurMuet(tDerniere, pasMs)) {
     definirStatut("erreur", "Capteur muet ? Dernière mesure " + depuis(age));
   } else if (age <= pasMs + 15 * 60000) {
@@ -1961,14 +2048,14 @@ function texteNote(t) {
   if (!t) return "Aucune valeur reçue sur cette période.";
   const quand = new Date(t).toLocaleString("fr-FR",
     { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
-  return "Mesure du " + quand + " (" + depuis(Date.now() - t) + ").";
+  return "Mesure du " + quand + " (" + depuis(maintenant() - t) + ").";
 }
 
 // Entre deux mises à jour (5 min), les « il y a X min » continuent de s'écouler : on les rafraîchit sans nouvelle requête.
 function majTempsRelatif() {
   if (!tDerniere || document.hidden) return;
   majStatut(tDerniere, pasAffiche);
-  if (ligneLecture.mesure) ligneLecture.mesure.dd.textContent = depuis(Date.now() - tDerniere);
+  if (ligneLecture.mesure) ligneLecture.mesure.dd.textContent = depuis(maintenant() - tDerniere);
   document.getElementById("note-derniere").textContent = texteNote(tDerniere);
 }
 
@@ -2013,12 +2100,26 @@ function allure(valeurs) {
   return svg;
 }
 
-function afficherResume(serie) {
+// Mesures de la période, remises à leur heure réelle (même règle que construireSerie), triées par heure.
+function lirePoints(points, periode, ref) {
+  const debut = ref - reglagesPeriode(periode).duree;
+  const lus = [];
+  points.forEach(p => {
+    const h = heureReelle(p);
+    if (!h) return;
+    const t = Math.min(h.t, ref);
+    if (t >= debut) lus.push({ t, p });
+  });
+  return lus.sort((a, b) => a.t - b.t);
+}
+
+// Min, moyenne et max sont calculés sur les mesures elles-mêmes, pas sur des moyennes de tranches (qui lissent les pics).
+function afficherResume(serie, lus) {
   const corps = document.getElementById("resume-corps");
   corps.replaceChildren();
   let rang = 0;
   Object.keys(CHAMPS).forEach(c => {
-    const vals = serie.map(r => r.p && r.p[c]).filter(estNombre);
+    const vals = lus.map(r => r.p[c]).filter(estNombre);
     if (vals.length === 0) return;
     const info = CHAMPS[c];
     const moyenne = vals.reduce((a, b) => a + b, 0) / vals.length;
@@ -2093,11 +2194,21 @@ function afficherTout() {
   animerProchain = false;
 
   document.getElementById("squelette").hidden = true;
-  const plusRecent = afficherDerniere(serie, pasMs);
+  const ref = maintenant();
+  // Verdict, statut et « dernières mesures » regardent toujours les 2 dernières heures en points fins :
+  // ils ne changent plus quand on passe de 6 h à 7 jours. Sans mesure récente, on retombe sur la série affichée.
+  const vivant = construireSerie(points, "-120m", ref);
+  const serieV = vivant ? vivant.serie : serie;
+  const pasV = vivant ? enMs(reglagesPeriode("-120m").moyenne) : pasMs;
+  const plusRecent = afficherDerniere(serieV, pasV);
   tDerniere = plusRecent;
-  pasAffiche = pasMs;
-  majStatut(plusRecent, pasMs);
-  afficherVerdict(calculerPire(serie, plusRecent, pasMs), plusRecent, capteurMuet(plusRecent, pasMs));
+  pasAffiche = pasV;
+  majStatut(plusRecent, pasV);
+  if (echecsSuite >= 3) afficherVerdictHorsLigne();
+  else afficherVerdict(calculerPire(serieV, plusRecent, pasV), plusRecent, capteurMuet(plusRecent, pasV));
+  const lus = lirePoints(points, periode, ref);
+  afficherHumidite(serieV);
+  afficherCO2(serieV, lus);
 
   // Les sections de mesures n'apparaissent qu'une fois les données reçues
   sectionsDonnees().forEach(s => { s.hidden = false; });
@@ -2106,11 +2217,11 @@ function afficherTout() {
    ["graphe-co2", ["co2"]]].forEach(([id, champs]) => {
     const bloc = document.getElementById(id).closest(".bloc");
     bloc.hidden = false;                      // visible pendant le dessin, pour que Chart.js mesure la place
-    const n = dessiner(id, serie, champs, animer);
+    const n = dessiner(id, serie, champs, animer && bloc.classList.contains("vu"));   // pas d'animation cachée derrière le masque de révélation
     bloc.hidden = (n === 0);                  // pas de mesure : on cache la section
   });
 
-  afficherResume(serie);
+  afficherResume(serie, lus);
 
   let texte = points.length + " points, moyenne sur " + libelleDuree(reglagesPeriode(periode).moyenne) + ".";
   if (rejouees > 0) {
@@ -2188,12 +2299,17 @@ function initPleinEcran() {
   if (bascule) bascule.addEventListener("click", () => { if (elementPlein()) sortirPleinEcran(); else entrerPleinEcran(); });
 
   if (!porte || elementPlein()) return;
+  // Tant que l'écran d'entrée est ouvert, le reste de la page est « inert » : ni clic, ni Tab, ni lecteur d'écran n'y accèdent.
+  const reste = () => Array.from(document.body.children).filter(e => e !== porte && e.tagName !== "SCRIPT");
+  const figer = actif => reste().forEach(e => { if (actif) e.setAttribute("inert", ""); else e.removeAttribute("inert"); });
   const fermer = () => {
     if (porte.hidden) return;
     porte.hidden = true;
+    figer(false);
     racine.classList.remove("gate-ouvert");
   };
   porte.hidden = false;
+  figer(true);
   racine.classList.add("gate-ouvert");
   porte.addEventListener("click", e => {
     const passer = porte.querySelector(".ep-passer");
@@ -2232,7 +2348,8 @@ function creerNuage() {
   // Collisions entre grains : chocs élastiques (masse ∝ surface). Détection par grille de cases : seuls les voisins
   // proches sont comparés, donc le coût reste faible même avec plus de 600 grains.
   const CELLULE = 16;       // px : plus grand que le plus gros diamètre de collision
-  const RESTITUTION = 0.9;  // part de la vitesse relative rendue par un choc (1 = parfaitement élastique)
+  const RESTITUTION = 1;    // 1 = choc parfaitement élastique
+  const GAIN_CHOC = 0.45;   // px/image : chaque grain gagne en plus cette vitesse, dans la direction opposée à l'autre
   let tete = new Int32Array(0), suiv = new Int32Array(0), colonnes = 0, lignes = 0;
   const AGITATION = 0.14;           // agitation brownienne : réduite (0,22 avant) car le frottement plus faible l'amplifie
   let larg = 0, haut = 0;
@@ -2243,6 +2360,7 @@ function creerNuage() {
   let pointeur = null;     // dernières coordonnées du doigt/curseur (écran)
   let curseur = null;      // position lissée dans le bandeau : { x, y, vx, vy, vit }
   let visible = true;
+  let masque = false;      // le bandeau est presque effacé par le défilement : inutile d'animer
   let tourne = false;
   let image = 0;
   let precedent = 0;
@@ -2280,21 +2398,35 @@ function creerNuage() {
     };
     grain.grav = GRAVITE * grain.r / 2.2;
     grain.m = grain.r * grain.r;          // masse
-    grain.rc = grain.r * 1.2 + 1.5;       // rayon de collision (un peu plus large que le point dessiné)
+    grain.rc = grain.r;                   // rayon de collision = rayon dessiné : elles se choquent quand elles se touchent vraiment
     grain.cx = -1; grain.cy = -1;
     if (plein) grain.a = grain.amax;
     return grain;
   }
 
+  // Les grains sont regroupés par palier d'opacité (16 niveaux) : un seul tracé par palier au lieu d'un par grain.
+  const PALIERS = 16;
+  const lots = Array.from({ length: PALIERS + 1 }, () => []);
   function dessiner() {
     ctx.clearRect(0, 0, larg, haut);
     ctx.fillStyle = "rgb(" + rvb + ")";
+    for (let k = 0; k <= PALIERS; k++) lots[k].length = 0;
     for (let i = 0; i < grains.length; i++) {
       const g = grains[i];
       if (g.a <= 0) continue;
-      ctx.globalAlpha = Math.min(1, g.a * (1 + g.lum * 0.9));
+      const k = Math.round(Math.min(1, g.a * (1 + g.lum * 0.9)) * PALIERS);
+      if (k > 0) lots[k].push(g);
+    }
+    for (let k = 1; k <= PALIERS; k++) {
+      const lot = lots[k];
+      if (lot.length === 0) continue;
+      ctx.globalAlpha = k / PALIERS;
       ctx.beginPath();
-      ctx.arc(g.x, g.y, g.r * (1 + g.lum * 0.35), 0, 6.2832);
+      for (let i = 0; i < lot.length; i++) {
+        const g = lot[i], r = g.r * (1 + g.lum * 0.35);
+        ctx.moveTo(g.x + r, g.y);
+        ctx.arc(g.x, g.y, r, 0, 6.2832);
+      }
       ctx.fill();
     }
     ctx.globalAlpha = 1;
@@ -2353,8 +2485,12 @@ function creerNuage() {
       const J = -(1 + RESTITUTION) * vn / (1 / ma + 1 / mb);
       a.vx += J / ma * nx; a.vy += J / ma * ny;
       b.vx -= J / mb * nx; b.vy -= J / mb * ny;
-      const l = Math.min(1, -vn * 0.9);   // un choc un peu vif fait briller les deux grains
-      if (l > 0.12) { if (a.lum < l) a.lum = l; if (b.lum < l) b.lum = l; }
+      // chaque grain gagne de la vitesse au choc (quelle que soit sa masse) : ils repartent plus vite qu'ils ne sont arrivés
+      a.vx += nx * GAIN_CHOC; a.vy += ny * GAIN_CHOC;
+      b.vx -= nx * GAIN_CHOC; b.vy -= ny * GAIN_CHOC;
+      const l = Math.min(1, 0.55 - vn * 0.9);   // le choc fait briller les deux grains
+      if (a.lum < l) a.lum = l;
+      if (b.lum < l) b.lum = l;
     }
     // les écarter ne doit pas les sortir du cadre
     if (a.x < a.r) a.x = a.r; else if (a.x > larg - a.r) a.x = larg - a.r;
@@ -2464,7 +2600,7 @@ function creerNuage() {
   }
 
   function actualiser() {
-    const doitTourner = visible && !document.hidden && !reduit();
+    const doitTourner = visible && !masque && !document.hidden && !reduit();
     if (doitTourner && !tourne) {
       tourne = true;
       precedent = 0;
@@ -2501,8 +2637,9 @@ function creerNuage() {
       // première mesure valide : on répartit tous les grains au hasard dans toute la fenêtre
       for (let i = 0; i < grains.length; i++) { grains[i].x = Math.random() * larg; grains[i].y = Math.random() * haut; }
     }
-    canvas.width = Math.max(1, Math.round(larg * ratio));
-    canvas.height = Math.max(1, Math.round(haut * ratio));
+    const largPx = Math.max(1, Math.round(larg * ratio)), hautPx = Math.max(1, Math.round(haut * ratio));
+    if (canvas.width !== largPx) canvas.width = largPx;     // réallouer vide le canvas : on ne le fait que si la taille change
+    if (canvas.height !== hautPx) canvas.height = hautPx;
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     ajusterCible();
     if (!tourne) poserSansAnimation();
@@ -2511,8 +2648,19 @@ function creerNuage() {
   return {
     init() {
       mesurer();
-      if ("ResizeObserver" in window) new ResizeObserver(mesurer).observe(hero);
-      else window.addEventListener("resize", mesurer);
+      // Sur téléphone, la barre d'adresse fait varier la hauteur en continu : on regroupe les changements (une fois par image)
+      // et on ignore les variations de moins de 3 px.
+      let attente = 0;
+      const surRedimension = () => {
+        if (attente) return;
+        attente = requestAnimationFrame(() => {
+          attente = 0;
+          if (Math.abs(hero.clientWidth - larg) < 3 && Math.abs(hero.clientHeight - haut) < 3) return;
+          mesurer();
+        });
+      };
+      if ("ResizeObserver" in window) new ResizeObserver(surRedimension).observe(hero);
+      else window.addEventListener("resize", surRedimension);
       if ("IntersectionObserver" in window) {
         new IntersectionObserver(e => { visible = e[0].isIntersecting; actualiser(); }).observe(hero);
       }
@@ -2584,6 +2732,11 @@ function creerNuage() {
           new IntersectionObserver(e => { if (!e[0].isIntersecting) jeu(false); }).observe(hero);
         }
       }
+      actualiser();
+    },
+    masquer(valeur) {
+      if (valeur === masque) return;
+      masque = valeur;
       actualiser();
     },
     // niveau : 0 (bon) à 3 (très élevé)
@@ -2787,6 +2940,7 @@ function initStoryScrolling() {
     }
     hero.style.scale = (1 - p * 0.07).toFixed(4);
     hero.style.borderRadius = p > 0.001 ? (p * 40).toFixed(1) + "px" : "0px";
+    if (nuage) nuage.masquer(p > 0.95);
     if (!scene) return;
     if (scene.disque) {
       scene.disque.style.scale = (1 + p * 2.4).toFixed(3);
@@ -3066,16 +3220,33 @@ function placerCurseur() {
 // =====================================================================
 // 7) MISE À JOUR ET ÉVÉNEMENTS
 // =====================================================================
-async function rafraichir() {
+// forcer = true : on interroge le serveur même si la période est en cache (mise à jour automatique).
+// Sinon, un changement de période réutilise les données de moins de 5 min : le serveur n'accepte pas plus de 1 requête / 5 min.
+async function rafraichir(forcer) {
   const numero = ++numeroRequete;
   const periode = periodeActuelle;
+  if (controleur) controleur.abort();   // la demande précédente est remplacée
+  const ctl = typeof AbortController === "function" ? new AbortController() : null;
+  controleur = ctl;
+  const minuteur = ctl ? setTimeout(() => ctl.abort(), DELAI_MAX_MS) : 0;
   try {
-    const points = await chargerMesures(periode);
-    if (numero !== numeroRequete) return;   // une demande plus récente a pris le relais
-    derniereMaj = Date.now();
-    majPiedMaj();
+    let points;
+    const memo = cachePeriodes.get(periode);
+    if (!forcer && memo && Date.now() - memo.t < RAFRAICHISSEMENT_MS) {
+      points = memo.points;
+      decalageHorloge = memo.decalage;
+    } else {
+      points = await chargerMesures(periode, ctl ? ctl.signal : undefined);
+      if (numero !== numeroRequete) return;   // une demande plus récente a pris le relais
+      decalageHorloge = estimerDecalage(points);
+      cachePeriodes.set(periode, { points, t: Date.now(), decalage: decalageHorloge });
+      while (cachePeriodes.size > 6) cachePeriodes.delete(cachePeriodes.keys().next().value);
+      derniereMaj = Date.now();
+      majPiedMaj();
+    }
+    echecsSuite = 0;
 
-    const resultat = points.length === 0 ? null : construireSerie(points, periode, Date.now());
+    const resultat = points.length === 0 ? null : construireSerie(points, periode, maintenant());
     if (!resultat) {
       viderTout();
       document.getElementById("squelette").hidden = true;
@@ -3088,6 +3259,7 @@ async function rafraichir() {
     afficherTout();
   } catch (erreur) {
     if (numero !== numeroRequete) return;
+    echecsSuite++;
     tDerniere = 0;   // le minuteur des « il y a X min » ne doit pas écraser ce message d'erreur
     definirStatut("erreur", "Données indisponibles");
     majEtat("etat erreur", "Erreur : " + erreur.message);
@@ -3096,7 +3268,11 @@ async function rafraichir() {
       sectionsDonnees().forEach(s => { s.hidden = true; });
       afficherVerdictVide();
       actualiserChapitres();
+    } else if (echecsSuite >= 3) {
+      afficherVerdictHorsLigne();   // 3 échecs d'affilée : l'ancien verdict ne passe plus pour l'état actuel
     }
+  } finally {
+    clearTimeout(minuteur);
   }
 }
 
@@ -3110,7 +3286,7 @@ function pauseHorsEcran() {
 }
 
 // Applique une période (clé de l'API : "-6h", "-90m"…). Si aucun bouton ne lui correspond, c'est une durée personnalisée.
-function choisirPeriode(cle) {
+function choisirPeriode(cle, sansRequete) {
   const bouton = document.querySelector('.periode[data-periode="' + cle + '"]');
   const perso = document.getElementById("bouton-perso");
   animerProchain = (cle !== periodeActuelle);
@@ -3126,6 +3302,8 @@ function choisirPeriode(cle) {
     perso.setAttribute("aria-label", libelle ? "Durée personnalisée : " + libelle : "Durée personnalisée");
   }
   placerCurseur();
+  if (sansRequete) return;
+  try { history.replaceState(null, "", "#p=" + cle); } catch (e) { /* adresse non modifiable (fichier local) */ }
   majEtat("etat", "Chargement…");
   rafraichir();
 }
@@ -3171,11 +3349,14 @@ function initPerso() {
       champN.focus();
       return;
     }
-    const cle = (minutes % 1440 === 0) ? "-" + (minutes / 1440) + "d"
+    // d'abord les durées des boutons (24 h donne « -24h », pas « -1d »), puis la forme la plus lisible
+    const bouton = Object.keys(DUREE_PERIODE).find(k => DUREE_PERIODE[k] === minutes * 60000);
+    const cle = bouton ? bouton
+              : (minutes % 1440 === 0) ? "-" + (minutes / 1440) + "d"
               : (minutes % 60 === 0) ? "-" + (minutes / 60) + "h"
               : "-" + minutes + "m";
     fermerPerso(false);
-    choisirPeriode(cle);   // "-24h" retombe sur le bouton « 24 heures », par exemple
+    choisirPeriode(cle);   // 6 h, 24 h et 7 jours retombent sur leur bouton
   });
 }
 
@@ -3188,6 +3369,36 @@ function initControles() {
   });
   initPerso();
   document.getElementById("afficher-seuils").addEventListener("change", afficherTout);
+  const csv = document.getElementById("export-csv");
+  if (csv) csv.addEventListener("click", exporterCSV);
+  // Adresse partageable : « …#p=-90m » ouvre directement la page sur cette période.
+  const m = /^#p=(-\d+[mhd])$/.exec(location.hash);
+  if (m) {
+    const minutes = dureeDeCle(m[1]) / 60000;
+    if (minutes >= PERSO_MIN && minutes <= PERSO_MAX) choisirPeriode(m[1], true);
+  }
+}
+
+// Export des points affichés (une ligne par tranche de temps avec mesures), lisible par Excel en français.
+function exporterCSV() {
+  if (!cache) return;
+  const champs = Object.keys(CHAMPS).filter(c => cache.serie.some(r => r.p && estNombre(r.p[c])));
+  const lignes = [["date_heure_utc"].concat(champs.map(c => CHAMPS[c].nom + " (" + CHAMPS[c].unite + ")")).join(";")];
+  cache.serie.forEach(r => {
+    if (!r.p) return;
+    lignes.push([new Date(r.t).toISOString()]
+      .concat(champs.map(c => estNombre(r.p[c]) ? String(Math.round(r.p[c] * 100) / 100).replace(".", ",") : ""))
+      .join(";"));
+  });
+  const blob = new Blob(["\ufeff" + lignes.join("\r\n")], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const lien = document.createElement("a");
+  lien.href = url;
+  lien.download = "mesures_air_" + cache.periode.slice(1) + ".csv";
+  document.body.append(lien);
+  lien.click();
+  lien.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function demarrer() {
@@ -3252,11 +3463,11 @@ function demarrer() {
 
   // Au retour sur l'onglet, on rafraîchit tout de suite si les données sont trop anciennes.
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && Date.now() - derniereMaj > RAFRAICHISSEMENT_MS) rafraichir();
+    if (!document.hidden && Date.now() - derniereMaj > RAFRAICHISSEMENT_MS) rafraichir(true);
   });
 
-  rafraichir();
-  setInterval(rafraichir, RAFRAICHISSEMENT_MS);
+  rafraichir(true);
+  setInterval(() => { if (!document.hidden) rafraichir(true); }, RAFRAICHISSEMENT_MS);   // pas de requête onglet masqué
   setInterval(majTempsRelatif, 30000);
 }
 
