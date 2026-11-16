@@ -49,6 +49,20 @@
   }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
+
+  /* Japonais : les polices du site n'ont pas de caractères japonais. Noto Sans JP (chargée par js/i18n.js) prend le relais,
+     et les titres, pensés pour un texte latin condensé, retrouvent un interligne et un espacement normaux. */
+  html[lang="ja"] {
+    --sans: "Archivo", "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, system-ui, sans-serif;
+    --titre: "Archivo", "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+    --mono: "Chivo Mono", "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, ui-monospace, monospace;
+  }
+  html[lang="ja"] body { line-height: 1.75; line-break: strict; }
+  html[lang="ja"] .mot, html[lang="ja"] .bloc-tete h2, html[lang="ja"] .bloc.large > h2, html[lang="ja"] .texte-ligne h3,
+  html[lang="ja"] .manifeste-texte, html[lang="ja"] .ep-titre, html[lang="ja"] .prefixe { letter-spacing: 0; }
+  html[lang="ja"] .mot, html[lang="ja"] .bloc.large > h2 { line-height: 1.12; }
+  html[lang="ja"] .bloc-tete h2, html[lang="ja"] .texte-ligne h3, html[lang="ja"] .ep-titre { line-height: 1.2; }
+  html[lang="ja"] .manifeste-texte { line-height: 1.3; max-width: 14em; }
   /* text-size-adjust : empêche le téléphone de gonfler le texte en mode paysage.
      Le préfixe -webkit- reste nécessaire sur iPhone/iPad ; -moz- sur Firefox Android. */
   html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; -moz-text-size-adjust: 100%; text-size-adjust: 100%; }
@@ -112,7 +126,7 @@
   .jeu-poussiere[aria-pressed="true"] span { color: var(--ciel); }
   .hero.jeu { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
   /* tout le texte disparaît : ne reste que les particules et un petit bouton pour reprendre le défilement */
-  .hero.jeu .marque, .hero.jeu .statut, .hero.jeu .titre, .hero.jeu .hero-bas, .hero.jeu .tampon {
+  .hero.jeu .marque, .hero.jeu .statut, .hero.jeu .langues, .hero.jeu .titre, .hero.jeu .hero-bas, .hero.jeu .tampon {
     opacity: 0 !important; visibility: hidden; pointer-events: none;
     transition: opacity .35s ease, visibility 0s linear .35s !important;
   }
@@ -193,6 +207,23 @@
   }
   .statut.alerte .point { border-radius: 0; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
   .statut.erreur .point { border-radius: 1px; }
+
+  /* ---------- Sélecteur de langue (3 exemplaires : écran d'entrée, bandeau, pied de page) ---------- */
+  .langues { --fg: var(--encre); --inv: var(--fond); display: inline-flex; border: 2px solid currentColor; border-radius: 2px; }
+  .hero .langues { --fg: var(--ciel-texte); --inv: var(--ciel); }
+  .entree-plein .langues, .pied .langues { --fg: var(--fond); --inv: var(--encre); }
+  .langues button {
+    min-width: 40px; min-height: 32px; padding: 4px 10px;
+    border: 0; border-radius: 0; background: transparent; color: inherit; cursor: pointer;
+    font: 600 .72rem/1 var(--mono); letter-spacing: .04em;
+  }
+  .langues button + button { border-left: 2px solid currentColor; }
+  .langues button[aria-pressed="true"] { background: var(--fg); color: var(--inv); }
+  .langues button:focus-visible { outline: 3px solid currentColor; outline-offset: -5px; }
+  @media (pointer: coarse) { .langues button { min-width: 44px; min-height: 44px; } }
+  .ep-int .langues { margin-top: 10px; }
+  .pied-droite { display: grid; justify-items: end; gap: 18px; }
+  @media print { .langues { display: none !important; } }
 
   /* ---------- Titre et verdict ---------- */
   .titre { margin: 0; display: flex; flex-direction: column; gap: clamp(8px, 1.6vw, 18px); }
@@ -308,12 +339,7 @@
   }
   .perso-aide { flex-basis: 100%; margin: 0; font: 500 .75rem/1.4 var(--mono); color: var(--doux); }
   .perso-aide.erreur { color: #9c1f17; font-weight: 600; }
-  .actions-resume { margin: 14px 0 0; }
-  .bouton-csv { min-height: 40px; padding: 8px 16px; border: 2px solid var(--encre); border-radius: 3px; background: transparent; color: var(--encre); font: 600 .85rem/1 var(--sans); cursor: pointer; }
-  @media (hover: hover) { .bouton-csv:hover { background: var(--encre); color: var(--fond); } }
-  .bouton-csv:focus-visible { outline: 3px solid var(--cobalt); outline-offset: 2px; }
-  .alerte-hum { color: #9c1f17; font-weight: 600; }
-  @media (pointer: coarse) { .perso input, .perso select, .perso-ok, .bouton-csv { min-height: 44px; } }
+  @media (pointer: coarse) { .perso input, .perso select, .perso-ok { min-height: 44px; } }
 
   .option { display: inline-flex; align-items: center; gap: 12px; font-size: .9rem; font-weight: 500; cursor: pointer; -webkit-user-select: none; user-select: none; }
   .option-court, .court { display: none; }
@@ -639,7 +665,6 @@
     .point-story.actif::after {
       content: ""; position: absolute; inset: -4px; border-radius: 50%; pointer-events: none;
       background: conic-gradient(var(--accent) calc(var(--p, 0) * 360deg), var(--filet) 0);
-      -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px));
       mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px));
     }
   }
@@ -680,11 +705,17 @@
 
 <div class="entree-plein" id="entree-plein" role="dialog" aria-modal="true" aria-labelledby="ep-titre" hidden>
   <div class="ep-int">
-    <p class="ep-sur">Qualité de l'air · mesures en direct</p>
-    <h2 id="ep-titre" class="ep-titre">Pour une meilleure immersion</h2>
-    <p class="ep-texte">Touchez ou cliquez n'importe où pour passer en plein écran. <kbd>Échap</kbd> ou le bouton en bas à droite permet d'en sortir.</p>
-    <button type="button" class="ep-go">Entrer en plein écran</button>
-    <button type="button" class="ep-passer">Continuer sans plein écran</button>
+    <p class="ep-sur" data-i18n="ep.sur">Qualité de l'air · mesures en direct</p>
+    <h2 id="ep-titre" class="ep-titre" data-i18n="ep.titre">Pour une meilleure immersion</h2>
+    <p class="ep-texte" data-i18n-html="ep.texte">Touchez ou cliquez n'importe où pour passer en plein écran. <kbd>Échap</kbd> ou le bouton en bas à droite permet d'en sortir.</p>
+    <button type="button" class="ep-go" data-i18n="ep.go">Entrer en plein écran</button>
+    <button type="button" class="ep-passer" data-i18n="ep.passer">Continuer sans plein écran</button>
+    <!-- Sélecteur de langue n° 1 : écran d'entrée -->
+    <div class="langues" role="group" data-i18n-attr="aria-label:lang.groupe" aria-label="Langue">
+      <button type="button" data-lang="fr" lang="fr" aria-label="Français" aria-pressed="true">FR</button>
+      <button type="button" data-lang="en" lang="en" aria-label="English" aria-pressed="false">EN</button>
+      <button type="button" data-lang="ja" lang="ja" aria-label="日本語" aria-pressed="false">日本語</button>
+    </div>
   </div>
 </div>
 
@@ -693,19 +724,22 @@
   <svg class="ic-sortir" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 4v5H4M15 4v5h5M20 15h-5v5M4 15h5v5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
 </button>
 
-<nav class="sommaire-story" id="sommaire" aria-label="Chapitres de la page" hidden>
+<nav class="sommaire-story" id="sommaire" aria-label="Chapitres de la page" data-i18n-attr="aria-label:nav.chapitres" hidden>
   <p class="sommaire-etat" id="sommaire-etat" aria-hidden="true"></p>
   <ol id="sommaire-liste"></ol>
 </nav>
 
 <noscript>
+  <!-- JavaScript coupé : aucune traduction possible, le message est donc écrit dans les trois langues -->
   <p style="padding:16px;margin:0;background:#fff3b0">
-    Cette page a besoin de JavaScript pour afficher les mesures.
+    Cette page a besoin de JavaScript pour afficher les mesures.<br>
+    This page needs JavaScript to display the readings.<br>
+    測定値を表示するには JavaScript が必要です。
   </p>
 </noscript>
 
 <div class="piste" id="piste">
-<header class="hero" id="hero" data-titre="Introduction">
+<header class="hero" id="hero" data-titre="Introduction" data-i18n-attr="data-titre:chap.intro">
   <div class="hero-disque" aria-hidden="true"></div>
   <canvas id="poussieres" aria-hidden="true"></canvas>
   <div class="hero-grain" aria-hidden="true"></div>
@@ -713,12 +747,19 @@
 
   <div class="conteneur hero-contenu">
     <div class="hero-haut">
-      <p class="marque">Qualité de l'air intérieur · Marseille</p>
+      <p class="marque" data-i18n="hero.marque">Qualité de l'air intérieur · Marseille</p>
 
       <p id="statut" class="statut">
         <span class="point"></span>
         <span id="statut-texte">Chargement…</span>
       </p>
+
+      <!-- Sélecteur de langue n° 2 : bandeau d'accueil -->
+      <div class="langues" role="group" data-i18n-attr="aria-label:lang.groupe" aria-label="Langue">
+        <button type="button" data-lang="fr" lang="fr" aria-label="Français" aria-pressed="true">FR</button>
+        <button type="button" data-lang="en" lang="en" aria-label="English" aria-pressed="false">EN</button>
+        <button type="button" data-lang="ja" lang="ja" aria-label="日本語" aria-pressed="false">日本語</button>
+      </div>
 
       <button type="button" class="jeu-poussiere" id="jeu-poussiere" aria-pressed="false">
         <span id="jeu-texte">Jouer avec les particules</span>
@@ -726,12 +767,10 @@
     </div>
 
     <h1 class="titre">
-      <span class="question apparait" style="--d:0">
-        Quelle est la qualité de l'air <em>ici</em>&nbsp;?
-      </span>
+      <span class="question apparait" style="--d:0" data-i18n-html="hero.question">Quelle est la qualité de l'air <em>ici</em>&nbsp;?</span>
 
       <span class="reponse" aria-live="polite">
-        <span class="prefixe apparait" style="--d:1" id="verdict-prefixe">L'air est</span>
+        <span class="prefixe apparait" style="--d:1" id="verdict-prefixe" data-i18n="verdict.air_est">L'air est</span>
 
         <span class="mot s1 attente" id="verdict">
           <span class="sr" id="verdict-sr">…</span>
@@ -746,17 +785,9 @@
 
     <div class="hero-bas">
       <div class="hero-gauche apparait" style="--d:3">
-        <p class="intro">
-          Cette page affiche les mesures de notre capteur : particules fines,
-          température, humidité et CO₂.
-          Le capteur est installé à Marseille.
-        </p>
+        <p class="intro" data-i18n-html="hero.intro">Cette page affiche les mesures de notre capteur : particules fines, température, humidité et CO₂. Le capteur est installé à Marseille.</p>
 
-        <a class="descendre" href="#mesures">
-          Voir les mesures <span aria-hidden="true">↓</span>
-        </a>
-
-
+        <a class="descendre" href="#mesures" data-i18n-html="hero.voir">Voir les mesures <span aria-hidden="true">↓</span></a>
       </div>
 
       <dl class="lecture" id="lecture" hidden></dl>
@@ -765,44 +796,44 @@
 </header>
 </div>
 
-<section class="manifeste" id="manifeste" aria-label="Présentation du capteur">
+<section class="manifeste" id="manifeste" aria-label="Présentation du capteur" data-i18n-attr="aria-label:manifeste.aria">
   <div class="manifeste-scene conteneur">
-    <p class="manifeste-texte" id="manifeste-texte">Un petit capteur mesure en continu les particules fines, le CO₂, la température et l’humidité de l’air. Voici ce que nous respirons, vraiment.</p>
+    <p class="manifeste-texte" id="manifeste-texte" data-i18n="manifeste.texte">Un petit capteur mesure en continu les particules fines, le CO₂, la température et l’humidité de l’air. Voici ce que nous respirons, vraiment.</p>
   </div>
 </section>
 
 <div class="barre" id="mesures">
   <div class="conteneur barre-int">
-    <div class="periodes" role="group" aria-label="Période affichée">
+    <div class="periodes" role="group" aria-label="Période affichée" data-i18n-attr="aria-label:p.aria">
       <span class="curseur" id="curseur" aria-hidden="true"></span>
 
-      <button type="button" class="periode" data-periode="-6h" aria-label="6 heures" aria-pressed="false">6<span class="long"> heures</span><span class="court"> h</span></button>
+      <button type="button" class="periode" data-periode="-6h" aria-label="6 heures" data-i18n-attr="aria-label:p.aria6h" aria-pressed="false">6<span class="long" data-i18n="p.long_h"> heures</span><span class="court" data-i18n="p.court_h"> h</span></button>
 
-      <button type="button" class="periode actif" data-periode="-24h" aria-label="24 heures" aria-pressed="true">24<span class="long"> heures</span><span class="court"> h</span></button>
+      <button type="button" class="periode actif" data-periode="-24h" aria-label="24 heures" data-i18n-attr="aria-label:p.aria24h" aria-pressed="true">24<span class="long" data-i18n="p.long_h"> heures</span><span class="court" data-i18n="p.court_h"> h</span></button>
 
-      <button type="button" class="periode" data-periode="-7d" aria-label="7 jours" aria-pressed="false">7<span class="long"> jours</span><span class="court"> j</span></button>
+      <button type="button" class="periode" data-periode="-7d" aria-label="7 jours" data-i18n-attr="aria-label:p.aria7d" aria-pressed="false">7<span class="long" data-i18n="p.long_j"> jours</span><span class="court" data-i18n="p.court_j"> j</span></button>
 
       <button type="button" class="periode" id="bouton-perso" data-periode="perso" aria-label="Durée personnalisée" aria-pressed="false" aria-expanded="false" aria-controls="perso"><span id="perso-texte">Perso</span></button>
     </div>
 
     <label class="option">
-      <input type="checkbox" id="afficher-seuils" aria-label="Afficher les seuils sur les graphes" checked>
+      <input type="checkbox" id="afficher-seuils" aria-label="Afficher les seuils sur les graphes" data-i18n-attr="aria-label:p.seuils_aria" checked>
       <span class="interrupteur" aria-hidden="true"></span>
-      <span class="option-long">Afficher les seuils sur les graphes</span>
-      <span class="option-court" aria-hidden="true">Seuils</span>
+      <span class="option-long" data-i18n="p.seuils_long">Afficher les seuils sur les graphes</span>
+      <span class="option-court" aria-hidden="true" data-i18n="p.seuils_court">Seuils</span>
     </label>
   </div>
 
-  <form class="perso" id="perso" aria-label="Durée personnalisée" novalidate hidden>
+  <form class="perso" id="perso" aria-label="Durée personnalisée" data-i18n-attr="aria-label:perso.aria" novalidate hidden>
     <div class="conteneur perso-int">
-      <label for="perso-n">Afficher les</label>
+      <label for="perso-n" data-i18n="perso.label">Afficher les</label>
       <input id="perso-n" type="number" inputmode="decimal" min="0" step="any" value="3" autocomplete="off">
-      <select id="perso-u" aria-label="Unité de la durée">
-        <option value="m">dernières minutes</option>
-        <option value="h" selected>dernières heures</option>
-        <option value="d">derniers jours</option>
+      <select id="perso-u" aria-label="Unité de la durée" data-i18n-attr="aria-label:perso.unite_aria">
+        <option value="m" data-i18n="perso.u_m">dernières minutes</option>
+        <option value="h" data-i18n="perso.u_h" selected>dernières heures</option>
+        <option value="d" data-i18n="perso.u_d">derniers jours</option>
       </select>
-      <button type="submit" class="perso-ok">Afficher</button>
+      <button type="submit" class="perso-ok" data-i18n="perso.ok">Afficher</button>
       <p class="perso-aide" id="perso-aide" role="status"></p>
     </div>
   </form>
@@ -811,12 +842,11 @@
 <main class="conteneur">
   <p id="etat" class="etat" role="status">Chargement…</p>
 
-  <section class="bloc chapitre" id="chapitre-mesures" data-titre="Dernière mesure" aria-labelledby="titre-derniere">
+  <section class="bloc chapitre" id="chapitre-mesures" data-titre="Dernière mesure" data-i18n-attr="data-titre:chap.mesures" aria-labelledby="titre-derniere">
     <div class="bloc-tete revele">
-      <p class="numero-chapitre"><span class="n" data-n>00</span><span class="total" data-total>/ 00</span><span class="accroche">À l’instant</span></p>
-      <h2 id="titre-derniere">Dernière mesure</h2>
+      <p class="numero-chapitre"><span class="n" data-n>00</span><span class="total" data-total>/ 00</span><span class="accroche" data-i18n="acc.mesures">À l’instant</span></p>
+      <h2 id="titre-derniere" data-i18n="chap.mesures">Dernière mesure</h2>
       <p class="note" id="note-derniere"></p>
-      <p class="note alerte-hum" id="alerte-hum" hidden></p>
     </div>
 
     <div class="bloc-corps revele" style="--d:1">
@@ -833,115 +863,98 @@
     </div>
   </section>
 
-  <section class="bloc chapitre" id="chapitre-particules" data-titre="Particules fines" aria-labelledby="titre-pm" hidden>
+  <section class="bloc chapitre" id="chapitre-particules" data-titre="Particules fines" data-i18n-attr="data-titre:chap.particules" aria-labelledby="titre-pm" hidden>
     <div class="bloc-tete revele">
-      <p class="numero-chapitre"><span class="n" data-n>00</span><span class="total" data-total>/ 00</span><span class="accroche">Ce que nous respirons</span></p>
-      <h2 id="titre-pm">Particules fines <span class="u">(µg/m³)</span></h2>
-      <p class="note">
-        PM1, PM2.5 et PM10 : des particules de moins de 1, 2,5 et 10 micromètres. Plus elles sont fines, plus elles pénètrent profondément dans les poumons.
-      </p>
+      <p class="numero-chapitre"><span class="n" data-n>00</span><span class="total" data-total>/ 00</span><span class="accroche" data-i18n="acc.particules">Ce que nous respirons</span></p>
+      <h2 id="titre-pm" data-i18n-html="pm.h2">Particules fines <span class="u">(µg/m³)</span></h2>
+      <p class="note" data-i18n="pm.note">PM1, PM2.5 et PM10 : des particules de moins de 1, 2,5 et 10 micromètres. Plus elles sont fines, plus elles pénètrent profondément dans les poumons.</p>
     </div>
 
     <div class="bloc-corps revele" style="--d:1">
       <div class="zone-graphe">
-        <canvas id="graphe-pm" role="img" aria-label="Courbes des particules fines PM1, PM2.5 et PM10 sur la période choisie"></canvas>
+        <canvas id="graphe-pm" role="img" aria-label="Courbes des particules fines PM1, PM2.5 et PM10 sur la période choisie" data-i18n-attr="aria-label:pm.aria"></canvas>
       </div>
     </div>
   </section>
 
   <section class="bloc chapitre" id="carte-co2" data-titre="CO₂" aria-labelledby="titre-co2" hidden>
     <div class="bloc-tete revele">
-      <p class="numero-chapitre"><span class="n" data-n>00</span><span class="total" data-total>/ 00</span><span class="accroche">L’air se renouvelle-t-il ?</span></p>
+      <p class="numero-chapitre"><span class="n" data-n>00</span><span class="total" data-total>/ 00</span><span class="accroche" data-i18n="acc.co2">L’air se renouvelle-t-il ?</span></p>
       <h2 id="titre-co2">CO₂ <span class="u">(ppm)</span></h2>
-      <p class="note">Le CO₂ vient surtout de notre respiration : plus il monte, moins la pièce est aérée.</p>
-      <p class="note" id="note-co2" hidden></p>
+      <p class="note" data-i18n="co2.note">Le CO₂ vient surtout de notre respiration : plus il monte, moins la pièce est aérée.</p>
     </div>
 
     <div class="bloc-corps revele" style="--d:1">
       <div class="zone-graphe">
-        <canvas id="graphe-co2" role="img" aria-label="Courbe du CO₂ sur la période choisie"></canvas>
+        <canvas id="graphe-co2" role="img" aria-label="Courbe du CO₂ sur la période choisie" data-i18n-attr="aria-label:co2.aria"></canvas>
       </div>
     </div>
   </section>
 
-  <section class="bloc chapitre" id="thum" data-titre="Température et humidité" aria-labelledby="titre-meteo" hidden>
+  <section class="bloc chapitre" id="thum" data-titre="Température et humidité" data-i18n-attr="data-titre:chap.thum" aria-labelledby="titre-meteo" hidden>
     <div class="bloc-tete revele">
-      <p class="numero-chapitre"><span class="n" data-n>00</span><span class="total" data-total>/ 00</span><span class="accroche">Le confort</span></p>
-      <h2 id="titre-meteo">Température et humidité <span class="u">(°C · %)</span></h2>
-      <p class="note">
-        Température sur l’axe de gauche (°C), humidité sur l’axe de droite (%).
-      </p>
+      <p class="numero-chapitre"><span class="n" data-n>00</span><span class="total" data-total>/ 00</span><span class="accroche" data-i18n="acc.thum">Le confort</span></p>
+      <h2 id="titre-meteo" data-i18n-html="thum.h2">Température et humidité <span class="u">(°C · %)</span></h2>
+      <p class="note" data-i18n="thum.note">Température sur l’axe de gauche (°C), humidité sur l’axe de droite (%).</p>
     </div>
 
     <div class="bloc-corps revele" style="--d:1">
       <div class="zone-graphe">
-        <canvas id="graphe-meteo" role="img" aria-label="Courbes de la température et de l’humidité sur la période choisie"></canvas>
+        <canvas id="graphe-meteo" role="img" aria-label="Courbes de la température et de l’humidité sur la période choisie" data-i18n-attr="aria-label:thum.aria"></canvas>
       </div>
     </div>
   </section>
 
-  <section class="bloc chapitre" id="carte-resume" data-titre="Bilan de la période" aria-labelledby="titre-resume" hidden>
+  <section class="bloc chapitre" id="carte-resume" data-titre="Bilan de la période" data-i18n-attr="data-titre:chap.resume" aria-labelledby="titre-resume" hidden>
     <div class="bloc-tete revele">
-      <p class="numero-chapitre"><span class="n" data-n>00</span><span class="total" data-total>/ 00</span><span class="accroche">Prendre du recul</span></p>
-      <h2 id="titre-resume">Résumé de la période</h2>
-      <p class="note">
-        Minimum, moyenne et maximum de chaque mesure, sur la période choisie. Calculés sur les mesures elles-mêmes
-        (au-delà de 24 h, le serveur ne fournit que des moyennes de 5 min : les pics y sont un peu lissés).
-      </p>
+      <p class="numero-chapitre"><span class="n" data-n>00</span><span class="total" data-total>/ 00</span><span class="accroche" data-i18n="acc.resume">Prendre du recul</span></p>
+      <h2 id="titre-resume" data-i18n="resume.h2">Résumé de la période</h2>
+      <p class="note" data-i18n="resume.note">Minimum, moyenne et maximum de chaque mesure, sur la période choisie.</p>
     </div>
 
     <div class="bloc-corps revele" style="--d:1">
       <div class="defile">
         <table>
-          <caption class="sr">
-            Minimum, moyenne et maximum de chaque mesure sur la période affichée
-          </caption>
+          <caption class="sr" data-i18n="resume.caption">Minimum, moyenne et maximum de chaque mesure sur la période affichée</caption>
 
           <thead>
             <tr>
-              <th scope="col">Mesure</th>
-              <th scope="col">Minimum</th>
-              <th scope="col">Moyenne</th>
-              <th scope="col">Maximum</th>
-              <th scope="col" class="col-allure">Allure</th>
+              <th data-i18n="resume.th_mesure">Mesure</th>
+              <th data-i18n="resume.th_min">Minimum</th>
+              <th data-i18n="resume.th_moy">Moyenne</th>
+              <th data-i18n="resume.th_max">Maximum</th>
+              <th class="col-allure" data-i18n="resume.th_allure">Allure</th>
             </tr>
           </thead>
 
           <tbody id="resume-corps"></tbody>
         </table>
       </div>
-      <p class="actions-resume"><button type="button" class="bouton-csv" id="export-csv">Exporter en CSV</button></p>
     </div>
   </section>
 
-  <section class="bloc large chapitre" id="aller-plus-loin" data-titre="Comprendre les mesures" aria-labelledby="titre-comprendre">
-    <p class="numero-chapitre revele"><span class="n" data-n>00</span><span class="total" data-total>/ 00</span><span class="accroche">Pour aller plus loin</span></p>
-    <h2 id="titre-comprendre" class="revele">Comprendre les mesures</h2>
+  <section class="bloc large chapitre" id="aller-plus-loin" data-titre="Comprendre les mesures" data-i18n-attr="data-titre:chap.comprendre" aria-labelledby="titre-comprendre">
+    <p class="numero-chapitre revele"><span class="n" data-n>00</span><span class="total" data-total>/ 00</span><span class="accroche" data-i18n="acc.comprendre">Pour aller plus loin</span></p>
+    <h2 id="titre-comprendre" class="revele" data-i18n="chap.comprendre">Comprendre les mesures</h2>
 
     <div>
       <div class="texte-ligne revele">
-        <h3>Le projet</h3>
+        <h3 data-i18n="comp.projet.h3">Le projet</h3>
         <div>
-          <p>
-            Un boîtier installé à Marseille mesure en continu les particules fines, la température, l'humidité et le CO₂ d'une pièce, et publie les mesures sur cette page.
-          </p>
+          <p data-i18n-html="comp.projet.p">Un boîtier installé à Marseille mesure en continu les particules fines, la température, l'humidité et le CO₂ d'une pièce, et publie les mesures sur cette page.</p>
         </div>
       </div>
 
       <div class="texte-ligne revele">
-        <h3>PM1, PM2.5 et PM10</h3>
+        <h3 data-i18n="comp.pm.h3">PM1, PM2.5 et PM10</h3>
         <div>
-          <p>
-            Ce sont des particules en suspension dans l'air, classées selon leur diamètre. Plus elles sont petites,
-            plus elles pénètrent profondément dans les voies respiratoires : les PM2.5 peuvent aller jusqu'aux poumons
-            profonds. Elles se mesurent en microgrammes par mètre cube d'air (µg/m³).
-          </p>
-          <figure class="tailles" aria-label="Diamètre des particules comparé à celui d'un cheveu, à l'échelle">
-            <div class="taille"><div class="zone"><span class="rond cheveu"></span></div><b>Cheveu</b><small>≈ 70 µm</small></div>
+          <p data-i18n="comp.pm.p">Ce sont des particules en suspension dans l'air, classées selon leur diamètre. Plus elles sont petites, plus elles pénètrent profondément dans les voies respiratoires : les PM2.5 peuvent aller jusqu'aux poumons profonds. Elles se mesurent en microgrammes par mètre cube d'air (µg/m³).</p>
+          <figure class="tailles" aria-label="Diamètre des particules comparé à celui d'un cheveu, à l'échelle" data-i18n-attr="aria-label:comp.pm.aria">
+            <div class="taille"><div class="zone"><span class="rond cheveu"></span></div><b data-i18n="comp.cheveu">Cheveu</b><small>≈ 70 µm</small></div>
             <div class="taille"><div class="zone"><span class="rond pm10"></span></div><b>PM10</b><small>10 µm</small></div>
-            <div class="taille"><div class="zone"><span class="rond pm25"></span></div><b>PM2.5</b><small>2,5 µm</small></div>
+            <div class="taille"><div class="zone"><span class="rond pm25"></span></div><b>PM2.5</b><small data-i18n="comp.t25">2,5 µm</small></div>
             <div class="taille"><div class="zone"><span class="rond pm1"></span></div><b>PM1</b><small>1 µm</small></div>
-            <figcaption>Diamètres comparés, à l'échelle. Les trajets sont illustratifs : plus une particule est fine, plus elle se laisse agiter.</figcaption>
+            <figcaption data-i18n="comp.caption">Diamètres comparés, à l'échelle. Les trajets sont illustratifs : plus une particule est fine, plus elle se laisse agiter.</figcaption>
           </figure>
         </div>
       </div>
@@ -949,59 +962,32 @@
       <div class="texte-ligne revele">
         <h3>CO₂</h3>
         <div>
-          <p>
-            À l'intérieur, le CO₂ vient surtout de notre respiration. Aux niveaux mesurés en salle, ce n'est pas lui
-            qui est dangereux&nbsp;: il sert d'indicateur de confinement. Plus il monte, moins l'air est renouvelé.
-            Le Haut Conseil de la santé publique (HCSP) fixe un objectif sous 800&nbsp;ppm dans les lieux clos et
-            recommande d'aérer au-delà. L'air extérieur est autour de 400&nbsp;ppm.
-          </p>
+          <p data-i18n="comp.co2.p">À l'intérieur, le CO₂ vient surtout de notre respiration. Aux niveaux mesurés en salle, ce n'est pas lui qui est dangereux&nbsp;: il sert d'indicateur de confinement. Plus il monte, moins l'air est renouvelé. Le Haut Conseil de la santé publique (HCSP) fixe un objectif sous 800&nbsp;ppm dans les lieux clos et recommande d'aérer au-delà. L'air extérieur est autour de 400&nbsp;ppm.</p>
         </div>
       </div>
 
       <div class="texte-ligne revele">
-        <h3>Les couleurs et les seuils</h3>
+        <h3 data-i18n="comp.seuils.h3">Les couleurs et les seuils</h3>
         <div>
           <div class="defile">
             <table>
               <thead>
-                <tr><th scope="col">Niveau</th><th scope="col">PM1 et PM2.5 <span class="unite">(µg/m³)</span></th><th scope="col">PM10 <span class="unite">(µg/m³)</span></th><th scope="col">CO₂ <span class="unite">(ppm)</span></th></tr>
+                <tr><th data-i18n="comp.th_niveau">Niveau</th><th data-i18n-html="comp.th_pm">PM1 et PM2.5 <span class="unite">(µg/m³)</span></th><th>PM10 <span class="unite">(µg/m³)</span></th><th>CO₂ <span class="unite">(ppm)</span></th></tr>
               </thead>
               <tbody id="seuils-corps"></tbody>
             </table>
           </div>
-          <p class="petit" style="margin-top:14px">
-            Particules&nbsp;: valeur guide de l'OMS (2021) pour «&nbsp;Bon&nbsp;», puis cibles intermédiaires 3 et 1 de l'OMS
-            pour «&nbsp;Moyen&nbsp;» et «&nbsp;Élevé&nbsp;». Ces valeurs de l'OMS portent sur des moyennes de 24 heures&nbsp;: ici elles
-            servent de repère pour la dernière mesure, à titre indicatif. CO₂&nbsp;: 800&nbsp;ppm est l'objectif du HCSP&nbsp;;
-            1&nbsp;000 et 1&nbsp;500&nbsp;ppm sont des repères usuels pour l'aération des salles. PM1&nbsp;: l'OMS ne fixe pas de valeur guide, on applique ici les mêmes limites que pour les PM2.5.
-          </p>
-          <p class="petit">
-            Sources&nbsp;: OMS, <em>Lignes directrices mondiales sur la qualité de l'air</em>, 2021&nbsp;; HCSP, recommandations
-            sur l'aération et la ventilation des établissements.
-           
-          </p>
+          <p class="petit" style="margin-top:14px" data-i18n="comp.seuils.p1">Particules&nbsp;: valeur guide de l'OMS (2021) pour «&nbsp;Bon&nbsp;», puis cibles intermédiaires 3 et 1 de l'OMS pour «&nbsp;Moyen&nbsp;» et «&nbsp;Élevé&nbsp;». Ces valeurs de l'OMS portent sur des moyennes de 24 heures&nbsp;: ici elles servent de repère pour la dernière mesure, à titre indicatif. CO₂&nbsp;: 800&nbsp;ppm est l'objectif du HCSP&nbsp;; 1&nbsp;000 et 1&nbsp;500&nbsp;ppm sont des repères usuels pour l'aération des salles. PM1&nbsp;: l'OMS ne fixe pas de valeur guide, on applique ici les mêmes limites que pour les PM2.5.</p>
+          <p class="petit" data-i18n-html="comp.seuils.p2">Sources&nbsp;: OMS, <em>Lignes directrices mondiales sur la qualité de l'air</em>, 2021&nbsp;; HCSP, recommandations sur l'aération et la ventilation des établissements.</p>
         </div>
       </div>
 
       <div class="texte-ligne revele">
-        <h3>Température et humidité</h3>
+        <h3 data-i18n="chap.thum">Température et humidité</h3>
         <div>
-          <p>
-            Ces deux mesures n'ont pas de niveau «&nbsp;Bon&nbsp;» ou «&nbsp;Élevé&nbsp;»&nbsp;: elles servent à interpréter les autres.
-            Dans une salle occupée, la température et le CO₂ montent souvent ensemble, car les personnes
-            dégagent de la chaleur et rejettent du CO₂.
-          </p>
-          <p>
-            L'humidité affichée est une humidité relative&nbsp;: la quantité de vapeur d'eau présente dans l'air,
-            en pourcentage de ce que l'air peut contenir à cette température. Elle baisse donc quand on chauffe
-            sans ajouter d'eau. On la juge confortable entre 40 et 60&nbsp;% (repère indicatif)&nbsp;: plus sec, l'air
-            irrite les yeux et la gorge&nbsp;; au-delà de 60 à 70&nbsp;%, les moisissures et les acariens se
-            développent plus facilement.
-          </p>
-          <p>
-            L'humidité aide aussi à juger les particules&nbsp;: quand l'air est très humide, les capteurs de particules
-            à bas coût ont tendance à surestimer les PM, car les particules gonflent en absorbant de l'eau.
-          </p>
+          <p data-i18n="comp.thum.p1">Ces deux mesures n'ont pas de niveau «&nbsp;Bon&nbsp;» ou «&nbsp;Élevé&nbsp;»&nbsp;: elles servent à interpréter les autres. Dans une salle occupée, la température et le CO₂ montent souvent ensemble, car les personnes dégagent de la chaleur et rejettent du CO₂.</p>
+          <p data-i18n="comp.thum.p2">L'humidité affichée est une humidité relative&nbsp;: la quantité de vapeur d'eau présente dans l'air, en pourcentage de ce que l'air peut contenir à cette température. Elle baisse donc quand on chauffe sans ajouter d'eau. On la juge confortable entre 40 et 60&nbsp;% (repère indicatif)&nbsp;: plus sec, l'air irrite les yeux et la gorge&nbsp;; au-delà de 60 à 70&nbsp;%, les moisissures et les acariens se développent plus facilement.</p>
+          <p data-i18n="comp.thum.p3">L'humidité aide aussi à juger les particules&nbsp;: quand l'air est très humide, les capteurs de particules à bas coût ont tendance à surestimer les PM, car les particules gonflent en absorbant de l'eau.</p>
         </div>
       </div>
     </div>
@@ -1013,50 +999,69 @@
   <div class="conteneur pied-int">
     <div class="pied-texte">
       <dl class="pied-donnees">
-        <dt>Source</dt>
-        <dd>Capteur de qualité de l'air, qui envoie ses mesures au serveur AirCarto (api.aircarto.fr), environ toutes les 30&nbsp;secondes.</dd>
+        <dt data-i18n="pied.source.dt">Source</dt>
+        <dd data-i18n="pied.source.dd">Capteur de qualité de l'air, qui envoie ses mesures au serveur AirCarto (api.aircarto.fr), environ toutes les 30&nbsp;secondes.</dd>
 
-        <dt>Mesures</dt>
-        <dd>Particules fines PM1, PM2.5 et PM10 (µg/m³), température (°C), humidité relative (%) et CO₂ (ppm).</dd>
+        <dt data-i18n="pied.mesures.dt">Mesures</dt>
+        <dd data-i18n="pied.mesures.dd">Particules fines PM1, PM2.5 et PM10 (µg/m³), température (°C), humidité relative (%) et CO₂ (ppm).</dd>
 
-        <dt>Traitement</dt>
-        <dd>
-          Chaque mesure est replacée à son heure réelle : le serveur la date à sa réception, et après une coupure la carte
-          indique l'âge des mesures gardées en mémoire. La page en fait ensuite la moyenne par tranche de temps
-          (5&nbsp;min sur 6&nbsp;h, 15&nbsp;min sur 24&nbsp;h, 1&nbsp;h sur 7&nbsp;jours&nbsp;; pour une durée personnalisée, le pas est
-          choisi pour garder environ 180 points au plus). Un trou dans une courbe signifie qu'aucune mesure n'a été reçue.
-        </dd>
+        <dt data-i18n="pied.traitement.dt">Traitement</dt>
+        <dd data-i18n="pied.traitement.dd">Chaque mesure est replacée à son heure réelle : le serveur la date à sa réception, et après une coupure la carte indique l'âge des mesures gardées en mémoire. La page en fait ensuite la moyenne par tranche de temps (5&nbsp;min sur 6&nbsp;h, 15&nbsp;min sur 24&nbsp;h, 1&nbsp;h sur 7&nbsp;jours&nbsp;; pour une durée personnalisée, le pas est choisi pour garder environ 180 points au plus). Un trou dans une courbe signifie qu'aucune mesure n'a été reçue.</dd>
 
-        <dt>Actualisation</dt>
-        <dd>
-          Automatique <span id="frequence">toutes les 5 minutes</span> (limite imposée par le serveur).
-          Dernière actualisation de la page&nbsp;: <span id="pied-maj">—</span>.
-        </dd>
+        <dt data-i18n="pied.actualisation.dt">Actualisation</dt>
+        <dd data-i18n-html="pied.actualisation.dd">Automatique <span id="frequence">toutes les 5 minutes</span> (limite imposée par le serveur). Dernière actualisation de la page&nbsp;: <span id="pied-maj">—</span>.</dd>
 
-        <dt>Niveaux</dt>
-        <dd>
-          Seuils de l'OMS (2021) pour les particules et du HCSP pour le CO₂, détaillés dans «&nbsp;Comprendre les mesures&nbsp;».
-          Capteur à bas coût&nbsp;: les valeurs sont indicatives et n'ont pas de valeur réglementaire.
-        </dd>
+        <dt data-i18n="pied.niveaux.dt">Niveaux</dt>
+        <dd data-i18n="pied.niveaux.dd">Seuils de l'OMS (2021) pour les particules et du HCSP pour le CO₂, détaillés dans «&nbsp;Comprendre les mesures&nbsp;». Capteur à bas coût&nbsp;: les valeurs sont indicatives et n'ont pas de valeur réglementaire.</dd>
 
-        <dt>Outils</dt>
-        <dd>Graphes&nbsp;: Chart.js 4.4.1. Polices&nbsp;: Archivo et Chivo Mono (Google Fonts).</dd>
+        <dt data-i18n="pied.outils.dt">Outils</dt>
+        <dd data-i18n="pied.outils.dd">Graphes&nbsp;: Chart.js 4.4.1. Polices&nbsp;: Archivo et Chivo Mono (Google Fonts).</dd>
       </dl>
 
-      <p>Projet réalisé par Gabriel, Simon, Guillaume et Titouan.</p>
+      <p data-i18n-html="pied.projet">Projet réalisé par Gabriel, Simon, Guillaume et Titouan.</p>
     </div>
-    <a class="haut" href="#piste">Haut de page <span aria-hidden="true">↑</span></a>
+
+    <div class="pied-droite">
+      <!-- Sélecteur de langue n° 3 : pied de page (le bandeau d'accueil se range en défilant) -->
+      <div class="langues" role="group" data-i18n-attr="aria-label:lang.groupe" aria-label="Langue">
+        <button type="button" data-lang="fr" lang="fr" aria-label="Français" aria-pressed="true">FR</button>
+        <button type="button" data-lang="en" lang="en" aria-label="English" aria-pressed="false">EN</button>
+        <button type="button" data-lang="ja" lang="ja" aria-label="日本語" aria-pressed="false">日本語</button>
+      </div>
+      <a class="haut" href="#piste" data-i18n-html="pied.haut">Haut de page <span aria-hidden="true">↑</span></a>
+    </div>
   </div>
 </footer>
 
+<!-- Traductions : un fichier par langue, puis le moteur. L'ordre compte (voir js/i18n.js). -->
+<script src="lang/fr.js"></script>
+<script src="lang/en.js"></script>
+<script src="lang/ja.js"></script>
+<script src="js/i18n.js"></script>
 
 <script>
 window.__pret = true;   // dit à la page que le script a bien démarré (voir le <head>)
 
+// ---- Traductions (js/i18n.js + lang/*.js, chargés juste avant ce script) ----
+// Si le moteur n'a pas pu être chargé (mauvais chemin, fichier absent), on le dit clairement dans la console
+// et la page reste utilisable : les textes sont alors les clés de traduction, faciles à repérer.
+if (!window.I18N) {
+  console.error("[i18n] js/i18n.js introuvable : vérifiez les balises <script src=\"lang/…\"> et <script src=\"js/i18n.js\"> et leurs chemins.");
+  window.I18N = {
+    t: c => c, tp: c => c, existe: () => false,
+    nombre: v => String(v), date: v => String(new Date(v)),
+    langue: () => "fr", locale: () => "fr-FR",
+    initialiser() {}, surChangement() {}, appliquer() {},
+  };
+}
+const trad = (cle, vars) => I18N.t(cle, vars);
+const tradp = (cle, n, vars) => I18N.tp(cle, n, vars);
+I18N.initialiser();   // traduit le HTML (data-i18n…) AVANT de démarrer la page
+
 // =====================================================================
 // 1) RÉGLAGES : seule la clé est obligatoire
 // =====================================================================
-const CLE = "CLE-RETIREE-DE-L-HISTORIQUE";            // clé du groupe (32 caractères)
+const CLE = "";            // clé du groupe (32 caractères)
 const DEVICE_ID = "";      // adresse MAC d'une carte, ou "" pour toutes
 const URL_API = "https://api.aircarto.fr/iut-amu/data";
 const RAFRAICHISSEMENT_MS = 5 * 60 * 1000;   // mise à jour toutes les 5 minutes (le serveur n'accepte pas plus souvent)
@@ -1074,8 +1079,7 @@ const MOYENNE = { "-6h": "5m", "-24h": "15m", "-7d": "1h" };
 //   - FREQ_API : "" = points bruts (une mesure toutes les 30 s) ; sinon, une moyenne fine du serveur ;
 //   - FREQ_SECOURS : utilisée si le serveur refuse la requête sans "freq".
 // La moyenne affichée (MOYENNE ci-dessus) est ensuite recalculée ici, par la page.
-const CHAMP_AGE = "x_age_s";
-const FREQ_API = { "-6h": "", "-24h": "", "-7d": "5m" };
+const CHAMP_AGE = "x_age_s";const FREQ_API = { "-6h": "", "-24h": "", "-7d": "5m" };
 const FREQ_SECOURS = { "-6h": "1m", "-24h": "1m", "-7d": "5m" };
 const DUREE_PERIODE = { "-6h": 6 * 3600000, "-24h": 24 * 3600000, "-7d": 7 * 86400000 };
 
@@ -1090,13 +1094,15 @@ const SEUIL_REJOUE_S = 120;       // au-delà, la mesure est comptée comme « r
 
 // Nom, unité, nombre de décimales, couleur de courbe et axe de chaque champ de l'API.
 // zero : l'axe démarre à 0 (utile pour les particules et l'humidité).
+// nomCle : clé de traduction du nom (PM1, PM2.5, PM10 et CO₂ s'écrivent pareil dans toutes les langues).
+// La description (detail) est lue dans le dictionnaire : champ.<champ>.detail.
 const CHAMPS = {
-  pm1:  { nom: "PM1",         unite: "µg/m³", decimales: 1, couleur: "#2347a8", axe: "y",  zero: true,  detail: "Particules de moins de 1 µm" },
-  pm25: { nom: "PM2.5",       unite: "µg/m³", decimales: 1, couleur: "#e2530f", axe: "y",  zero: true,  detail: "Particules de moins de 2,5 µm" },
-  pm10: { nom: "PM10",        unite: "µg/m³", decimales: 1, couleur: "#0e1b24", axe: "y",  zero: true,  detail: "Particules de moins de 10 µm" },
-  temp: { nom: "Température", unite: "°C",    decimales: 1, couleur: "#e2530f", axe: "y",  zero: false, detail: "Température de l'air" },
-  hum:  { nom: "Humidité",    unite: "%",     decimales: 0, couleur: "#2347a8", axe: "y1", zero: true,  detail: "Humidité relative de l'air" },
-  co2:  { nom: "CO₂",         unite: "ppm",   decimales: 0, couleur: "#0e1b24", axe: "y",  zero: false, detail: "Indicateur de confinement" },
+  pm1:  { nom: "PM1",         unite: "µg/m³", decimales: 1, couleur: "#2347a8", axe: "y",  zero: true },
+  pm25: { nom: "PM2.5",       unite: "µg/m³", decimales: 1, couleur: "#e2530f", axe: "y",  zero: true },
+  pm10: { nom: "PM10",        unite: "µg/m³", decimales: 1, couleur: "#0e1b24", axe: "y",  zero: true },
+  temp: { nom: "Température", nomCle: "champ.temp.nom", unite: "°C",    decimales: 1, couleur: "#e2530f", axe: "y",  zero: false },
+  hum:  { nom: "Humidité", nomCle: "champ.hum.nom", unite: "%",     decimales: 0, couleur: "#2347a8", axe: "y1", zero: true },
+  co2:  { nom: "CO₂",         unite: "ppm",   decimales: 0, couleur: "#0e1b24", axe: "y",  zero: false },
 };
 
 // Limites entre les niveaux (Bon | Moyen | Élevé | Très élevé).
@@ -1106,27 +1112,29 @@ const CHAMPS = {
 // tracer : indices des limites dessinées en pointillés sur le graphe.
 // plancher et plafond : bornes de la jauge « dernière mesure » (4 segments égaux).
 const SEUILS = {
-  pm1:  { limites: [15, 37.5, 75],      tracer: [0],    suffixe: " (OMS)", plancher: 0,   plafond: 150, libelle: "PM1 / PM2.5" },   // mêmes limites que PM2.5
-  pm25: { limites: [15, 37.5, 75],      tracer: [0],    suffixe: " (OMS)", plancher: 0,   plafond: 150, libelle: "PM1 / PM2.5" },
-  pm10: { limites: [45, 75, 150],       tracer: [0],    suffixe: " (OMS)", plancher: 0,   plafond: 300 },
-  co2:  { limites: [800, 1000, 1500],   tracer: [0, 1], suffixe: "",       plancher: 400, plafond: 2500 },
+  pm1:  { limites: [15, 37.5, 75],      tracer: [0],    oms: true, plancher: 0,   plafond: 150, libelle: "PM1 / PM2.5" },   // mêmes limites que PM2.5
+  pm25: { limites: [15, 37.5, 75],      tracer: [0],    oms: true, plancher: 0,   plafond: 150, libelle: "PM1 / PM2.5" },
+  pm10: { limites: [45, 75, 150],       tracer: [0],    oms: true, plancher: 0,   plafond: 300 },
+  co2:  { limites: [800, 1000, 1500],   tracer: [0, 1], oms: false, plancher: 400, plafond: 2500 },
 };
 
 // couleur / fond : pastilles. ciel / texte : couleurs du bandeau et de la jauge.
 // mot : le grand verdict. Le niveau « Élevé » du tableau devient « chargé » en toutes lettres.
-const NIVEAUX = [
-  { nom: "Bon",        couleur: "#2f6b3a", fond: "#e2eedd", ciel: "#1f6f43", texte: "#f2f4f0", mot: "bon" },
-  { nom: "Moyen",      couleur: "#7a5d00", fond: "#f7ecc4", ciel: "#f2c318", texte: "#0e1b24", mot: "moyen" },
-  { nom: "Élevé",      couleur: "#a84a12", fond: "#f8dcc3", ciel: "#f26a1b", texte: "#0e1b24", mot: "chargé" },
-  { nom: "Très élevé", couleur: "#9c2a22", fond: "#f3d9d5", ciel: "#a3231b", texte: "#f2f4f0", mot: "très chargé" },
+const COULEURS_NIVEAUX = [
+  { couleur: "#2f6b3a", fond: "#e2eedd", ciel: "#1f6f43", texte: "#f2f4f0" },
+  { couleur: "#7a5d00", fond: "#f7ecc4", ciel: "#f2c318", texte: "#0e1b24" },
+  { couleur: "#a84a12", fond: "#f8dcc3", ciel: "#f26a1b", texte: "#0e1b24" },
+  { couleur: "#9c2a22", fond: "#f3d9d5", ciel: "#a3231b", texte: "#f2f4f0" },
 ];
+// nom et mot sont lus dans le dictionnaire à chaque accès : ils suivent donc la langue courante.
+const NIVEAUX = COULEURS_NIVEAUX.map((c, i) => Object.defineProperties(Object.assign({}, c), {
+  nom: { enumerable: true, get: () => trad("niveau." + i + ".nom") },
+  mot: { enumerable: true, get: () => trad("niveau." + i + ".mot") },
+}));
 const NEUTRE = { ciel: "#0e1b24", texte: "#f2f4f0" };
 
 // Une phrase d'action selon la mesure décisive et son niveau.
-const CONSEILS = {
-  co2: ["Rien à faire : l'air se renouvelle bien.", "Pensez à aérer.", "Aérez la pièce.", "Aérez maintenant."],
-  pm:  ["Rien à signaler.", "À surveiller.", "Cherchez la source : fumée, poussière, travaux.", "Cherchez la source : fumée, poussière, travaux."],
-};
+const conseil = (famille, indice) => trad("conseil." + famille + "." + indice);   // famille : "co2" ou "pm"
 
 // Nombre de grains de poussière animés dans le bandeau, selon le niveau (0 à 3).
 const GRAINS = [150, 270, 430, 650];   // doublé : le bandeau était trop vide
@@ -1147,9 +1155,12 @@ let pasAffiche = 0;            // pas de la moyenne affichée, en ms
 let verdictAffiche = null;     // évite de rejouer l'animation du verdict quand il ne change pas
 let nuage = null;              // les grains de poussière du bandeau
 let ajusterTampon = function () {};
+let majTampon = function () {};         // réécrit le texte du tampon (changement de langue)
+let majPleinLangue = function () {};    // réécrit le nom du bouton plein écran (changement de langue)
+let majManifeste = function () {};      // reconstruit la phrase du manifeste (changement de langue)
 
-const POLICE_SANS = '"Archivo", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
-const POLICE_MONO = '"Chivo Mono", ui-monospace, Consolas, monospace';
+const POLICE_SANS = '"Archivo", "Noto Sans JP", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+const POLICE_MONO = '"Chivo Mono", "Noto Sans JP", ui-monospace, Consolas, monospace';
 const ENCRE = "#0e1b24";
 
 // Chart.js est chargé en « async » : il peut arriver après le démarrage de la page.
@@ -1158,12 +1169,19 @@ function reglerChart() {
   Chart.defaults.font.family = POLICE_SANS;
   Chart.defaults.font.size = window.innerWidth < 560 ? 11 : 12;
   Chart.defaults.color = "#52616b";
+  // Position d'info-bulle « haut » (écrans tactiles) : fixée en haut du graphe, à la verticale du point touché,
+  // pour que le doigt ne la cache pas.
+  if (Chart.Tooltip && Chart.Tooltip.positioners) {
+    Chart.Tooltip.positioners.haut = function (elements) {
+      if (!elements.length) return false;
+      return { x: elements[0].element.x, y: this.chart.chartArea.top };
+    };
+  }
 }
 
 // Vrai si la personne a demandé moins de mouvement dans les réglages de son système.
-const requeteMouvementReduit = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;   // créée une seule fois : .matches reste à jour
 function reduit() {
-  return !!(requeteMouvementReduit && requeteMouvementReduit.matches);
+  return !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
 }
 
 // Une animation qui plante ne doit jamais empêcher le reste de la page de marcher.
@@ -1181,12 +1199,16 @@ function el(balise, classe, texte) {
 
 const estNombre = v => typeof v === "number" && Number.isFinite(v);
 
-// Nombre à la française : 1 234,5. Sans "decimales", jusqu'à 1 décimale si besoin.
+// Nom et description d'un champ, dans la langue courante.
+const nomChamp = c => (CHAMPS[c].nomCle ? trad(CHAMPS[c].nomCle) : CHAMPS[c].nom);
+const detailChamp = c => trad("champ." + c + ".detail");
+// Séparateur avant une valeur : « PM2.5 : 15 » en français (espace insécable avant les deux-points), « PM2.5: 15 » ailleurs.
+const deuxPoints = () => (I18N.langue() === "fr" ? "\u00a0: " : ": ");
+
+// Nombre dans la langue courante (1 234,5 en français, 1,234.5 en anglais). Sans "decimales", jusqu'à 1 décimale si besoin.
+// Le formateur est mis en cache par le moteur : cette fonction est appelée à chaque image pendant le décompte des chiffres.
 function nb(valeur, decimales) {
-  const options = (decimales === undefined)
-    ? { maximumFractionDigits: 1 }
-    : { minimumFractionDigits: decimales, maximumFractionDigits: decimales };
-  return valeur.toLocaleString("fr-FR", options);
+  return I18N.nombre(valeur, decimales);
 }
 
 // "5m" -> 300000 ; "1h" -> 3600000
@@ -1214,39 +1236,38 @@ function reglagesPeriode(cle) {
   return { duree, moyenne, freq: longue ? "5m" : "", secours: longue ? "5m" : "1m" };
 }
 
-// "-90m" -> "1 h 30" ; "-3h" -> "3 h" ; "-2d" -> "2 j" (espaces insécables)
+// "-90m" -> "1 h 30" ; "-3h" -> "3 h" ; "-2d" -> "2 j" (dans la langue courante, espaces insécables comprises)
 function libelleCle(cle) {
   const min = Math.round(dureeDeCle(cle) / 60000);
-  if (min >= 1440 && min % 1440 === 0) return (min / 1440) + "\u00a0j";
+  if (min >= 1440 && min % 1440 === 0) return trad("duree.jours", { n: min / 1440 });
   if (min >= 60) {
     const h = Math.floor(min / 60), reste = min % 60;
-    return h + "\u00a0h" + (reste ? "\u00a0" + String(reste).padStart(2, "0") : "");
+    // m : minutes telles quelles (japonais : 1時間5分) ; m2 : sur 2 chiffres (français, anglais : 1 h 05)
+    return reste
+      ? trad("duree.heures_min", { h, m: reste, m2: String(reste).padStart(2, "0") })
+      : trad("duree.heures", { n: h });
   }
-  return min + "\u00a0min";
+  return trad("duree.minutes", { n: min });
 }
 
 // "15m" -> "15 min" ; "1h" -> "1 h"
 function libelleDuree(freq) {
-  return freq.replace("m", " min").replace("h", " h");
+  return libelleCle("-" + freq);
 }
 
 function libelleFrequence(ms) {
-  if (ms < 60000) return "toutes les " + Math.round(ms / 1000) + " secondes";
+  if (ms < 60000) return trad("freq.secondes", { n: Math.round(ms / 1000) });
   const min = Math.round(ms / 60000);
-  return min <= 1 ? "toutes les minutes" : "toutes les " + min + " minutes";
+  return min <= 1 ? trad("freq.minute") : trad("freq.minutes", { n: min });
 }
 
+// « il y a 5 min »… Les espaces insécables sont déjà dans le dictionnaire : l'expression ne se coupe pas en fin de ligne.
 function depuis(ms) {
   const min = Math.round(ms / 60000);
-  if (min < 1) return "à l'instant";
-  let texte;
-  if (min < 60) {
-    texte = "il y a " + min + " min";
-  } else {
-    const h = Math.floor(min / 60);
-    texte = h < 48 ? "il y a " + h + " h" : "il y a " + Math.floor(h / 24) + " jours";
-  }
-  return texte.replace(/ /g, " ");   // espaces insécables : l'expression ne se coupe pas en fin de ligne
+  if (min < 1) return trad("depuis.instant");
+  if (min < 60) return trad("depuis.min", { n: min });
+  const h = Math.floor(min / 60);
+  return h < 48 ? trad("depuis.h", { n: h }) : trad("depuis.j", { n: Math.floor(h / 24) });
 }
 
 function hexVersRgba(hex, alpha) {
@@ -1278,91 +1299,97 @@ function positionJauge(champ, valeur) {
   return (i + (v - bornes[i]) / (bornes[i + 1] - bornes[i])) * 25;
 }
 
-function definirStatut(classe, message) {
-  document.getElementById("statut").className = "statut " + classe;
-  document.getElementById("statut-texte").textContent = message;
+// Le statut et l'état sont mémorisés sous forme de FONCTION qui renvoie le texte : quand la langue change,
+// on la rappelle et le message se réécrit dans la nouvelle langue (sans refaire de requête).
+let statutCourant = { classe: "", fabrique: () => trad("etat.chargement") };
+let etatCourant = { classe: "etat", fabrique: () => trad("etat.chargement") };
+
+function ecrireStatut() {
+  document.getElementById("statut").className = "statut " + statutCourant.classe;
+  document.getElementById("statut-texte").textContent = statutCourant.fabrique();
   // Le tampon « EN DIRECT » n'a de sens que si des mesures récentes arrivent
   const tampon = document.getElementById("tampon");
-  if (tampon) tampon.hidden = (classe === "erreur");
+  if (tampon) tampon.hidden = (statutCourant.classe === "erreur");
+}
+
+// classe : "ok", "alerte" ou "erreur". message : un texte, ou une fonction qui renvoie le texte.
+function definirStatut(classe, message) {
+  statutCourant = { classe, fabrique: typeof message === "function" ? message : () => message };
+  ecrireStatut();
+}
+
+function ecrireEtat() {
+  const e = document.getElementById("etat");
+  const texte = etatCourant.fabrique();
+  if (e.className !== etatCourant.classe) e.className = etatCourant.classe;
+  if (e.textContent !== texte) e.textContent = texte;
 }
 
 // Met à jour le message d'état seulement s'il change (il est lu à voix haute par les lecteurs d'écran).
-function majEtat(classe, texte) {
-  const e = document.getElementById("etat");
-  if (e.className !== classe) e.className = classe;
-  if (e.textContent !== texte) e.textContent = texte;
+function majEtat(classe, message) {
+  etatCourant = { classe, fabrique: typeof message === "function" ? message : () => message };
+  ecrireEtat();
 }
 
 // =====================================================================
 // 3) LECTURE DES MESURES
 // =====================================================================
-let brutRefuseJusqua = 0;   // le serveur a refusé les points bruts : moyenne fine utilisée jusqu'à cette heure (Infinity = définitivement)
-let decalageHorloge = 0;    // ms à ajouter à l'horloge du visiteur pour retrouver l'heure réelle (horloge en retard)
-let echecsSuite = 0;        // nombre de mises à jour ratées d'affilée
-let controleur = null;      // AbortController de la requête en cours
-const cachePeriodes = new Map();   // période -> { points, t, decalage } : au plus 1 requête par période toutes les 5 min
-const DELAI_MAX_MS = 20000;        // au-delà, on abandonne la requête
+let brutPossible = true;   // passe à false si le serveur refuse la requête sans "freq"
 
-// Heure réelle « maintenant » : l'horloge du visiteur, corrigée si elle retarde sur celle du capteur.
-function maintenant() { return Date.now() + decalageHorloge; }
-
-// Si la dernière mesure est « dans le futur » pour le visiteur, c'est que son horloge retarde : on rattrape l'écart.
-function estimerDecalage(points) {
-  let dernier = 0;
-  points.forEach(p => { const h = heureReelle(p); if (h && h.t > dernier) dernier = h.t; });
-  return dernier > 0 ? Math.max(0, Math.min(dernier - Date.now(), 6 * 3600000)) : 0;
+// Les erreurs de la page retiennent leur clé de traduction : le message se réécrit si la langue change.
+// (Le message d'une erreur renvoyée par le serveur, lui, reste tel qu'il est écrit par le serveur.)
+function erreurI18n(cle, vars) {
+  const e = new Error(cle);
+  e.i18n = { cle, vars };
+  return e;
+}
+function texteErreur(erreur) {
+  return (erreur && erreur.i18n) ? trad(erreur.i18n.cle, erreur.i18n.vars) : String((erreur && erreur.message) || erreur);
 }
 
 // Un appel à l'API. freq = "" : pas de moyenne côté serveur.
-async function appelerApi(periode, freq, signal) {
+async function appelerApi(periode, freq) {
   const params = new URLSearchParams({ key: CLE, start: periode });
   if (freq) params.set("freq", freq);
   if (DEVICE_ID) params.set("device_id", DEVICE_ID);
 
   let reponse;
   try {
-    reponse = await fetch(URL_API + "?" + params, signal ? { signal } : undefined);
+    reponse = await fetch(URL_API + "?" + params);
   } catch (e) {
-    throw new Error(e && e.name === "AbortError"
-      ? "le serveur met trop de temps à répondre."
-      : "impossible de joindre le serveur (connexion internet ?).");
+    throw erreurI18n("err.reseau");
   }
   let json;
   try {
     json = await reponse.json();
   } catch (e) {
-    throw new Error("réponse du serveur illisible (code " + reponse.status + ").");
+    throw erreurI18n("err.illisible", { code: reponse.status });
   }
   if (!json.ok) {
     // Le serveur explique toujours l'erreur dans "message"
-    const erreur = new Error(json.message || "erreur du serveur.");
+    const erreur = json.message ? new Error(json.message) : erreurI18n("err.serveur");
     erreur.serveur = true;
     throw erreur;
   }
   return json.points || [];
 }
 
-async function chargerMesures(periode, signal) {
+async function chargerMesures(periode) {
   if (!CLE) {
-    throw new Error("la clé du groupe n'est pas renseignée (ligne « const CLE » du script).");
+    throw erreurI18n("err.cle");
   }
   const reglages = reglagesPeriode(periode);
   const voulue = reglages.freq;
-  if (voulue === "" && Date.now() >= brutRefuseJusqua) {
+  if (voulue === "" && brutPossible) {
     try {
-      return await appelerApi(periode, "", signal);
+      return await appelerApi(periode, "");
     } catch (e) {
-      if (!e.serveur) throw e;        // réseau, délai dépassé : inutile de réessayer autrement
-      // Le serveur a refusé la requête sans « freq ». On essaie la moyenne fine : si elle passe, c'est bien le mode brut
-      // qui est refusé. Si elle échoue aussi (clé invalide, limite de requêtes, panne), l'erreur est la vraie :
-      // elle remonte et le mode brut reste possible pour la prochaine fois.
-      const donnees = await appelerApi(periode, reglages.secours, signal);
-      brutRefuseJusqua = /freq/i.test(e.message) ? Infinity : Date.now() + 30 * 60000;
+      if (!e.serveur) throw e;        // problème réseau : inutile de réessayer autrement
+      brutPossible = false;           // le serveur veut un "freq" : on bascule sur la moyenne fine
       console.warn("Points bruts refusés par le serveur (" + e.message + ") : moyenne fine à la place.");
-      return donnees;
     }
   }
-  return appelerApi(periode, voulue === "" ? reglages.secours : voulue, signal);
+  return appelerApi(periode, voulue === "" ? reglages.secours : voulue);
 }
 
 // Heure réelle d'un point : heure de réception (champ "time") moins x_age_s.
@@ -1478,9 +1505,7 @@ function ecrireLecture(chart, idx) {
   cadre.replaceChildren();
   cadre.classList.toggle("vide", idx == null);
   if (idx == null) {
-    cadre.textContent = ecranTactile()
-      ? "Posez le doigt sur le graphe et glissez-le pour lire chaque mesure."
-      : "Passez la souris sur le graphe pour lire chaque mesure.";
+    cadre.textContent = trad(ecranTactile() ? "graphe.aide_tactile" : "graphe.aide_souris");
     return;
   }
   cadre.append(el("div", "lg-titre", chart.data.labels[idx]));
@@ -1492,7 +1517,7 @@ function ecrireLecture(chart, idx) {
     pastille.style.background = d.borderColor;
     item.append(pastille, el("span", "lg-nom", d.label));
     if (v == null) {
-      item.append(el("span", "lg-unite", "pas de mesure"));
+      item.append(el("span", "lg-unite", trad("graphe.pas_de_mesure")));
     } else {
       item.append(el("b", "", nb(v, d.decimales)), el("span", "lg-unite", d.unite));
       const n = d.champ ? niveau(d.champ, v) : null;
@@ -1545,7 +1570,11 @@ function degrade(chart, couleur) {
   return g;
 }
 
-// Dessine (ou redessine) un graphe avec une courbe par champ. Renvoie le nombre de courbes.
+// Formats de date des graphes (le même objet est réutilisé : le moteur garde un formateur par objet et par langue).
+const OPT_DATE_LONGUE = { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" };
+const OPT_DATE_COURTE = { weekday: "short", hour: "2-digit", minute: "2-digit" };
+
+// Détruit le graphe d'un canvas (et son cadre de lecture).
 function detruireGraphe(idCanvas) {
   const canvas = document.getElementById(idCanvas);
   const cadre = canvas && canvas.parentElement && canvas.parentElement.previousElementSibling;
@@ -1564,18 +1593,13 @@ function dessiner(idCanvas, serie, champs, animer) {
   const seul = utiles.length === 1;
   const etroit = window.innerWidth < 560;
 
-  const longues = serie.map(r => new Date(r.t).toLocaleString("fr-FR",
-    { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }));
-  const courtes = serie.map(r => new Date(r.t).toLocaleString("fr-FR",
-    // au-delà de 3 jours, le jour de la semaine seul devient ambigu : on ajoute le jour du mois
-    (serie.length > 1 && serie[serie.length - 1].t - serie[0].t > 3 * 86400000)
-      ? { weekday: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }
-      : { weekday: "short", hour: "2-digit", minute: "2-digit" }));
+  const longues = serie.map(r => I18N.date(r.t, OPT_DATE_LONGUE));
+  const courtes = serie.map(r => I18N.date(r.t, OPT_DATE_COURTE));
 
   const jeux = utiles.map(c => {
     const couleur = CHAMPS[c].couleur;
     return {
-      label: CHAMPS[c].nom,
+      label: nomChamp(c),
       champ: c,
       unite: CHAMPS[c].unite,
       decimales: CHAMPS[c].decimales,
@@ -1597,7 +1621,7 @@ function dessiner(idCanvas, serie, champs, animer) {
   // Mise à jour automatique (toutes les minutes) : on remplace seulement les données du graphe existant.
   // Avant, les 3 graphes étaient détruits puis reconstruits entièrement, ce qui figeait la page un instant,
   // y compris en plein défilement.
-  const signature = utiles.join(",") + "|" + etroit + "|" + document.getElementById("afficher-seuils").checked;
+  const signature = utiles.join(",") + "|" + etroit + "|" + document.getElementById("afficher-seuils").checked + "|" + I18N.langue();
   const ancien = graphes[idCanvas];
   if (ancien && !animer && ancien.__signature === signature) {
     ancien.__courtes = courtes;
@@ -1641,7 +1665,7 @@ function dessiner(idCanvas, serie, champs, animer) {
       const s = SEUILS[c];
       if (!s) return;
       s.tracer.forEach(i => {
-        const texte = (s.libelle || CHAMPS[c].nom) + " : " + nb(s.limites[i]) + s.suffixe;
+        const texte = (s.libelle || nomChamp(c)) + deuxPoints() + nb(s.limites[i]) + (s.oms ? trad("seuil.oms") : "");
         if (lignes.some(l => l.texte === texte)) return;   // PM1 et PM2.5 partagent la même ligne
         lignes.push({ valeur: s.limites[i], couleur: NIVEAUX[i + 1].couleur, texte });
       });
@@ -1757,24 +1781,26 @@ function creerEchelle(champ) {
     barre.append(segment);
   });
   echelle.append(barre);
-  SEUILS[champ].limites.forEach((limite, i) => {
+  const graduations = SEUILS[champ].limites.map((limite, i) => {
     const graduation = el("span", "graduation", nb(limite));
     graduation.style.left = ((i + 1) * 25) + "%";
     echelle.append(graduation);
+    return graduation;
   });
   const repere = el("span", "repere");
   echelle.append(repere);
-  return { echelle, repere };
+  return { echelle, repere, graduations };
 }
 
 function creerCarte(champ) {
   const info = CHAMPS[champ];
   const carte = { champ, valeur: null, anim: 0 };
-  const nom = el("span", "mesure-nom", info.nom);
+  carte.nomEl = el("span", "mesure-nom", nomChamp(champ));
+  const nom = carte.nomEl;
   carte.nombreEl = el("span", "", nb(0, info.decimales));
   const chiffre = el("span", "chiffre");
   chiffre.append(carte.nombreEl, el("small", "", info.unite));
-  carte.detailEl = el("span", "mesure-detail", info.detail);
+  carte.detailEl = el("span", "mesure-detail", detailChamp(champ));
 
   if (SEUILS[champ]) {
     carte.badgeEl = el("span", "badge");
@@ -1783,6 +1809,7 @@ function creerCarte(champ) {
     const jauge = creerEchelle(champ);
     carte.echelleEl = jauge.echelle;
     carte.repereEl = jauge.repere;
+    carte.graduationsEls = jauge.graduations;
     carte.racine = el("div", "rangee");
     carte.racine.append(tete, jauge.echelle);
   } else {
@@ -1801,10 +1828,12 @@ function majCarte(carte, d, perime) {
     carte.badgeEl.style.background = niv.fond;
     carte.badgeEl.style.color = niv.couleur;
     carte.repereEl.style.setProperty("--pos", positionJauge(carte.champ, d.valeur) + "%");
-    carte.echelleEl.setAttribute("aria-label",
-      info.nom + " : " + nb(d.valeur, info.decimales) + " " + info.unite + ", niveau " + niv.nom.toLowerCase());
+    carte.echelleEl.setAttribute("aria-label", trad("carte.aria", {
+      nom: nomChamp(carte.champ), val: nb(d.valeur, info.decimales), unite: info.unite, niveau: niv.nom.toLowerCase() }));
+    SEUILS[carte.champ].limites.forEach((limite, i) => { carte.graduationsEls[i].textContent = nb(limite); });
   }
-  carte.detailEl.textContent = perime ? "Dernière valeur reçue " + depuis(maintenant() - d.t) : info.detail;
+  carte.nomEl.textContent = nomChamp(carte.champ);
+  carte.detailEl.textContent = perime ? trad("carte.derniere", { depuis: depuis(Date.now() - d.t) }) : detailChamp(carte.champ);
 }
 
 // Blocs « dernière mesure ». Renvoie l'heure de la mesure la plus récente.
@@ -1891,9 +1920,24 @@ function ajusterVerdict() {
   }
 }
 
-function majBandeau(cle, prefixe, mot, couleurs, indiceGrains, titre) {
+// Le texte du verdict est mémorisé sous forme de fonction : il se réécrit si la langue change.
+let bandeauCourant = null;   // { fabrique: () => ({ prefixe, mot, titre }) }
+
+// Écrit le préfixe, le grand mot et le titre de l'onglet dans la langue courante.
+function ecrireTextesBandeau() {
+  if (!bandeauCourant) return;
+  const { prefixe, mot, titre } = bandeauCourant.fabrique();
   document.title = titre;
-  if (cle === verdictAffiche) return;
+  document.getElementById("verdict-prefixe").textContent = prefixe;
+  document.getElementById("verdict").className = "mot " + classeTaille(mot);
+  document.getElementById("verdict-sr").textContent = mot;
+  ecrireMot(mot);
+  ajusterVerdict();
+}
+
+function majBandeau(cle, fabrique, couleurs, indiceGrains) {
+  bandeauCourant = { fabrique };
+  if (cle === verdictAffiche) { document.title = fabrique().titre; return; }
   verdictAffiche = cle;
 
   const hero = document.getElementById("hero");
@@ -1903,15 +1947,10 @@ function majBandeau(cle, prefixe, mot, couleurs, indiceGrains, titre) {
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute("content", couleurs.ciel);
 
-  document.getElementById("verdict-prefixe").textContent = prefixe;
-  const zone = document.getElementById("verdict");
-  zone.className = "mot " + classeTaille(mot);
-  document.getElementById("verdict-sr").textContent = mot;
-  ecrireMot(mot);
-  ajusterVerdict();
+  ecrireTextesBandeau();
 
   // Le trait se redessine à chaque nouveau verdict
-  const trait = zone.querySelector(".souligne");
+  const trait = document.getElementById("verdict").querySelector(".souligne");
   if (trait) {
     trait.classList.remove("dessine");
     void trait.getBoundingClientRect();
@@ -1921,28 +1960,32 @@ function majBandeau(cle, prefixe, mot, couleurs, indiceGrains, titre) {
 }
 
 // Les trois lignes sous le verdict : mesure décisive, heure, conseil.
+const LIGNES_LECTURE = ["decisif", "mesure", "conseil"];
+
 function majLecture(pire, plusRecent, ancien) {
   const dl = document.getElementById("lecture");
   if (!ligneLecture.decisif) {
-    [["decisif", "Décisif"], ["mesure", "Mesuré"], ["conseil", "À faire"]].forEach(([cle, titre], i) => {
+    LIGNES_LECTURE.forEach((cle, i) => {
       const ligne = el("div", "apparait");
       ligne.style.setProperty("--d", i + 4);
+      const dt = el("dt");
       const dd = el("dd");
-      ligne.append(el("dt", "", titre), dd);
+      ligne.append(dt, dd);
       dl.append(ligne);
-      ligneLecture[cle] = { ligne, dd };
+      ligneLecture[cle] = { ligne, dt, dd };
     });
   }
+  LIGNES_LECTURE.forEach(cle => { ligneLecture[cle].dt.textContent = trad("lecture." + cle); });
   dl.hidden = false;
-  ligneLecture.mesure.dd.textContent = plusRecent ? depuis(maintenant() - plusRecent) : "—";
+  ligneLecture.mesure.dd.textContent = plusRecent ? depuis(Date.now() - plusRecent) : "—";
   if (pire) {
     const info = CHAMPS[pire.champ];
     ligneLecture.decisif.dd.textContent =
-      info.nom + " · " + nb(pire.valeur, info.decimales) + " " + info.unite + " · " + NIVEAUX[pire.indice].nom;
-    ligneLecture.conseil.dd.textContent = CONSEILS[pire.champ === "co2" ? "co2" : "pm"][pire.indice];
+      nomChamp(pire.champ) + " · " + nb(pire.valeur, info.decimales) + " " + info.unite + " · " + NIVEAUX[pire.indice].nom;
+    ligneLecture.conseil.dd.textContent = conseil(pire.champ === "co2" ? "co2" : "pm", pire.indice);
     ligneLecture.conseil.ligne.hidden = !!ancien;   // pas de conseil sur une mesure ancienne
   } else {
-    ligneLecture.decisif.dd.textContent = "Aucune mesure de PM2.5, PM10 ou CO₂ reçue.";
+    ligneLecture.decisif.dd.textContent = trad("lecture.aucune");
     ligneLecture.conseil.ligne.hidden = true;
   }
 }
@@ -1950,118 +1993,72 @@ function majLecture(pire, plusRecent, ancien) {
 // ancien : la dernière mesure date de trop longtemps pour parler de l'air « en ce moment ».
 function afficherVerdict(pire, plusRecent, ancien) {
   if (ancien) {
-    majBandeau("ancien", "Pas de verdict :", "mesure trop ancienne", NEUTRE, 0, "Qualité de l'air · Notre capteur");
+    majBandeau("ancien", () => ({ prefixe: trad("verdict.pas_de"), mot: trad("verdict.ancienne"), titre: trad("meta.titre") }), NEUTRE, 0);
   } else if (pire) {
     const n = NIVEAUX[pire.indice];
-    majBandeau("n" + pire.indice, "L'air est", n.mot, n, pire.indice, "Air " + n.mot + " · Qualité de l'air");
+    majBandeau("n" + pire.indice, () => ({
+      prefixe: trad("verdict.air_est"), mot: n.mot, titre: trad("verdict.titre_page", { mot: n.mot }),
+    }), n, pire.indice);
   } else {
-    majBandeau("inconnu", "Qualité de l'air :", "inconnue", NEUTRE, 0, "Qualité de l'air · Notre capteur");
+    majBandeau("inconnu", () => ({ prefixe: trad("verdict.qualite"), mot: trad("verdict.inconnue"), titre: trad("meta.titre") }), NEUTRE, 0);
   }
   majLecture(pire, plusRecent, ancien);
 }
 
-// Après plusieurs mises à jour ratées d'affilée, l'ancien verdict ne doit plus passer pour l'état actuel.
-function afficherVerdictHorsLigne() {
-  majBandeau("horsligne", "Pas de verdict :", "serveur injoignable", NEUTRE, 0, "Qualité de l'air · Serveur injoignable");
-  document.getElementById("lecture").hidden = true;
-}
-
 function afficherVerdictVide() {
-  majBandeau("vide", "Pas de verdict :", "aucune donnée", NEUTRE, 0, "Qualité de l'air · Notre capteur");
+  majBandeau("vide", () => ({ prefixe: trad("verdict.pas_de"), mot: trad("verdict.aucune"), titre: trad("meta.titre") }), NEUTRE, 0);
   document.getElementById("lecture").hidden = true;
 }
 
 // Vrai si la dernière mesure est trop ancienne pour parler de l'air « en ce moment ».
 function capteurMuet(tDerniere, pasMs) {
-  return tDerniere > 0 && maintenant() - tDerniere > pasMs + 2 * 3600000;
+  return tDerniere > 0 && Date.now() - tDerniere > pasMs + 2 * 3600000;
 }
 
 // Pastille d'en-tête : capteur en ligne, en retard ou muet.
-// Humidité élevée : les capteurs optiques de particules gonflent alors leurs valeurs.
-function afficherHumidite(serieV) {
-  const e = document.getElementById("alerte-hum");
-  if (!e) return;
-  const h = derniereValeur(serieV, "hum");
-  const pm = derniereValeur(serieV, "pm25") || derniereValeur(serieV, "pm1") || derniereValeur(serieV, "pm10");
-  if (h && pm && h.valeur > 80) {
-    e.textContent = "Humidité élevée (" + nb(h.valeur, 0) + " %) : à ce niveau, le capteur peut surestimer les particules.";
-    e.hidden = false;
-  } else {
-    e.hidden = true;
-  }
-}
-
-// CO₂ : tendance sur 15 minutes (pente d'une droite ajustée, en ppm/min), seuil à venir, et pic de la période avec son heure.
-function afficherCO2(serieV, lus) {
-  const note = document.getElementById("note-co2");
-  if (!note) return;
-  const pts = serieV.filter(r => r.p && estNombre(r.p.co2));
-  const morceaux = [];
-  if (pts.length > 0) {
-    const fin = pts[pts.length - 1].t;
-    const recents = pts.filter(r => fin - r.t <= 15 * 60000);
-    if (recents.length >= 4) {
-      let sx = 0, sy = 0, sxy = 0, sxx = 0;
-      recents.forEach(r => { const x = (r.t - fin) / 60000; sx += x; sy += r.p.co2; sxy += x * r.p.co2; sxx += x * x; });
-      const n = recents.length, den = n * sxx - sx * sx;
-      if (den > 0) {
-        const pente = (n * sxy - sx * sy) / den;
-        if (Math.abs(pente) < 0.5) {
-          morceaux.push("Tendance : stable");
-        } else {
-          morceaux.push("Tendance : " + (pente > 0 ? "+" : "−") + nb(Math.abs(pente), 1) + " ppm/min sur 15 min");
-          const actuel = pts[pts.length - 1].p.co2;
-          const seuil = pente > 0 ? SEUILS.co2.limites.find(l => l > actuel) : null;
-          if (seuil && (seuil - actuel) / pente <= 120) {
-            morceaux.push("à ce rythme, " + nb(seuil, 0) + " ppm dans environ " + Math.max(1, Math.round((seuil - actuel) / pente)) + " min : pensez à aérer");
-          }
-        }
-      }
-    }
-  }
-  let pic = null;
-  lus.forEach(r => { if (estNombre(r.p.co2) && (!pic || r.p.co2 > pic.v)) pic = { v: r.p.co2, t: r.t }; });
-  if (pic) {
-    const quand = new Date(pic.t).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-    morceaux.push("Pic de la période : " + nb(pic.v, 0) + " ppm le " + quand);
-  }
-  note.textContent = morceaux.join(" · ");
-  note.hidden = morceaux.length === 0;
-}
-
 function majStatut(tDerniere, pasMs) {
   if (!tDerniere) {
-    definirStatut("erreur", "Aucune valeur reçue");
+    definirStatut("erreur", () => trad("statut.aucune"));
     return;
   }
-  const age = maintenant() - tDerniere;
+  const age = Date.now() - tDerniere;
+  const depuisMaintenant = () => depuis(Date.now() - tDerniere);   // recalculé à chaque réécriture du message
   if (capteurMuet(tDerniere, pasMs)) {
-    definirStatut("erreur", "Capteur muet ? Dernière mesure " + depuis(age));
+    definirStatut("erreur", () => trad("statut.muet", { depuis: depuisMaintenant() }));
   } else if (age <= pasMs + 15 * 60000) {
-    definirStatut("ok", "Capteur en ligne · dernière mesure " + depuis(age));
+    definirStatut("ok", () => trad("statut.ok", { depuis: depuisMaintenant() }));
   } else {
-    definirStatut("alerte", "Mesures en retard · dernière mesure " + depuis(age));
+    definirStatut("alerte", () => trad("statut.retard", { depuis: depuisMaintenant() }));
   }
 }
 
+const OPT_NOTE = { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" };
+const OPT_HEURE = { hour: "2-digit", minute: "2-digit", second: "2-digit" };
+
 function texteNote(t) {
-  if (!t) return "Aucune valeur reçue sur cette période.";
-  const quand = new Date(t).toLocaleString("fr-FR",
-    { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
-  return "Mesure du " + quand + " (" + depuis(maintenant() - t) + ").";
+  if (!t) return trad("note.aucune");
+  return trad("note.mesure", { quand: I18N.date(t, OPT_NOTE), depuis: depuis(Date.now() - t) });
 }
 
 // Entre deux mises à jour (5 min), les « il y a X min » continuent de s'écouler : on les rafraîchit sans nouvelle requête.
 function majTempsRelatif() {
   if (!tDerniere || document.hidden) return;
   majStatut(tDerniere, pasAffiche);
-  if (ligneLecture.mesure) ligneLecture.mesure.dd.textContent = depuis(maintenant() - tDerniere);
+  if (ligneLecture.mesure) ligneLecture.mesure.dd.textContent = depuis(Date.now() - tDerniere);
   document.getElementById("note-derniere").textContent = texteNote(tDerniere);
 }
 
 function majPiedMaj() {
   const e = document.getElementById("pied-maj");
-  if (e) e.textContent = new Date(derniereMaj).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  if (e && derniereMaj) e.textContent = I18N.date(derniereMaj, OPT_HEURE);
+}
+
+// Ces deux textes sont écrits par le script, mais ils se trouvent à l'intérieur d'un élément traduit par data-i18n-html
+// (« Actualisation » du pied de page) : la traduction les recrée, il faut donc les réécrire après chaque changement de langue.
+function majTextesFixes() {
+  const f = document.getElementById("frequence");
+  if (f) f.textContent = libelleFrequence(RAFRAICHISSEMENT_MS);
+  majPiedMaj();
 }
 
 // Petite courbe pour le tableau résumé (les trous restent des trous).
@@ -2100,33 +2097,19 @@ function allure(valeurs) {
   return svg;
 }
 
-// Mesures de la période, remises à leur heure réelle (même règle que construireSerie), triées par heure.
-function lirePoints(points, periode, ref) {
-  const debut = ref - reglagesPeriode(periode).duree;
-  const lus = [];
-  points.forEach(p => {
-    const h = heureReelle(p);
-    if (!h) return;
-    const t = Math.min(h.t, ref);
-    if (t >= debut) lus.push({ t, p });
-  });
-  return lus.sort((a, b) => a.t - b.t);
-}
-
-// Min, moyenne et max sont calculés sur les mesures elles-mêmes, pas sur des moyennes de tranches (qui lissent les pics).
-function afficherResume(serie, lus) {
+function afficherResume(serie) {
   const corps = document.getElementById("resume-corps");
   corps.replaceChildren();
   let rang = 0;
   Object.keys(CHAMPS).forEach(c => {
-    const vals = lus.map(r => r.p[c]).filter(estNombre);
+    const vals = serie.map(r => r.p && r.p[c]).filter(estNombre);
     if (vals.length === 0) return;
     const info = CHAMPS[c];
     const moyenne = vals.reduce((a, b) => a + b, 0) / vals.length;
 
     const tr = el("tr", "ligne");
     tr.style.setProperty("--i", rang++);
-    const th = el("th", "", info.nom + " (" + info.unite + ")");
+    const th = el("th", "", nomChamp(c) + " (" + info.unite + ")");
     th.scope = "row";
     tr.append(th);
     [Math.min(...vals), moyenne, Math.max(...vals)].forEach(v =>
@@ -2156,9 +2139,9 @@ function remplirSeuils() {
     ["pm25", "pm10", "co2"].forEach(c => {
       const l = SEUILS[c].limites;
       let texte;
-      if (i === 0) texte = "≤ " + nb(l[0]);
-      else if (i < l.length) texte = "> " + nb(l[i - 1]) + " et ≤ " + nb(l[i]);
-      else texte = "> " + nb(l[l.length - 1]);
+      if (i === 0) texte = trad("seuil.bas", { a: nb(l[0]) });
+      else if (i < l.length) texte = trad("seuil.entre", { a: nb(l[i - 1]), b: nb(l[i]) });
+      else texte = trad("seuil.haut", { a: nb(l[l.length - 1]) });
       tr.append(el("td", "", texte));
     });
     corps.append(tr);
@@ -2194,21 +2177,11 @@ function afficherTout() {
   animerProchain = false;
 
   document.getElementById("squelette").hidden = true;
-  const ref = maintenant();
-  // Verdict, statut et « dernières mesures » regardent toujours les 2 dernières heures en points fins :
-  // ils ne changent plus quand on passe de 6 h à 7 jours. Sans mesure récente, on retombe sur la série affichée.
-  const vivant = construireSerie(points, "-120m", ref);
-  const serieV = vivant ? vivant.serie : serie;
-  const pasV = vivant ? enMs(reglagesPeriode("-120m").moyenne) : pasMs;
-  const plusRecent = afficherDerniere(serieV, pasV);
+  const plusRecent = afficherDerniere(serie, pasMs);
   tDerniere = plusRecent;
-  pasAffiche = pasV;
-  majStatut(plusRecent, pasV);
-  if (echecsSuite >= 3) afficherVerdictHorsLigne();
-  else afficherVerdict(calculerPire(serieV, plusRecent, pasV), plusRecent, capteurMuet(plusRecent, pasV));
-  const lus = lirePoints(points, periode, ref);
-  afficherHumidite(serieV);
-  afficherCO2(serieV, lus);
+  pasAffiche = pasMs;
+  majStatut(plusRecent, pasMs);
+  afficherVerdict(calculerPire(serie, plusRecent, pasMs), plusRecent, capteurMuet(plusRecent, pasMs));
 
   // Les sections de mesures n'apparaissent qu'une fois les données reçues
   sectionsDonnees().forEach(s => { s.hidden = false; });
@@ -2217,26 +2190,21 @@ function afficherTout() {
    ["graphe-co2", ["co2"]]].forEach(([id, champs]) => {
     const bloc = document.getElementById(id).closest(".bloc");
     bloc.hidden = false;                      // visible pendant le dessin, pour que Chart.js mesure la place
-    const n = dessiner(id, serie, champs, animer && bloc.classList.contains("vu"));   // pas d'animation cachée derrière le masque de révélation
+    const n = dessiner(id, serie, champs, animer);
     bloc.hidden = (n === 0);                  // pas de mesure : on cache la section
   });
 
-  afficherResume(serie, lus);
+  afficherResume(serie);
 
-  let texte = points.length + " points, moyenne sur " + libelleDuree(reglagesPeriode(periode).moyenne) + ".";
-  if (rejouees > 0) {
-    texte += " " + rejouees + " mesure" + (rejouees > 1 ? "s" : "") + " rejouée" + (rejouees > 1 ? "s" : "") +
-      " après une coupure, replacée" + (rejouees > 1 ? "s" : "") + " à l'heure réelle.";
-  }
-  if (sansAge === points.length) {
-    texte += " Champ " + CHAMP_AGE + " absent des données : heures non corrigées.";
-  } else if (sansAge > 0) {
-    texte += " " + sansAge + " point" + (sansAge > 1 ? "s" : "") + " sans " + CHAMP_AGE + " (heure du serveur gardée).";
-  }
-  if (typeof Chart === "undefined") {
-    texte += window.__chartKO ? " Graphes indisponibles : Chart.js n'a pas pu être chargé." : " Graphes en cours de chargement…";
-  }
-  majEtat("etat", texte);
+  const moyenne = reglagesPeriode(periode).moyenne;
+  majEtat("etat", () => {
+    const phrases = [trad("etat.points", { n: points.length, duree: libelleDuree(moyenne) })];
+    if (rejouees > 0) phrases.push(tradp("etat.rejouees", rejouees, { n: rejouees }));
+    if (sansAge === points.length) phrases.push(trad("etat.sans_age_tous", { champ: CHAMP_AGE }));
+    else if (sansAge > 0) phrases.push(tradp("etat.sans_age", sansAge, { n: sansAge, champ: CHAMP_AGE }));
+    if (typeof Chart === "undefined") phrases.push(trad(window.__chartKO ? "etat.chart_ko" : "etat.chart_attente"));
+    return phrases.join(I18N.langue() === "ja" ? "" : " ");   // le japonais s'écrit sans espace entre les phrases
+  });
   actualiserChapitres();
 }
 
@@ -2288,30 +2256,27 @@ function initPleinEcran() {
     const plein = !!elementPlein();
     racine.classList.toggle("plein", plein);
     if (bascule) {
-      const t = plein ? "Quitter le plein écran" : "Passer en plein écran";
+      const t = trad(plein ? "fs.sortir" : "fs.entrer");
       bascule.setAttribute("aria-label", t);
       bascule.title = t;
     }
   };
   maj();
+  majPleinLangue = maj;
   document.addEventListener("fullscreenchange", maj);
   document.addEventListener("webkitfullscreenchange", maj);
   if (bascule) bascule.addEventListener("click", () => { if (elementPlein()) sortirPleinEcran(); else entrerPleinEcran(); });
 
   if (!porte || elementPlein()) return;
-  // Tant que l'écran d'entrée est ouvert, le reste de la page est « inert » : ni clic, ni Tab, ni lecteur d'écran n'y accèdent.
-  const reste = () => Array.from(document.body.children).filter(e => e !== porte && e.tagName !== "SCRIPT");
-  const figer = actif => reste().forEach(e => { if (actif) e.setAttribute("inert", ""); else e.removeAttribute("inert"); });
   const fermer = () => {
     if (porte.hidden) return;
     porte.hidden = true;
-    figer(false);
     racine.classList.remove("gate-ouvert");
   };
   porte.hidden = false;
-  figer(true);
   racine.classList.add("gate-ouvert");
   porte.addEventListener("click", e => {
+    if (e.target.closest && e.target.closest("[data-lang]")) return;   // choisir une langue ne ferme pas l'écran d'entrée
     const passer = porte.querySelector(".ep-passer");
     if (passer && passer.contains(e.target)) { fermer(); return; }
     entrerPleinEcran();   // dans le geste de la personne : autorisé
@@ -2360,7 +2325,6 @@ function creerNuage() {
   let pointeur = null;     // dernières coordonnées du doigt/curseur (écran)
   let curseur = null;      // position lissée dans le bandeau : { x, y, vx, vy, vit }
   let visible = true;
-  let masque = false;      // le bandeau est presque effacé par le défilement : inutile d'animer
   let tourne = false;
   let image = 0;
   let precedent = 0;
@@ -2404,29 +2368,15 @@ function creerNuage() {
     return grain;
   }
 
-  // Les grains sont regroupés par palier d'opacité (16 niveaux) : un seul tracé par palier au lieu d'un par grain.
-  const PALIERS = 16;
-  const lots = Array.from({ length: PALIERS + 1 }, () => []);
   function dessiner() {
     ctx.clearRect(0, 0, larg, haut);
     ctx.fillStyle = "rgb(" + rvb + ")";
-    for (let k = 0; k <= PALIERS; k++) lots[k].length = 0;
     for (let i = 0; i < grains.length; i++) {
       const g = grains[i];
       if (g.a <= 0) continue;
-      const k = Math.round(Math.min(1, g.a * (1 + g.lum * 0.9)) * PALIERS);
-      if (k > 0) lots[k].push(g);
-    }
-    for (let k = 1; k <= PALIERS; k++) {
-      const lot = lots[k];
-      if (lot.length === 0) continue;
-      ctx.globalAlpha = k / PALIERS;
+      ctx.globalAlpha = Math.min(1, g.a * (1 + g.lum * 0.9));
       ctx.beginPath();
-      for (let i = 0; i < lot.length; i++) {
-        const g = lot[i], r = g.r * (1 + g.lum * 0.35);
-        ctx.moveTo(g.x + r, g.y);
-        ctx.arc(g.x, g.y, r, 0, 6.2832);
-      }
+      ctx.arc(g.x, g.y, g.r * (1 + g.lum * 0.35), 0, 6.2832);
       ctx.fill();
     }
     ctx.globalAlpha = 1;
@@ -2600,7 +2550,7 @@ function creerNuage() {
   }
 
   function actualiser() {
-    const doitTourner = visible && !masque && !document.hidden && !reduit();
+    const doitTourner = visible && !document.hidden && !reduit();
     if (doitTourner && !tourne) {
       tourne = true;
       precedent = 0;
@@ -2637,30 +2587,27 @@ function creerNuage() {
       // première mesure valide : on répartit tous les grains au hasard dans toute la fenêtre
       for (let i = 0; i < grains.length; i++) { grains[i].x = Math.random() * larg; grains[i].y = Math.random() * haut; }
     }
-    const largPx = Math.max(1, Math.round(larg * ratio)), hautPx = Math.max(1, Math.round(haut * ratio));
-    if (canvas.width !== largPx) canvas.width = largPx;     // réallouer vide le canvas : on ne le fait que si la taille change
-    if (canvas.height !== hautPx) canvas.height = hautPx;
+    canvas.width = Math.max(1, Math.round(larg * ratio));
+    canvas.height = Math.max(1, Math.round(haut * ratio));
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     ajusterCible();
     if (!tourne) poserSansAnimation();
   }
 
+  // Texte du bouton du mode jeu, selon l'état et la langue.
+  const boutonJeu = document.getElementById("jeu-poussiere");
+  const texteJeu = document.getElementById("jeu-texte");
+  function ecrireBoutonJeu(actif) {
+    const libelle = trad(actif ? "jeu.stop" : "jeu.go");
+    if (texteJeu) texteJeu.textContent = libelle;
+    if (boutonJeu) boutonJeu.setAttribute("aria-label", libelle);
+  }
+
   return {
     init() {
       mesurer();
-      // Sur téléphone, la barre d'adresse fait varier la hauteur en continu : on regroupe les changements (une fois par image)
-      // et on ignore les variations de moins de 3 px.
-      let attente = 0;
-      const surRedimension = () => {
-        if (attente) return;
-        attente = requestAnimationFrame(() => {
-          attente = 0;
-          if (Math.abs(hero.clientWidth - larg) < 3 && Math.abs(hero.clientHeight - haut) < 3) return;
-          mesurer();
-        });
-      };
-      if ("ResizeObserver" in window) new ResizeObserver(surRedimension).observe(hero);
-      else window.addEventListener("resize", surRedimension);
+      if ("ResizeObserver" in window) new ResizeObserver(mesurer).observe(hero);
+      else window.addEventListener("resize", mesurer);
       if ("IntersectionObserver" in window) {
         new IntersectionObserver(e => { visible = e[0].isIntersecting; actualiser(); }).observe(hero);
       }
@@ -2693,7 +2640,6 @@ function creerNuage() {
       // seules les barres de la page s'effacent.
       hero.addEventListener("horsjeu", () => jeu(false));
       const bouton = document.getElementById("jeu-poussiere");
-      const texte = document.getElementById("jeu-texte");
       const racine = document.documentElement;
       let ouvertParJeu = false;   // le jeu a lui-même lancé le plein écran : il le referme en partant
       let vuPlein = false;        // le plein écran a bien été actif pendant le jeu
@@ -2701,11 +2647,8 @@ function creerNuage() {
         if (actif === hero.classList.contains("jeu")) return;
         hero.classList.toggle("jeu", actif);
         racine.classList.toggle("jeu-actif", actif);
-        if (bouton) {
-          bouton.setAttribute("aria-pressed", String(actif));
-          bouton.setAttribute("aria-label", actif ? "Reprendre le défilement" : "Jouer avec les particules");
-        }
-        if (texte) texte.textContent = actif ? "Reprendre le défilement" : "Jouer avec les particules";
+        if (bouton) bouton.setAttribute("aria-pressed", String(actif));
+        ecrireBoutonJeu(actif);
         if (actif) {
           ouvertParJeu = !elementPlein();
           vuPlein = !ouvertParJeu;
@@ -2734,11 +2677,7 @@ function creerNuage() {
       }
       actualiser();
     },
-    masquer(valeur) {
-      if (valeur === masque) return;
-      masque = valeur;
-      actualiser();
-    },
+    majLangue() { ecrireBoutonJeu(hero.classList.contains("jeu")); },
     // niveau : 0 (bon) à 3 (très élevé)
     regler(indice) {
       base = GRAINS[indice] || GRAINS[0];
@@ -2752,7 +2691,6 @@ function creerNuage() {
 function initTampon() {
   const t = document.getElementById("tampon");
   if (!t) return;
-  const texte = "EN DIRECT · PM1 PM2.5 PM10 · CO2 · TEMPÉRATURE · ";
   const circonference = 2 * Math.PI * 47;
   t.innerHTML =
     '<svg viewBox="0 0 120 120" focusable="false" aria-hidden="true">' +
@@ -2760,7 +2698,7 @@ function initTampon() {
     '<text><textPath href="#cercle-tampon"></textPath></text>' +
     '</svg><span class="tampon-point"></span>';
   const chemin = t.querySelector("textPath");
-  chemin.textContent = texte;
+  let texte = "";
   ajusterTampon = function () {
     try {
       chemin.removeAttribute("letter-spacing");
@@ -2769,7 +2707,13 @@ function initTampon() {
       chemin.setAttribute("letter-spacing", ((circonference - longueur) / texte.length).toFixed(3));
     } catch (e) { /* le tampon reste simplement un peu moins précis */ }
   };
-  ajusterTampon();
+  // Le texte vient du dictionnaire (tampon.texte) : on le réécrit, puis on réétire les lettres, à chaque changement de langue.
+  majTampon = function () {
+    texte = trad("tampon.texte");
+    chemin.textContent = texte;
+    ajusterTampon();
+  };
+  majTampon();
 }
 
 // =====================================================================
@@ -2791,7 +2735,7 @@ function construireSommaire(sections) {
   if (!nav || !liste) return;
   liste.replaceChildren();
   sommaire.liens = sections.map((section, i) => {
-    const titre = section.dataset.titre || (i === 0 ? "Introduction" : "Chapitre " + i);
+    const titre = section.dataset.titre || (i === 0 ? trad("chap.intro") : trad("nav.chapitre", { i, titre: "" }));
     const lien = el("a", "point-story");
     lien.href = "#" + (i === 0 && document.getElementById("piste") ? "piste" : section.id);
     lien.dataset.cible = section.id;
@@ -2799,7 +2743,7 @@ function construireSommaire(sections) {
       e.preventDefault();
       window.scrollTo({ top: 0, behavior: reduit() ? "auto" : "smooth" });
     });
-    lien.setAttribute("aria-label", i === 0 ? titre : "Chapitre " + i + " : " + titre);
+    lien.setAttribute("aria-label", i === 0 ? titre : trad("nav.chapitre", { i, titre }));
     lien.append(el("span", "p-num", String(i).padStart(2, "0")), el("span", "p-titre", titre));
     const item = el("li");
     item.append(lien);
@@ -2823,7 +2767,7 @@ function appliquerActif(id) {
   const etat = document.getElementById("sommaire-etat");
   if (etat && section && index >= 0) {
     etat.textContent = index === 0
-      ? (section.dataset.titre || "Introduction")
+      ? (section.dataset.titre || trad("chap.intro"))
       : String(index).padStart(2, "0") + " / " + String(total).padStart(2, "0") + " · " + (section.dataset.titre || "");
   }
 }
@@ -2864,16 +2808,42 @@ function initStoryScrolling() {
   const texteM = document.getElementById("manifeste-texte");
   const motsM = [];
   let allumes = -1;
-  if (texteM) {   // une étiquette <span> par mot, pour les allumer un à un
-    const phrase = texteM.textContent.trim();
+  // Une étiquette <span> par mot, pour les allumer un à un. Le texte vient du dictionnaire (manifeste.texte).
+  // Le japonais s'écrit sans espaces : il est découpé avec Intl.Segmenter (ou, à défaut, par groupes de 2 caractères).
+  function decouperMots(phrase) {
+    if (I18N.langue() !== "ja") return phrase.split(/\s+/);
+    const mots = [];
+    if (window.Intl && Intl.Segmenter) {
+      try {
+        const segmenteur = new Intl.Segmenter(I18N.locale(), { granularity: "word" });
+        Array.from(segmenteur.segment(phrase)).forEach(seg => {
+          const texte = seg.segment.trim();
+          if (!texte) return;
+          if (!seg.isWordLike && mots.length) mots[mots.length - 1] += texte;   // la ponctuation reste collée au mot qui précède
+          else mots.push(texte);
+        });
+        if (mots.length) return mots;
+      } catch (e) { mots.length = 0; /* on passe au découpage de secours */ }
+    }
+    const lettres = Array.from(phrase);
+    for (let k = 0; k < lettres.length; k += 2) mots.push(lettres.slice(k, k + 2).join(""));
+    return mots;
+  }
+  function ecrireManifeste() {
+    if (!texteM) return;
+    const sansEspaces = I18N.langue() === "ja";
     texteM.textContent = "";
-    phrase.split(/\s+/).forEach(mot => {
+    motsM.length = 0;
+    decouperMots(trad("manifeste.texte").trim()).forEach(mot => {
       const m = document.createElement("span");
       m.className = "mot-m"; m.textContent = mot;
-      texteM.append(m, document.createTextNode(" "));
+      texteM.append(m);
+      if (!sansEspaces) texteM.append(document.createTextNode(" "));
       motsM.push(m);
     });
+    allumes = -1;   // les mots sont tous éteints : le prochain calcul les rallume comme il faut
   }
+  ecrireManifeste();
 
   const scene = hero ? {
     disque: hero.querySelector(".hero-disque"),
@@ -2940,7 +2910,6 @@ function initStoryScrolling() {
     }
     hero.style.scale = (1 - p * 0.07).toFixed(4);
     hero.style.borderRadius = p > 0.001 ? (p * 40).toFixed(1) + "px" : "0px";
-    if (nuage) nuage.masquer(p > 0.95);
     if (!scene) return;
     if (scene.disque) {
       scene.disque.style.scale = (1 + p * 2.4).toFixed(3);
@@ -3039,6 +3008,7 @@ function initStoryScrolling() {
 
   const planifier = () => { if (!enAttente) { enAttente = true; requestAnimationFrame(image); } };
   majDefilement = () => { geoSale = true; planifier(); };
+  majManifeste = () => { ecrireManifeste(); geoSale = true; planifier(); };   // la phrase n'a plus la même hauteur
 
   // Filet de sécurité : une dernière image 120 ms après le dernier événement de défilement, pour que l'état final
   // (chapitre actif, bandeau) soit toujours juste, même si le navigateur n'envoie pas d'événement à l'arrêt.
@@ -3220,59 +3190,37 @@ function placerCurseur() {
 // =====================================================================
 // 7) MISE À JOUR ET ÉVÉNEMENTS
 // =====================================================================
-// forcer = true : on interroge le serveur même si la période est en cache (mise à jour automatique).
-// Sinon, un changement de période réutilise les données de moins de 5 min : le serveur n'accepte pas plus de 1 requête / 5 min.
-async function rafraichir(forcer) {
+async function rafraichir() {
   const numero = ++numeroRequete;
   const periode = periodeActuelle;
-  if (controleur) controleur.abort();   // la demande précédente est remplacée
-  const ctl = typeof AbortController === "function" ? new AbortController() : null;
-  controleur = ctl;
-  const minuteur = ctl ? setTimeout(() => ctl.abort(), DELAI_MAX_MS) : 0;
   try {
-    let points;
-    const memo = cachePeriodes.get(periode);
-    if (!forcer && memo && Date.now() - memo.t < RAFRAICHISSEMENT_MS) {
-      points = memo.points;
-      decalageHorloge = memo.decalage;
-    } else {
-      points = await chargerMesures(periode, ctl ? ctl.signal : undefined);
-      if (numero !== numeroRequete) return;   // une demande plus récente a pris le relais
-      decalageHorloge = estimerDecalage(points);
-      cachePeriodes.set(periode, { points, t: Date.now(), decalage: decalageHorloge });
-      while (cachePeriodes.size > 6) cachePeriodes.delete(cachePeriodes.keys().next().value);
-      derniereMaj = Date.now();
-      majPiedMaj();
-    }
-    echecsSuite = 0;
+    const points = await chargerMesures(periode);
+    if (numero !== numeroRequete) return;   // une demande plus récente a pris le relais
+    derniereMaj = Date.now();
+    majPiedMaj();
 
-    const resultat = points.length === 0 ? null : construireSerie(points, periode, maintenant());
+    const resultat = points.length === 0 ? null : construireSerie(points, periode, Date.now());
     if (!resultat) {
       viderTout();
       document.getElementById("squelette").hidden = true;
-      definirStatut("erreur", "Aucune mesure sur cette période");
+      definirStatut("erreur", () => trad("statut.vide"));
       afficherVerdictVide();
-      majEtat("etat erreur", "Aucune mesure sur cette période : la carte envoie-t-elle ?");
+      majEtat("etat erreur", () => trad("etat.aucune_mesure"));
       return;
     }
     cache = { periode, points, serie: resultat.serie, rejouees: resultat.rejouees, sansAge: resultat.sansAge };
     afficherTout();
   } catch (erreur) {
     if (numero !== numeroRequete) return;
-    echecsSuite++;
     tDerniere = 0;   // le minuteur des « il y a X min » ne doit pas écraser ce message d'erreur
-    definirStatut("erreur", "Données indisponibles");
-    majEtat("etat erreur", "Erreur : " + erreur.message);
+    definirStatut("erreur", () => trad("statut.indispo"));
+    majEtat("etat erreur", () => trad("etat.erreur", { message: texteErreur(erreur) }));
     if (!cache) {
       document.getElementById("squelette").hidden = true;
       sectionsDonnees().forEach(s => { s.hidden = true; });
       afficherVerdictVide();
       actualiserChapitres();
-    } else if (echecsSuite >= 3) {
-      afficherVerdictHorsLigne();   // 3 échecs d'affilée : l'ancien verdict ne passe plus pour l'état actuel
     }
-  } finally {
-    clearTimeout(minuteur);
   }
 }
 
@@ -3286,7 +3234,7 @@ function pauseHorsEcran() {
 }
 
 // Applique une période (clé de l'API : "-6h", "-90m"…). Si aucun bouton ne lui correspond, c'est une durée personnalisée.
-function choisirPeriode(cle, sansRequete) {
+function choisirPeriode(cle) {
   const bouton = document.querySelector('.periode[data-periode="' + cle + '"]');
   const perso = document.getElementById("bouton-perso");
   animerProchain = (cle !== periodeActuelle);
@@ -3296,16 +3244,29 @@ function choisirPeriode(cle, sansRequete) {
     b.classList.toggle("actif", actif);
     b.setAttribute("aria-pressed", String(actif));
   });
-  if (perso) {
-    const libelle = bouton ? "" : libelleCle(cle);
-    document.getElementById("perso-texte").textContent = libelle || "Perso";
-    perso.setAttribute("aria-label", libelle ? "Durée personnalisée : " + libelle : "Durée personnalisée");
-  }
+  majPerso();
   placerCurseur();
-  if (sansRequete) return;
-  try { history.replaceState(null, "", "#p=" + cle); } catch (e) { /* adresse non modifiable (fichier local) */ }
-  majEtat("etat", "Chargement…");
+  majEtat("etat", () => trad("etat.chargement"));
   rafraichir();
+}
+
+// Texte et nom accessible du bouton « Perso » : la durée choisie s'il y en a une, sinon « Perso ».
+function majPerso() {
+  const perso = document.getElementById("bouton-perso");
+  if (!perso) return;
+  const personnalisee = !document.querySelector('.periode[data-periode="' + periodeActuelle + '"]');
+  const libelle = personnalisee ? libelleCle(periodeActuelle) : "";
+  document.getElementById("perso-texte").textContent = libelle || trad("perso.court");
+  perso.setAttribute("aria-label", libelle ? trad("perso.aria_val", { v: libelle }) : trad("perso.aria"));
+}
+
+// Message d'aide (ou d'erreur) sous le champ de durée : on retient sa clé pour le réécrire si la langue change.
+let aideCourante = { cle: "perso.aide", erreur: false };
+function ecrireAide() {
+  const aide = document.getElementById("perso-aide");
+  if (!aide) return;
+  aide.textContent = trad(aideCourante.cle);
+  aide.classList.toggle("erreur", aideCourante.erreur);
 }
 
 function fermerPerso(rendreLeFocus) {
@@ -3324,19 +3285,17 @@ function initPerso() {
   if (!panneau || !bouton) return;
   const champN = document.getElementById("perso-n");
   const champU = document.getElementById("perso-u");
-  const aide = document.getElementById("perso-aide");
-  const TEXTE_AIDE = "De 5 minutes à 7 jours.";
-  const message = (texte, erreur) => {
-    aide.textContent = texte;
-    aide.classList.toggle("erreur", !!erreur);
+  const message = (cle, erreur) => {
+    aideCourante = { cle, erreur: !!erreur };
+    ecrireAide();
   };
-  message(TEXTE_AIDE, false);
+  message("perso.aide", false);
 
   bouton.addEventListener("click", () => {
     const ouvrir = panneau.hidden;
     panneau.hidden = !ouvrir;
     bouton.setAttribute("aria-expanded", String(ouvrir));
-    if (ouvrir) { message(TEXTE_AIDE, false); champN.focus(); champN.select(); }
+    if (ouvrir) { message("perso.aide", false); champN.focus(); champN.select(); }
   });
   panneau.addEventListener("keydown", e => { if (e.key === "Escape") fermerPerso(true); });
   panneau.addEventListener("submit", e => {
@@ -3345,18 +3304,15 @@ function initPerso() {
     const facteur = { m: 1, h: 60, d: 1440 }[champU.value] || 1;
     const minutes = Math.round(n * facteur);
     if (!Number.isFinite(n) || n <= 0 || minutes < PERSO_MIN || minutes > PERSO_MAX) {
-      message("Choisissez une durée entre 5 minutes et 7 jours.", true);
+      message("perso.erreur", true);
       champN.focus();
       return;
     }
-    // d'abord les durées des boutons (24 h donne « -24h », pas « -1d »), puis la forme la plus lisible
-    const bouton = Object.keys(DUREE_PERIODE).find(k => DUREE_PERIODE[k] === minutes * 60000);
-    const cle = bouton ? bouton
-              : (minutes % 1440 === 0) ? "-" + (minutes / 1440) + "d"
+    const cle = (minutes % 1440 === 0) ? "-" + (minutes / 1440) + "d"
               : (minutes % 60 === 0) ? "-" + (minutes / 60) + "h"
               : "-" + minutes + "m";
     fermerPerso(false);
-    choisirPeriode(cle);   // 6 h, 24 h et 7 jours retombent sur leur bouton
+    choisirPeriode(cle);   // "-24h" retombe sur le bouton « 24 heures », par exemple
   });
 }
 
@@ -3369,40 +3325,12 @@ function initControles() {
   });
   initPerso();
   document.getElementById("afficher-seuils").addEventListener("change", afficherTout);
-  const csv = document.getElementById("export-csv");
-  if (csv) csv.addEventListener("click", exporterCSV);
-  // Adresse partageable : « …#p=-90m » ouvre directement la page sur cette période.
-  const m = /^#p=(-\d+[mhd])$/.exec(location.hash);
-  if (m) {
-    const minutes = dureeDeCle(m[1]) / 60000;
-    if (minutes >= PERSO_MIN && minutes <= PERSO_MAX) choisirPeriode(m[1], true);
-  }
-}
-
-// Export des points affichés (une ligne par tranche de temps avec mesures), lisible par Excel en français.
-function exporterCSV() {
-  if (!cache) return;
-  const champs = Object.keys(CHAMPS).filter(c => cache.serie.some(r => r.p && estNombre(r.p[c])));
-  const lignes = [["date_heure_utc"].concat(champs.map(c => CHAMPS[c].nom + " (" + CHAMPS[c].unite + ")")).join(";")];
-  cache.serie.forEach(r => {
-    if (!r.p) return;
-    lignes.push([new Date(r.t).toISOString()]
-      .concat(champs.map(c => estNombre(r.p[c]) ? String(Math.round(r.p[c] * 100) / 100).replace(".", ",") : ""))
-      .join(";"));
-  });
-  const blob = new Blob(["\ufeff" + lignes.join("\r\n")], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const lien = document.createElement("a");
-  lien.href = url;
-  lien.download = "mesures_air_" + cache.periode.slice(1) + ".csv";
-  document.body.append(lien);
-  lien.click();
-  lien.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function demarrer() {
   securise(reglerChart);
+  // Textes écrits par le script : première écriture (le HTML contient encore le français de secours).
+  securise(() => { ecrireStatut(); ecrireEtat(); majPerso(); ecrireAide(); majTextesFixes(); });
   // Les apparitions au défilement d'abord : si autre chose échoue, le contenu reste visible.
   securise(initStoryScrolling);
   securise(actualiserChapitres);
@@ -3426,9 +3354,7 @@ function demarrer() {
     });
   });
   securise(() => { nuage = creerNuage(); if (nuage) nuage.init(); });
-  securise(() => {
-    document.getElementById("frequence").textContent = libelleFrequence(RAFRAICHISSEMENT_MS);
-  });
+  securise(() => { if (nuage) nuage.majLangue(); });
 
   // Après le chargement des polices, tout ce qui a été mesuré est recalculé.
   // "loadingdone" couvre le cas où document.fonts.ready se résout avant que les polices soient demandées.
@@ -3463,11 +3389,33 @@ function demarrer() {
 
   // Au retour sur l'onglet, on rafraîchit tout de suite si les données sont trop anciennes.
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && Date.now() - derniereMaj > RAFRAICHISSEMENT_MS) rafraichir(true);
+    if (!document.hidden && Date.now() - derniereMaj > RAFRAICHISSEMENT_MS) rafraichir();
   });
 
-  rafraichir(true);
-  setInterval(() => { if (!document.hidden) rafraichir(true); }, RAFRAICHISSEMENT_MS);   // pas de requête onglet masqué
+  // Changement de langue (boutons FR / EN / 日本語). Le HTML est déjà traduit par I18N (data-i18n…) ;
+  // ici on réécrit tout ce que le script a lui-même produit : textes mémorisés, tableaux, cartes, graphes, sommaire.
+  I18N.surChangement(() => {
+    securise(majTextesFixes);
+    securise(remplirSeuils);
+    securise(majPerso);
+    securise(ecrireAide);
+    securise(majPleinLangue);
+    securise(() => { if (nuage) nuage.majLangue(); });
+    securise(majTampon);
+    securise(majManifeste);
+    securise(ecrireStatut);
+    securise(ecrireEtat);
+    securise(ecrireTextesBandeau);
+    sommaire.signature = "";               // les titres des chapitres ont changé : le sommaire est reconstruit
+    if (cache) securise(afficherTout);     // cartes, graphes (dates, noms), tableau, verdict, messages
+    securise(actualiserChapitres);
+    securise(placerCurseur);               // les libellés des boutons de période n'ont plus la même largeur
+    securise(ajusterVerdict);
+    securise(ajusterTampon);
+  });
+
+  rafraichir();
+  setInterval(rafraichir, RAFRAICHISSEMENT_MS);
   setInterval(majTempsRelatif, 30000);
 }
 
@@ -3478,13 +3426,6 @@ window.__chartPret = function () {
 };
 
 demarrer();
-</script>
-  <script src="lang/fr.js"></script>
-  <script src="lang/en.js"></script>
-  <script src="lang/ja.js"></script>
-  <script src="js/i18n.js"></script>
-<script>
-  I18N.initialiser();
 </script>
 </body>
 </html>
