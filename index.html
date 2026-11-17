@@ -944,14 +944,14 @@
       <div class="texte-ligne revele">
         <h3 data-i18n="comp.projet.h3">Le projet</h3>
         <div>
-          <p data-i18n-html="comp.projet.p"><mark class="a-completer">[À COMPLÉTER : but du projet, modèle de carte utilisé et la date de mise en service.]</mark></p>
+          <p data-i18n-html="comp.projet.p"><mark class="a-completer">[À COMPLÉTER : en 2 ou 3 phrases, le but du projet, le modèle de carte utilisé et la date de mise en service.]</mark></p>
         </div>
       </div>
 
       <div class="texte-ligne revele">
         <h3 data-i18n="comp.pm.h3">PM1, PM2.5 et PM10</h3>
         <div>
-          <p data-i18n="comp.pm.p">Ce sont des particules en suspension dans l'air, classées selon leur diamètre. Plus elles sont petites, plus elles pénètrent profondément dans les voies respiratoires : les PM2.5 peuvent aller jusqu'aux alvéoles pulmonaires tandis que les PM1 peuvent potentiellement atteindre jusqu'à la circulation sanguine. Elles se mesurent en microgrammes par mètre cube d'air (µg/m³).</p>
+          <p data-i18n="comp.pm.p">Ce sont des particules en suspension dans l'air, classées selon leur diamètre. Plus elles sont petites, plus elles pénètrent profondément dans les voies respiratoires : les PM2.5 peuvent aller jusqu'aux poumons profonds. Elles se mesurent en microgrammes par mètre cube d'air (µg/m³).</p>
           <figure class="tailles" aria-label="Diamètre des particules comparé à celui d'un cheveu, à l'échelle" data-i18n-attr="aria-label:comp.pm.aria">
             <div class="taille"><div class="zone"><span class="rond cheveu"></span></div><b data-i18n="comp.cheveu">Cheveu</b><small>≈ 70 µm</small></div>
             <div class="taille"><div class="zone"><span class="rond pm10"></span></div><b>PM10</b><small>10 µm</small></div>
@@ -980,8 +980,8 @@
               <tbody id="seuils-corps"></tbody>
             </table>
           </div>
-          <p class="petit" style="margin-top:14px" data-i18n="comp.seuils.p1">Particules&nbsp;: valeur guide de l'OMS (2021) pour «&nbsp;Bon&nbsp;», puis cibles intermédiaires 3 et 1 de l'OMS pour «&nbsp;Moyen&nbsp;» et «&nbsp;Élevé&nbsp;». Ces valeurs de l'OMS portent sur des moyennes de 24 heures&nbsp;: ici elles servent de repère pour la dernière mesure, à titre indicatif. CO₂&nbsp;: 800&nbsp;ppm est l'objectif du HCSP&nbsp;; 1&nbsp;000 et 1&nbsp;500&nbsp;ppm sont des repères usuels pour l'aération des salles. PM1&nbsp;: l'OMS ne fixe pas de valeur guide, on applique ici les mêmes limites que pour les PM2.5.</p>
-          <p class="petit" data-i18n-html="comp.seuils.p2">Sources&nbsp;: OMS, <em>Lignes directrices mondiales sur la qualité de l'air</em>, 2021&nbsp;; HCSP, recommandations sur l'aération et la ventilation des établissements. <mark class="a-completer">[À CHANGER PAR SOURCE ATMOSUD]</mark></p>
+          <p class="petit" style="margin-top:14px" data-i18n="comp.seuils.p1">Particules&nbsp;: seuils de l'indice ATMO publiés par Atmosud (arrêté du 10 juillet 2020). Ces seuils portent sur des moyennes journalières&nbsp;: ici ils servent de repère pour la dernière mesure, à titre indicatif. CO₂&nbsp;: 800&nbsp;ppm est l'objectif du HCSP&nbsp;; 1&nbsp;000 et 1&nbsp;500&nbsp;ppm sont des repères usuels pour l'aération des salles. PM1&nbsp;: l'indice ATMO ne fixe pas de seuil, on applique ici les mêmes limites que pour les PM2.5.</p>
+          <p class="petit" data-i18n-html="comp.seuils.p2">Sources&nbsp;: Atmosud, <em>L'indice ATMO de la qualité de l'air</em> (atmosud.org)&nbsp;; arrêté du 10 juillet 2020 relatif à l'indice de la qualité de l'air ambiant&nbsp;; HCSP, recommandations sur l'aération et la ventilation des établissements. <mark class="a-completer">[À COMPLÉTER : ajoutez ici les liens de vos propres sources.]</mark></p>
         </div>
       </div>
 
@@ -1015,7 +1015,7 @@
         <dd data-i18n-html="pied.actualisation.dd">Automatique <span id="frequence">toutes les 5 minutes</span> (limite imposée par le serveur). Dernière actualisation de la page&nbsp;: <span id="pied-maj">—</span>.</dd>
 
         <dt data-i18n="pied.niveaux.dt">Niveaux</dt>
-        <dd data-i18n="pied.niveaux.dd">Seuils de l'OMS (2021) pour les particules et du HCSP pour le CO₂, détaillés dans «&nbsp;Comprendre les mesures&nbsp;». Capteur à bas coût&nbsp;: les valeurs sont indicatives et n'ont pas de valeur réglementaire.</dd>
+        <dd data-i18n="pied.niveaux.dd">Seuils de l'indice ATMO (Atmosud) pour les particules et du HCSP pour le CO₂, détaillés dans «&nbsp;Comprendre les mesures&nbsp;». Capteur à bas coût&nbsp;: les valeurs sont indicatives et n'ont pas de valeur réglementaire.</dd>
 
         <dt data-i18n="pied.outils.dt">Outils</dt>
         <dd data-i18n="pied.outils.dd">Graphes&nbsp;: Chart.js 4.4.1. Polices&nbsp;: Archivo et Chivo Mono (Google Fonts).</dd>
@@ -1062,7 +1062,7 @@ const tradp = (cle, n, vars) => I18N.tp(cle, n, vars);
 I18N.initialiser();   // traduit le HTML (data-i18n…) AVANT de démarrer la page
 
 // =====================================================================
-// 1) RÉGLAGES : seule la clé est obligatoire
+// 1) RÉGLAGES
 // =====================================================================
 const CLE = "838fcf4b7c5d3b220c9548d29d633fd3";            // clé du groupe (32 caractères)
 const DEVICE_ID = "";      // adresse MAC d'une carte, ou "" pour toutes
@@ -1109,8 +1109,8 @@ const CHAMPS = {
 };
 
 // Limites entre les niveaux (Bon | Moyen | Élevé | Très élevé).
-//  - PM2.5 et PM10 : valeur guide OMS 2021 (24 h), puis cibles intermédiaires 3 et 1.
-//  - PM1 : pas de valeur guide OMS, on réutilise les limites de PM2.5.
+//  - PM2.5 et PM10 : seuils de l'indice ATMO (Atmosud).
+//  - PM1 : pas de seuil ATMO, on réutilise les limites de PM2.5.
 //  - CO2 : 800 ppm (objectif HCSP), 1000 et 1500 ppm (repères usuels).
 // tracer : indices des limites dessinées en pointillés sur le graphe.
 // plancher et plafond : bornes de la jauge « dernière mesure » (4 segments égaux).
