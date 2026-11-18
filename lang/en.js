@@ -8,7 +8,7 @@ window.I18N_DICT.en = {
 
   /* ---------- Entry screen and full screen ---------- */
   "ep.sur": "Air quality · live readings",
-  "ep.titre": "For a more immersive experience",
+  "ep.titre": "For better visibility",
   "ep.texte": "Tap or click anywhere to go full screen. Press <kbd>Esc</kbd> or use the button at the bottom right to exit.",
   "ep.go": "Enter full screen",
   "ep.passer": "Continue without full screen",
@@ -28,7 +28,7 @@ window.I18N_DICT.en = {
   "acc.particules": "What we breathe",
   "acc.co2": "Is the air being renewed?",
   "acc.thum": "Comfort",
-  "acc.resume": "Stepping back",
+  "acc.resume": "Overview",
   "acc.comprendre": "Going further",
 
   /* ---------- Hero ---------- */
@@ -71,7 +71,7 @@ window.I18N_DICT.en = {
 
   /* ---------- Manifesto ---------- */
   "manifeste.aria": "About the sensor",
-  "manifeste.texte": "A small sensor continuously measures the fine particles, CO₂, temperature and humidity of the air. Here is what we really breathe.",
+  "manifeste.texte": "Sensors continuously measure CO₂, fine particles, temperature and humidity to assess the air quality of your home.",
 
   /* ---------- Period bar ---------- */
   "p.aria": "Displayed period",
@@ -149,7 +149,7 @@ window.I18N_DICT.en = {
   "champ.temp.detail": "Air temperature",
   "champ.hum.detail": "Relative humidity of the air",
   "champ.co2.detail": "Stuffiness indicator",
-  "seuil.oms": " (WHO)",
+  "seuil.oms": " (Atmosud)",
   "seuil.bas": "≤ {a}",
   "seuil.entre": "> {a} and ≤ {b}",
   "seuil.haut": "> {a}",
@@ -185,8 +185,8 @@ window.I18N_DICT.en = {
   "comp.seuils.h3": "Colours and thresholds",
   "comp.th_niveau": "Level",
   "comp.th_pm": "PM1 and PM2.5 <span class='unite'>(µg/m³)</span>",
-  "comp.seuils.p1": "Particles: the WHO guideline value (2021) for “Good”, then WHO interim targets 3 and 1 for “Moderate” and “High”. These WHO values apply to 24-hour averages: here they serve as a guide for the latest reading, for information only. CO₂: 800\u00a0ppm is the HCSP target; 1,000 and 1,500\u00a0ppm are common reference points for ventilating rooms. PM1: the WHO sets no guideline value, so the same limits as for PM2.5 are applied here.",
-  "comp.seuils.p2": "Sources: WHO, <em>WHO global air quality guidelines</em>, 2021; HCSP, recommendations on ventilation and air renewal in public buildings.",
+  "comp.seuils.p1": "Particles: thresholds of the ATMO index published by Atmosud (order of 10 July 2020). These thresholds apply to daily averages: here they serve as a guide for the latest reading, for information only. CO₂: 800\u00a0ppm is the HCSP target; 1,000 and 1,500\u00a0ppm are common reference points for ventilating rooms. PM1: the ATMO index sets no threshold, so the same limits as for PM2.5 are applied here.",
+  "comp.seuils.p2": "Sources: Atmosud, <em>The ATMO air quality index</em> (atmosud.org); order of 10 July 2020 on the ambient air quality index; HCSP, recommendations on ventilation and air renewal in public buildings.",
   "comp.thum.p1": "These two measurements have no “Good” or “High” level: they help interpret the others. In an occupied room, temperature and CO₂ often rise together, because people give off heat and exhale CO₂.",
   "comp.thum.p2": "The humidity shown is relative humidity: the amount of water vapour in the air, as a percentage of what the air can hold at that temperature. It therefore drops when you heat without adding water. It is considered comfortable between 40 and 60\u00a0% (indicative guide): drier air irritates the eyes and throat; above 60 to 70\u00a0%, mould and dust mites develop more easily.",
   "comp.thum.p3": "Humidity also helps in judging particles: when the air is very humid, low-cost particle sensors tend to overestimate PM, because particles swell as they absorb water.",
@@ -201,7 +201,7 @@ window.I18N_DICT.en = {
   "pied.actualisation.dt": "Refresh",
   "pied.actualisation.dd": "Automatic, <span id='frequence'>every 5 minutes</span> (limit set by the server). Page last refreshed: <span id='pied-maj'>—</span>.",
   "pied.niveaux.dt": "Levels",
-  "pied.niveaux.dd": "WHO thresholds (2021) for particles and HCSP thresholds for CO₂, detailed in “Understanding the readings”. Low-cost sensor: the values are indicative and have no regulatory value.",
+  "pied.niveaux.dd": "ATMO index thresholds (Atmosud) for particles and HCSP thresholds for CO₂, detailed in “Understanding the readings”. Low-cost sensor: the values are indicative and have no regulatory value.",
   "pied.outils.dt": "Tools",
   "pied.outils.dd": "Charts: Chart.js 4.4.1. Fonts: Archivo and Chivo Mono (Google Fonts).",
   "pied.projet": "A project by Gabriel, Simon, Guillaume and Titouan.",
