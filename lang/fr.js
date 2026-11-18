@@ -13,7 +13,7 @@ window.I18N_DICT.fr = {
 
   /* ---------- Écran d'entrée et plein écran ---------- */
   "ep.sur": "Qualité de l'air · mesures en direct",
-  "ep.titre": "Pour une meilleure immersion",
+  "ep.titre": "Pour une meilleure visibilité",
   "ep.texte": "Touchez ou cliquez n'importe où pour passer en plein écran. <kbd>Échap</kbd> ou le bouton en bas à droite permet d'en sortir.",
   "ep.go": "Entrer en plein écran",
   "ep.passer": "Continuer sans plein écran",
@@ -33,7 +33,7 @@ window.I18N_DICT.fr = {
   "acc.particules": "Ce que nous respirons",
   "acc.co2": "L’air se renouvelle-t-il ?",
   "acc.thum": "Le confort",
-  "acc.resume": "Prendre du recul",
+  "acc.resume": "Vue d’ensemble",
   "acc.comprendre": "Pour aller plus loin",
 
   /* ---------- Bandeau ---------- */
@@ -76,7 +76,7 @@ window.I18N_DICT.fr = {
 
   /* ---------- Manifeste ---------- */
   "manifeste.aria": "Présentation du capteur",
-  "manifeste.texte": "Un petit capteur mesure en continu les particules fines, le CO₂, la température et l’humidité de l’air. Voici ce que nous respirons, vraiment.",
+  "manifeste.texte": "Des capteurs mesurent en continu le CO₂, les particules fines, la température et l’humidité afin d’évaluer la qualité de l’air de votre habitat.",
 
   /* ---------- Barre de période ---------- */
   "p.aria": "Période affichée",
@@ -154,7 +154,7 @@ window.I18N_DICT.fr = {
   "champ.temp.detail": "Température de l'air",
   "champ.hum.detail": "Humidité relative de l'air",
   "champ.co2.detail": "Indicateur de confinement",
-  "seuil.oms": " (OMS)",
+  "seuil.oms": " (Atmosud)",
   "seuil.bas": "≤ {a}",
   "seuil.entre": "> {a} et ≤ {b}",
   "seuil.haut": "> {a}",
@@ -190,8 +190,8 @@ window.I18N_DICT.fr = {
   "comp.seuils.h3": "Les couleurs et les seuils",
   "comp.th_niveau": "Niveau",
   "comp.th_pm": "PM1 et PM2.5 <span class='unite'>(µg/m³)</span>",
-  "comp.seuils.p1": "Particules\u00a0: valeur guide de l'OMS (2021) pour «\u00a0Bon\u00a0», puis cibles intermédiaires 3 et 1 de l'OMS pour «\u00a0Moyen\u00a0» et «\u00a0Élevé\u00a0». Ces valeurs de l'OMS portent sur des moyennes de 24 heures\u00a0: ici elles servent de repère pour la dernière mesure, à titre indicatif. CO₂\u00a0: 800\u00a0ppm est l'objectif du HCSP\u00a0; 1\u00a0000 et 1\u00a0500\u00a0ppm sont des repères usuels pour l'aération des salles. PM1\u00a0: l'OMS ne fixe pas de valeur guide, on applique ici les mêmes limites que pour les PM2.5.",
-  "comp.seuils.p2": "Sources\u00a0: OMS, <em>Lignes directrices mondiales sur la qualité de l'air</em>, 2021\u00a0; HCSP, recommandations sur l'aération et la ventilation des établissements. <mark class='a-completer'>[À COMPLÉTER : ajoutez ici les liens de vos propres sources.]</mark>",
+  "comp.seuils.p1": "Particules\u00a0: seuils de l'indice ATMO publiés par Atmosud (arrêté du 10 juillet 2020). Ces seuils portent sur des moyennes journalières\u00a0: ici ils servent de repère pour la dernière mesure, à titre indicatif. CO₂\u00a0: 800\u00a0ppm est l'objectif du HCSP\u00a0; 1\u00a0000 et 1\u00a0500\u00a0ppm sont des repères usuels pour l'aération des salles. PM1\u00a0: l'indice ATMO ne fixe pas de seuil, on applique ici les mêmes limites que pour les PM2.5.",
+  "comp.seuils.p2": "Sources\u00a0: Atmosud, <em>L'indice ATMO de la qualité de l'air</em> (atmosud.org)\u00a0; arrêté du 10 juillet 2020 relatif à l'indice de la qualité de l'air ambiant\u00a0; HCSP, recommandations sur l'aération et la ventilation des établissements. <mark class='a-completer'>[À COMPLÉTER : ajoutez ici les liens de vos propres sources.]</mark>",
   "comp.thum.p1": "Ces deux mesures n'ont pas de niveau «\u00a0Bon\u00a0» ou «\u00a0Élevé\u00a0»\u00a0: elles servent à interpréter les autres. Dans une salle occupée, la température et le CO₂ montent souvent ensemble, car les personnes dégagent de la chaleur et rejettent du CO₂.",
   "comp.thum.p2": "L'humidité affichée est une humidité relative\u00a0: la quantité de vapeur d'eau présente dans l'air, en pourcentage de ce que l'air peut contenir à cette température. Elle baisse donc quand on chauffe sans ajouter d'eau. On la juge confortable entre 40 et 60\u00a0% (repère indicatif)\u00a0: plus sec, l'air irrite les yeux et la gorge\u00a0; au-delà de 60 à 70\u00a0%, les moisissures et les acariens se développent plus facilement.",
   "comp.thum.p3": "L'humidité aide aussi à juger les particules\u00a0: quand l'air est très humide, les capteurs de particules à bas coût ont tendance à surestimer les PM, car les particules gonflent en absorbant de l'eau.",
@@ -206,7 +206,7 @@ window.I18N_DICT.fr = {
   "pied.actualisation.dt": "Actualisation",
   "pied.actualisation.dd": "Automatique <span id='frequence'>toutes les 5 minutes</span> (limite imposée par le serveur). Dernière actualisation de la page\u00a0: <span id='pied-maj'>—</span>.",
   "pied.niveaux.dt": "Niveaux",
-  "pied.niveaux.dd": "Seuils de l'OMS (2021) pour les particules et du HCSP pour le CO₂, détaillés dans «\u00a0Comprendre les mesures\u00a0». Capteur à bas coût\u00a0: les valeurs sont indicatives et n'ont pas de valeur réglementaire.",
+  "pied.niveaux.dd": "Seuils de l'indice ATMO (Atmosud) pour les particules et du HCSP pour le CO₂, détaillés dans «\u00a0Comprendre les mesures\u00a0». Capteur à bas coût\u00a0: les valeurs sont indicatives et n'ont pas de valeur réglementaire.",
   "pied.outils.dt": "Outils",
   "pied.outils.dd": "Graphes\u00a0: Chart.js 4.4.1. Polices\u00a0: Archivo et Chivo Mono (Google Fonts).",
   "pied.projet": "Projet réalisé par <mark class='a-completer'>[À COMPLÉTER : noms du groupe]</mark>.",
