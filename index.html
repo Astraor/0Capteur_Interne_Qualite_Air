@@ -369,9 +369,9 @@
   .marque-nom {
     margin: 0; font-family: "Cinzel Decorative", "Cinzel", "Trajan Pro", Georgia, serif; font-weight: 700;
     font-size: clamp(2.4rem, 9.6vw, 9rem); line-height: 1; letter-spacing: .01em; white-space: nowrap; text-transform: uppercase;   /* en capitales, comme sur l'affiche */
-    background: linear-gradient(180deg, #a9d8ff 0%, #5aa9e6 55%, #3b86c9 100%);
+    background: linear-gradient(180deg, #ffffff 0%, #f1ece2 48%, #cbc3b2 100%);   /* ivoire : la pierre claire de la basilique */
     -webkit-background-clip: text; background-clip: text; color: transparent;
-    filter: drop-shadow(0 0 28px rgba(90, 169, 230, .35));
+    filter: drop-shadow(0 0 30px rgba(255, 236, 200, .16));
   }
   .ouv-sous { margin: 0; max-width: 30ch; font-size: clamp(1.05rem, 2.2vw, 1.5rem); font-weight: 500; font-stretch: 110%; line-height: 1.3; color: rgba(242, 244, 240, .86); }
   .ouv-legende {
@@ -379,7 +379,7 @@
     max-width: 34ch; text-align: center; font-size: clamp(1.1rem, 2.6vw, 1.9rem); font-weight: 600; font-stretch: 105%; line-height: 1.25;
     text-shadow: 0 2px 18px #000, 0 0 4px #000;
   }
-  .ouv-legende em { font-style: normal; color: #8cc8f5; }
+  .ouv-legende em { font-style: normal; color: #e9c46a; }   /* doré : la statue de la Bonne Mère */
   /* Écran large : l'affiche occupe le centre, la phrase passe à sa gauche (elle ne cache plus la statue) */
   @media (min-aspect-ratio: 4/3) {
     .ouv-legende {
@@ -440,7 +440,7 @@
   /* Nom du projet dans le pied de page */
   .pied-marque {
     margin: 0 0 22px; font-family: "Cinzel Decorative", "Cinzel", Georgia, serif; font-weight: 700;
-    font-size: clamp(1.9rem, 5vw, 3.2rem); line-height: 1; color: #8cc8f5 !important; text-transform: uppercase; max-width: none !important;
+    font-size: clamp(1.9rem, 5vw, 3.2rem); line-height: 1; color: #efe9dc !important; text-transform: uppercase; max-width: none !important;
   }
 
   @media print {
@@ -772,12 +772,12 @@
   .rond.pm25 { width: 5px; height: 5px; background: var(--cobalt); }
   .rond.pm1 { width: 2px; height: 2px; background: var(--cobalt); }
   /* Molécule de CO₂ (O=C=O), agrandie : à l'échelle elle mesurerait moins d'un millième de pixel */
-  .rond.co2 {
-    width: 20px; height: 8px; border-radius: 0;
+  .rond.co2 {   /* version fixe (sans script) : O=C=O aux couleurs conventionnelles */
+    width: 42px; height: 16px; border-radius: 0;
     background:
-      radial-gradient(circle at 4px 50%, #d23c2a 3px, transparent 3.5px),
-      radial-gradient(circle at 50% 50%, var(--encre) 2.5px, transparent 3px),
-      radial-gradient(circle at calc(100% - 4px) 50%, #d23c2a 3px, transparent 3.5px);
+      radial-gradient(circle at 50% 50%, #3a3d42 7.2px, transparent 7.7px),
+      radial-gradient(circle at 8px 50%, #e0261d 8px, transparent 8.5px),
+      radial-gradient(circle at calc(100% - 8px) 50%, #e0261d 8px, transparent 8.5px);
   }
   .tailles figcaption { flex-basis: 100%; font-size: .78rem; color: var(--doux); }
 
@@ -1195,6 +1195,8 @@
     </div>
   </section>
 
+  <!-- Température et humidité : chapitre mis en commentaire, la carte n'envoie pas ces mesures (pas de champs temp / hum).
+       Pour le réactiver, il suffit de retirer ce commentaire : le script le remplit tout seul si les données arrivent.
   <section class="bloc chapitre" id="thum" data-titre="Température et humidité" data-i18n-attr="data-titre:chap.thum" aria-labelledby="titre-meteo" hidden>
     <div class="bloc-tete revele">
       <p class="numero-chapitre"><span class="n" data-n>00</span><span class="total" data-total>/ 00</span><span class="accroche" data-i18n="acc.thum">Le confort</span></p>
@@ -1209,6 +1211,7 @@
       </div>
     </div>
   </section>
+  -->
 
   <section class="bloc large chapitre" id="aller-plus-loin" data-titre="Comprendre les mesures" data-i18n-attr="data-titre:chap.comprendre" aria-labelledby="titre-comprendre">
     <p class="numero-chapitre revele"><span class="n" data-n>00</span><span class="total" data-total>/ 00</span><span class="accroche" data-i18n="acc.comprendre">Pour aller plus loin</span></p>
@@ -1260,6 +1263,7 @@
         </div>
       </div>
 
+      <!-- Température et humidité (explications) : mis en commentaire, comme le chapitre du même nom.
       <div class="texte-ligne revele">
         <h3 data-i18n="chap.thum">Température et humidité</h3>
         <div>
@@ -1268,6 +1272,7 @@
           <p data-i18n="comp.thum.p3">L'humidité aide aussi à juger les particules&nbsp;: quand l'air est très humide, les capteurs de particules à bas coût ont tendance à surestimer les PM, car les particules gonflent en absorbant de l'eau.</p>
         </div>
       </div>
+      -->
     </div>
   </section>
 
@@ -2594,7 +2599,9 @@ function afficherTout() {
   sectionsDonnees().forEach(s => { s.hidden = false; });
   [["graphe-air", ["pm1", "pm25", "pm10", "co2"]],
    ["graphe-meteo", ["temp", "hum"]]].forEach(([id, champs]) => {
-    const bloc = document.getElementById(id).closest(".bloc");
+    const canvas = document.getElementById(id);
+    if (!canvas) return;                      // chapitre absent de la page (mis en commentaire)
+    const bloc = canvas.closest(".bloc");
     bloc.hidden = false;                      // visible pendant le dessin, pour que Chart.js mesure la place
     const n = dessiner(id, serie, champs, animer);
     bloc.hidden = (n === 0);                  // pas de mesure : on cache la section
@@ -3617,9 +3624,21 @@ function initFigureParticules() {
     { classe: "pm25", couleur: "#2347a8", diametre: 5,  agitation: 0.33, trace: 48, fil: 1.2 },
     { classe: "pm10", couleur: ENCRE,     diametre: 20, agitation: 0.12, trace: 30, fil: 2 },
     // Molécule de CO₂ (agrandie) : bien plus petite, elle s'agite bien plus, et tourne sur elle-même.
-    { classe: "co2",  couleur: "#52616b", diametre: 14, agitation: 0.85, trace: 70, fil: 0.8, molecule: true },
+    { classe: "co2",  couleur: "#8a959c", diametre: 44, agitation: 0.12, trace: 30, fil: 2, molecule: true },
   ];
-  const OXYGENE = "#d23c2a";
+  // Couleurs conventionnelles des modèles moléculaires (code CPK) : carbone gris anthracite, oxygène rouge.
+  const OXYGENE = ["#ff7a6e", "#e0261d", "#9e140e"];   // reflet, couleur, ombre
+  const CARBONE = ["#7a7f85", "#3a3d42", "#1c1e21"];
+  const ECART_ATOMES = 13;   // px entre le carbone et chaque oxygène (les sphères se chevauchent, comme un modèle compact)
+  // Atome dessiné comme une petite sphère éclairée en haut à gauche.
+  function atome(c, x, y, r, teintes) {
+    const g = c.createRadialGradient(x - r * 0.35, y - r * 0.4, r * 0.1, x, y, r);
+    g.addColorStop(0, teintes[0]);
+    g.addColorStop(0.45, teintes[1]);
+    g.addColorStop(1, teintes[2]);
+    c.fillStyle = g;
+    c.beginPath(); c.arc(x, y, r, 0, 6.2832); c.fill();
+  }
   const PAS = 1000 / 60;   // la simulation avance par pas de 1/60 s, quelle que soit la fréquence de l'écran
   const AMORTI = 0.85;     // part de la vitesse conservée à chaque pas
   const RAPPEL = 0.004;    // rappel vers le centre de la case : la particule reste dans son cadre
@@ -3657,13 +3676,11 @@ function initFigureParticules() {
         c.stroke();
       }
       c.globalAlpha = 1;
-      if (p.molecule) {   // O=C=O : deux atomes d'oxygène (rouges) de part et d'autre du carbone
-        const ux = Math.cos(p.ang) * 4.6, uy = Math.sin(p.ang) * 4.6;
-        c.fillStyle = OXYGENE;
-        c.beginPath(); c.arc(p.x - ux, p.y - uy, 2.8, 0, 6.2832); c.fill();
-        c.beginPath(); c.arc(p.x + ux, p.y + uy, 2.8, 0, 6.2832); c.fill();
-        c.fillStyle = ENCRE;
-        c.beginPath(); c.arc(p.x, p.y, 2.3, 0, 6.2832); c.fill();
+      if (p.molecule) {   // O=C=O : molécule linéaire, deux oxygènes (rouges) de part et d'autre du carbone (gris)
+        const ux = Math.cos(p.ang) * ECART_ATOMES, uy = Math.sin(p.ang) * ECART_ATOMES;
+        atome(c, p.x - ux, p.y - uy, 8, OXYGENE);
+        atome(c, p.x + ux, p.y + uy, 8, OXYGENE);
+        atome(c, p.x, p.y, 7.2, CARBONE);   // dessiné en dernier : au premier plan
         return;
       }
       c.fillStyle = p.couleur;
@@ -3680,7 +3697,7 @@ function initFigureParticules() {
     p.vy = p.vy * AMORTI + gauss() * p.agitation - p.y * RAPPEL;
     p.x += p.vx;
     p.y += p.vy;
-    if (p.molecule) { p.va = p.va * 0.9 + gauss() * 0.02; p.ang += p.va; }
+    if (p.molecule) { p.va = p.va * 0.92 + gauss() * 0.004; p.ang += p.va; }   // rotation lente
     if (p.x > bx) { p.x = bx; p.vx = -Math.abs(p.vx) * 0.5; } else if (p.x < -bx) { p.x = -bx; p.vx = Math.abs(p.vx) * 0.5; }
     if (p.y > by) { p.y = by; p.vy = -Math.abs(p.vy) * 0.5; } else if (p.y < -by) { p.y = -by; p.vy = Math.abs(p.vy) * 0.5; }
     p.chemin.push(p.x, p.y);
@@ -3743,33 +3760,46 @@ function initEtoilesOuverture() {
   if (!ctx) return;
   let larg = 0, haut = 0, etoiles = [], visible = true, tourne = false, image = 0;
 
+  // Deux mouvements par étoile : une respiration lente (douce), et de temps en temps un bref éclat (le scintillement),
+  // chacune à son rythme. La plupart des étoiles sont minuscules et pâles : le ciel reste calme malgré leur nombre.
+  const TEINTES = ["#ffffff", "#dbe8ff", "#fff1dc"];   // blanc, bleuté, chaud : à peine perceptible
   function semer() {
-    const n = Math.round(Math.min(320, larg * haut / 5200));
+    const n = Math.round(Math.min(650, larg * haut / 2600));
     etoiles = [];
     for (let i = 0; i < n; i++) {
-      const brillante = Math.random() < 0.06;
+      const brillante = Math.random() < 0.05;
+      const minuscule = !brillante && Math.random() < 0.7;
       etoiles.push({
         x: Math.random() * larg, y: Math.random() * haut,
-        r: brillante ? 1.2 + Math.random() * 0.9 : 0.35 + Math.random() * 0.8,
-        base: 0.25 + Math.random() * 0.55, phase: Math.random() * 6.2832,
-        vitesse: 0.0006 + Math.random() * 0.0022, brillante,
+        r: brillante ? 1.1 + Math.random() * 0.8 : minuscule ? 0.3 + Math.random() * 0.35 : 0.6 + Math.random() * 0.6,
+        base: brillante ? 0.55 + Math.random() * 0.3 : minuscule ? 0.15 + Math.random() * 0.3 : 0.3 + Math.random() * 0.4,
+        phase: Math.random() * 6.2832, vitesse: 0.0005 + Math.random() * 0.0015,
+        eclat: 0.0003 + Math.random() * 0.0009, phaseEclat: Math.random() * 6.2832,   // un éclat toutes les ~4 à 20 s
+        teinte: Math.random() < 0.8 ? 0 : (Math.random() < 0.5 ? 1 : 2), brillante,
       });
     }
   }
   function dessiner(t) {
     ctx.clearRect(0, 0, larg, haut);
-    ctx.fillStyle = "#fff";
-    for (let i = 0; i < etoiles.length; i++) {
-      const e = etoiles[i];
-      ctx.globalAlpha = Math.max(0, Math.min(1, e.base + 0.45 * Math.sin(t * e.vitesse + e.phase)));
-      ctx.beginPath();
-      ctx.arc(e.x, e.y, e.r, 0, 6.2832);
-      ctx.fill();
-      if (e.brillante) {   // petite croix de lumière, comme sur l'affiche
-        const l = e.r * 5;
-        ctx.globalAlpha *= 0.55;
-        ctx.fillRect(e.x - l, e.y - 0.4, 2 * l, 0.8);
-        ctx.fillRect(e.x - 0.4, e.y - l, 0.8, 2 * l);
+    for (let teinte = 0; teinte < TEINTES.length; teinte++) {   // une couleur à la fois : moins de changements de pinceau
+      ctx.fillStyle = TEINTES[teinte];
+      for (let i = 0; i < etoiles.length; i++) {
+        const e = etoiles[i];
+        if (e.teinte !== teinte) continue;
+        const s = Math.sin(t * e.eclat + e.phaseEclat);
+        const eclat = s > 0 ? Math.pow(s, 18) : 0;            // bref pic, le reste du temps nul
+        let a = e.base * (0.72 + 0.28 * Math.sin(t * e.vitesse + e.phase)) + 0.5 * eclat;
+        if (a > 1) a = 1;
+        ctx.globalAlpha = a;
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, e.r * (1 + 0.5 * eclat), 0, 6.2832);
+        ctx.fill();
+        if (e.brillante || eclat > 0.35) {   // petite croix de lumière, comme sur l'affiche (plus longue pendant l'éclat)
+          const l = (e.brillante ? e.r * 4.5 : e.r * 5) * (1 + eclat);
+          ctx.globalAlpha = a * 0.45;
+          ctx.fillRect(e.x - l, e.y - 0.35, 2 * l, 0.7);
+          ctx.fillRect(e.x - 0.35, e.y - l, 0.7, 2 * l);
+        }
       }
     }
     ctx.globalAlpha = 1;
