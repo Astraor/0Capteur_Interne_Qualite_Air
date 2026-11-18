@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Qualité de l'air · Notre capteur</title>
+<title>La Bonne M’air · Qualité de l'air en direct</title>
 <meta name="description" content="Mesures en direct de notre capteur de qualité de l'air : particules fines, température, humidité et CO2.">
 <meta name="theme-color" content="#0e1b24">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e1b24'/%3E%3Ccircle cx='10' cy='11' r='2.4' fill='%23f2f4f0'/%3E%3Ccircle cx='22.5' cy='8.5' r='1.5' fill='%23f2f4f0'/%3E%3Ccircle cx='17.5' cy='21' r='5.5' fill='%23f26a1b'/%3E%3C/svg%3E">
@@ -12,6 +12,9 @@
   /* Les animations d'apparition ne s'activent que si le script principal démarre bien.
      Sinon (panne, hors ligne…), tout reste visible. */
   document.documentElement.classList.add("js");
+  /* Animations : toujours actives par défaut, même si le système demande de les réduire (Windows : « Effets d'animation »
+     désactivés). La personne peut les réduire avec le bouton « Animations » du pied de page : choix mémorisé. */
+  try { if (localStorage.getItem("animations") === "reduites") document.documentElement.classList.add("mouvement-reduit"); } catch (e) {}
   setTimeout(function () {
     if (!window.__pret) document.documentElement.classList.remove("js");
   }, 6000);
@@ -22,6 +25,10 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preload" as="style" onload="this.onload=null;this.rel='stylesheet'" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=Chivo+Mono:wght@400;500;600&display=swap">
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=Chivo+Mono:wght@400;500;600&display=swap"></noscript>
+<!-- Police du nom « La Bonne M'air » (proche de l'affiche) : &text= ne télécharge que les lettres du nom (quelques Ko) -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&display=swap&text=LaBonM%27irABONEMIR%E2%80%99">
+<!-- L'affiche est la première image vue : chargée en priorité -->
+<link rel="preload" as="image" href="img/la-bonne-mair-900.jpg" imagesrcset="img/la-bonne-mair-900.jpg 900w, img/la-bonne-mair-1696.jpg 1696w" imagesizes="(orientation: portrait) 100vw, 67vh">
 
 <!-- Chart.js 4.4.1 : la bibliothèque qui dessine les graphes (async : ne bloque pas la page ; les graphes se dessinent dès qu'elle arrive) -->
 <script async src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" onload="window.__chartPret &amp;&amp; window.__chartPret()" onerror="window.__chartKO = true"></script>
@@ -135,6 +142,21 @@
     min-height: 32px; padding: 5px 11px; gap: 6px; font-size: .68rem; border-width: 1.5px;
   }
   .hero.jeu .jeu-poussiere::after { content: ""; position: absolute; inset: -8px; }   /* zone tactile plus grande que le bouton */
+  /* Bouton « + Particules » : n'existe qu'en mode jeu, en haut à gauche (le bouton de sortie est en haut à droite) */
+  .jeu-plus { display: none; }
+  .hero.jeu .jeu-plus {
+    position: absolute; z-index: 5; top: 0; left: 0;
+    display: inline-flex; align-items: center; gap: 6px;
+    min-height: 32px; padding: 5px 12px;
+    border: 1.5px solid currentColor; border-radius: 999px;
+    background: transparent; color: inherit; cursor: pointer;
+    font: 600 .68rem/1.1 var(--mono); letter-spacing: .02em;
+    -webkit-user-select: none; user-select: none;
+  }
+  .hero.jeu .jeu-plus::after { content: ""; position: absolute; inset: -8px; }
+  .hero.jeu .jeu-plus > span:first-child { font-size: 1.1rem; line-height: 1; }
+  .hero.jeu .jeu-plus:disabled { opacity: .45; cursor: default; }
+  @media (hover: hover) { .hero.jeu .jeu-plus:not(:disabled):hover { background: rgba(127, 127, 127, .18); } }
   /* Plein écran « de secours » (iPhone, anciens navigateurs) : la barre de chapitres et la barre de progression s'effacent aussi. */
   html.jeu-actif, html.jeu-actif body { overflow: hidden; }
   html.jeu-actif .sommaire-story, html.jeu-actif .progression-lecture { opacity: 0; pointer-events: none; transition: opacity .3s; }
@@ -178,7 +200,7 @@
   /* Dès que le bandeau commence à se ranger (défilement), le bouton disparaît et le doigt redevient libre. */
   .hero.hors-jeu { touch-action: auto !important; }
   .hero.hors-jeu .jeu-poussiere { visibility: hidden; pointer-events: none; }
-  @media (prefers-reduced-motion: reduce) { .jeu-poussiere { display: none !important; } }
+  html.mouvement-reduit .jeu-poussiere { display: none !important; }
   .hero > canvas { position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
   .hero-grain {
     position: absolute; inset: 0; z-index: 1; pointer-events: none; opacity: .16;
@@ -186,7 +208,7 @@
   }
   .hero-contenu {
     position: relative; z-index: 2;
-    flex: 1; width: 100%;
+    flex: 1; min-height: 0; width: 100%;   /* min-height: 0 : le script détecte un contenu trop haut (voir ajusterHero) */
     display: flex; flex-direction: column; justify-content: space-between;
     gap: clamp(28px, 6vw, 64px);
   }
@@ -195,7 +217,7 @@
 
   /* Pastille d'état : la forme change avec l'état, pas seulement la couleur */
   .statut {
-    display: inline-flex; align-items: center; gap: 10px;
+    display: inline-flex; align-items: center; gap: 10px; max-width: 100%;   /* le texte passe à la ligne sur téléphone */
     margin: 0; padding: 7px 14px 7px 12px;
     border: 2px solid currentColor; border-radius: 2px;
     font: 600 .78rem/1.25 var(--mono);
@@ -281,6 +303,21 @@
   .lecture dd { margin: 0; line-height: 1.4; }
   .apparait { animation: monte 1s var(--courbe) both; animation-delay: calc(var(--d, 0) * 110ms + 120ms); }
 
+  /* Bandeau trop haut pour l'écran (téléphone) : le script resserre la mise en page par étapes (data-serre = 1, 2, 3)
+     jusqu'à ce que tout tienne, lien « Voir les mesures » compris. */
+  .hero:is([data-serre="1"], [data-serre="2"], [data-serre="3"]) .hero-contenu { gap: 14px; }
+  .hero:is([data-serre="1"], [data-serre="2"], [data-serre="3"]) .hero-haut { gap: 8px 12px; }
+  .hero:is([data-serre="1"], [data-serre="2"], [data-serre="3"]) .question { font-size: 1rem; }
+  .hero:is([data-serre="1"], [data-serre="2"], [data-serre="3"]) .prefixe { font-size: 1.3rem; margin-bottom: 2px; }
+  .hero:is([data-serre="1"], [data-serre="2"], [data-serre="3"]) .hero-bas { gap: 14px; }
+  .hero:is([data-serre="1"], [data-serre="2"], [data-serre="3"]) .intro { font-size: .92rem; line-height: 1.45; }
+  .hero:is([data-serre="1"], [data-serre="2"], [data-serre="3"]) .descendre { margin-top: 10px; }
+  .hero:is([data-serre="1"], [data-serre="2"], [data-serre="3"]) .lecture { gap: 6px; }
+  .hero:is([data-serre="1"], [data-serre="2"], [data-serre="3"]) .lecture > div { padding-top: 5px; }
+  .hero:is([data-serre="2"], [data-serre="3"]) .lecture, .hero:is([data-serre="2"], [data-serre="3"]) .marque { display: none; }
+  .hero[data-serre="3"] .intro { display: none; }
+  .hero[data-serre="3"] .descendre { margin-top: 0; }
+
   /* Tampon rotatif : le script écrit le texte le long du cercle */
   .tampon { display: none; position: absolute; z-index: 2; right: var(--gouttiere); top: clamp(84px, 11vw, 124px); width: 118px; height: 118px; }
   .tampon svg { display: block; width: 100%; height: 100%; animation: tourne 26s linear infinite; }
@@ -300,6 +337,123 @@
   @keyframes bat { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.5); } }
   @keyframes brillance { to { background-position: -200% 0; } }
   @keyframes fondu { from { opacity: 0; } to { opacity: 1; } }
+
+  /* ---------- Ouverture « La Bonne M'air » (première scène, épinglée pendant le défilement) ----------
+     Le nom apparaît en grand, puis l'affiche (Notre-Dame de la Garde sous les étoiles) se dévoile en fondu, puis la phrase
+     « Comme la Bonne Mère… ». Le script (initStoryScrolling) écrit opacité / échelle / flou selon l'avancement. */
+  .ouverture { position: relative; background: #000; color: #f2f4f0; }
+  .js .ouverture { height: 320vh; height: 320svh; }
+  .ouv-scene { position: relative; height: 100vh; height: 100svh; overflow: hidden; }
+  .js .ouv-scene { position: sticky; top: 0; }
+  @supports (height: 100dvh) { .js .ouv-scene { height: 100dvh; } }
+  .ouv-etoiles { position: absolute; inset: -40px 0; width: 100%; height: calc(100% + 80px); display: block; }
+  .ouv-image { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+  .ouv-image img {
+    display: block; width: auto; height: auto; max-width: 100%; max-height: 100%; min-width: 0; min-height: 0;
+    /* bords fondus dans le noir de la page : l'affiche se confond avec le ciel étoilé */
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent), linear-gradient(180deg, transparent, #000 6%, #000 97%, transparent);
+    -webkit-mask-composite: source-in;
+    mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent), linear-gradient(180deg, transparent, #000 6%, #000 97%, transparent);
+    mask-composite: intersect;
+  }
+  .js .ouv-image, .js .ouv-marque, .js .ouv-legende, .js .ouv-etoiles { will-change: transform, opacity; }
+  .js .ouv-image { opacity: 0; }   /* sans script, l'affiche reste simplement visible */
+  .ouv-marque {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: clamp(10px, 2vw, 22px); padding: 0 var(--gouttiere); text-align: center;
+  }
+  .ouv-sur { margin: 0; font: 600 clamp(.7rem, 1.4vw, .85rem)/1.3 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: rgba(242, 244, 240, .62); }
+  .marque-nom {
+    margin: 0; font-family: "Cinzel Decorative", "Cinzel", "Trajan Pro", Georgia, serif; font-weight: 700;
+    font-size: clamp(2.4rem, 9.6vw, 9rem); line-height: 1; letter-spacing: .01em; white-space: nowrap; text-transform: uppercase;   /* en capitales, comme sur l'affiche */
+    background: linear-gradient(180deg, #a9d8ff 0%, #5aa9e6 55%, #3b86c9 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 0 28px rgba(90, 169, 230, .35));
+  }
+  .ouv-sous { margin: 0; max-width: 30ch; font-size: clamp(1.05rem, 2.2vw, 1.5rem); font-weight: 500; font-stretch: 110%; line-height: 1.3; color: rgba(242, 244, 240, .86); }
+  .ouv-legende {
+    position: absolute; left: 0; right: 0; top: clamp(18px, 6vh, 70px); margin: 0 auto; padding: 0 var(--gouttiere);
+    max-width: 34ch; text-align: center; font-size: clamp(1.1rem, 2.6vw, 1.9rem); font-weight: 600; font-stretch: 105%; line-height: 1.25;
+    text-shadow: 0 2px 18px #000, 0 0 4px #000;
+  }
+  .ouv-legende em { font-style: normal; color: #8cc8f5; }
+  /* Écran large : l'affiche occupe le centre, la phrase passe à sa gauche (elle ne cache plus la statue) */
+  @media (min-aspect-ratio: 4/3) {
+    .ouv-legende {
+      left: var(--gouttiere); right: auto; top: 50%; margin: 0; padding: 0; transform: translateY(-50%);
+      max-width: min(16ch, calc(50vw - 34vh - 2 * var(--gouttiere))); text-align: left; font-size: clamp(1.2rem, 2.2vw, 2.1rem);
+    }
+  }
+  .js .ouv-legende { opacity: 0; }
+  .ouv-defiler {
+    position: absolute; left: 0; right: 0; bottom: calc(22px + env(safe-area-inset-bottom, 0px)); margin: 0;
+    text-align: center; font: 600 .75rem/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: rgba(242, 244, 240, .6);
+  }
+  .ouv-fleche { display: inline-block; margin-left: 6px; animation: rebond 1.8s ease-in-out infinite; }
+  /* pendant l'ouverture et les points forts (scènes noires plein écran), les barres de la page s'effacent */
+  .sommaire-story, .progression-lecture, .bascule-plein { transition: opacity .4s ease; }
+  html.scene-libre .sommaire-story, html.scene-libre .progression-lecture, html.scene-libre .bascule-plein { opacity: 0; pointer-events: none; }
+
+  /* ---------- Points forts : cartes qui défilent à l'horizontale pendant qu'on fait défiler la page ---------- */
+  .reel { position: relative; background: #000; color: #f2f4f0; }
+  .reel-scene { display: flex; flex-direction: column; justify-content: center; gap: clamp(22px, 4vh, 44px); padding: 12vh 0; overflow: hidden; }
+  .js .reel-scene { position: sticky; top: 0; height: 100vh; height: 100svh; padding: 0; }
+  @supports (height: 100dvh) { .js .reel-scene { height: 100dvh; } }
+  .reel-sur { margin: 0 0 8px; font: 600 .78rem/1.3 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: #8cc8f5; }
+  .reel-tete h2 {
+    margin: 0; max-width: 16ch; font-family: var(--titre); font-weight: 800; font-stretch: 72%;
+    font-size: clamp(2.2rem, 6vw, 4.6rem); line-height: .98; letter-spacing: -.01em; text-wrap: balance;
+  }
+  .reel-fenetre { overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .reel-fenetre::-webkit-scrollbar { display: none; }
+  .js .reel-fenetre { overflow: visible; }
+  .reel-piste {
+    list-style: none; margin: 0; display: flex; gap: clamp(14px, 2vw, 24px); width: max-content;
+    padding: 0 var(--gouttiere); padding-left: max(var(--gouttiere), calc((100vw - 1180px) / 2 + var(--gouttiere)));
+  }
+  .js .reel-piste { will-change: transform; }
+  .atout {
+    position: relative; display: flex; flex-direction: column; justify-content: flex-end; gap: 10px;
+    width: min(78vw, 360px); min-height: clamp(300px, 52vh, 460px); padding: clamp(22px, 3vw, 32px);
+    border: 1px solid rgba(242, 244, 240, .1); border-radius: 26px; overflow: hidden;
+    background: radial-gradient(120% 80% at 100% 0%, rgba(90, 169, 230, .2), transparent 60%), linear-gradient(165deg, #141f28, #0a1015);
+  }
+  .atout-chiffre {
+    margin: 0 0 auto; display: flex; align-items: baseline; gap: 8px;
+    font-family: var(--titre); font-weight: 900; font-stretch: 62%; font-size: clamp(4.4rem, 11vw, 7.4rem); line-height: .9; letter-spacing: -.02em;
+    background: linear-gradient(180deg, #f2f4f0 10%, #8cc8f5 100%); -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .atout-chiffre small { font-family: var(--sans); font-size: 1.1rem; font-weight: 700; font-stretch: 110%; letter-spacing: 0; color: #8cc8f5; -webkit-text-fill-color: #8cc8f5; }
+  .atout h3 { margin: 0; font-size: clamp(1.15rem, 1.8vw, 1.35rem); font-weight: 700; font-stretch: 105%; line-height: 1.2; }
+  .atout p:last-child { margin: 0; font-size: .92rem; line-height: 1.5; color: rgba(242, 244, 240, .72); }
+  .reel-avance { display: none; }
+  .js .reel-avance {
+    display: block; position: relative; height: 3px; margin: 0 var(--gouttiere); max-width: 1180px; border-radius: 2px;
+    background: rgba(242, 244, 240, .14); overflow: hidden;
+  }
+  @media (min-width: 1228px) { .js .reel-avance { margin: 0 auto; width: calc(1180px - 2 * var(--gouttiere)); } }
+  .reel-avance span { position: absolute; inset: 0; background: #8cc8f5; transform: scaleX(0); transform-origin: 0 50%; }
+
+  /* Nom du projet dans le pied de page */
+  .pied-marque {
+    margin: 0 0 22px; font-family: "Cinzel Decorative", "Cinzel", Georgia, serif; font-weight: 700;
+    font-size: clamp(1.9rem, 5vw, 3.2rem); line-height: 1; color: #8cc8f5 !important; text-transform: uppercase; max-width: none !important;
+  }
+
+  @media print {
+    .js .ouverture, .js .reel { height: auto !important; }
+    .js .ouv-scene, .js .reel-scene { position: relative; }
+    .js .reel-scene { height: auto; padding: 12vh 0; }
+    .js .reel-fenetre { overflow-x: auto; }
+    .js .reel-piste { transform: none !important; }
+    .js .reel-avance, .ouv-defiler { display: none; }
+  }
+  html.js.mouvement-reduit .ouverture, html.js.mouvement-reduit .reel { height: auto !important; }
+  html.js.mouvement-reduit .ouv-scene, html.js.mouvement-reduit .reel-scene { position: relative; }
+  html.js.mouvement-reduit .reel-scene { height: auto; padding: 12vh 0; }
+  html.js.mouvement-reduit .reel-fenetre { overflow-x: auto; }
+  html.js.mouvement-reduit .reel-piste { transform: none !important; }
+  html.js.mouvement-reduit .reel-avance, html.mouvement-reduit .ouv-defiler { display: none; }
 
   /* ---------- Barre de contrôle (reste collée en haut) ---------- */
   .barre { position: sticky; top: 0; z-index: 30; background: var(--fond); border-bottom: 2px solid var(--encre); }
@@ -340,6 +494,17 @@
   .perso-aide { flex-basis: 100%; margin: 0; font: 500 .75rem/1.4 var(--mono); color: var(--doux); }
   .perso-aide.erreur { color: #9c1f17; font-weight: 600; }
   @media (pointer: coarse) { .perso input, .perso select, .perso-ok { min-height: 44px; } }
+
+  /* Pas de la moyenne (fréquence d'échantillonnage des graphes) */
+  .pas { display: inline-flex; align-items: center; gap: 8px; font-size: .9rem; font-weight: 600; }
+  .pas select {
+    min-height: 40px; padding: 6px 10px;
+    border: 2px solid var(--encre); border-radius: 3px;
+    background: var(--fond); color: var(--encre); cursor: pointer;
+    font: 600 1rem/1.2 var(--mono);   /* 16 px : pas de zoom automatique sur iPhone */
+  }
+  .pas select:focus-visible { outline: 3px solid var(--cobalt); outline-offset: 2px; }
+  @media (pointer: coarse) { .pas select { min-height: 44px; } }
 
   .option { display: inline-flex; align-items: center; gap: 12px; font-size: .9rem; font-weight: 500; cursor: pointer; -webkit-user-select: none; user-select: none; }
   .option-court, .court { display: none; }
@@ -495,14 +660,30 @@
   .chiffre small { font-family: var(--sans); font-size: .9rem; font-weight: 500; font-stretch: 100%; letter-spacing: 0; color: var(--doux); }
   .badge { display: inline-block; padding: 3px 9px; border-radius: 2px; font-size: .7rem; font-weight: 700; font-stretch: 115%; letter-spacing: .06em; text-transform: uppercase; }
 
-  .echelle { position: relative; padding: 14px 0 30px; }
+  .echelle { position: relative; padding: 38px 0 30px; }
   .echelle-barre { display: flex; height: 14px; }
   .echelle-barre i { display: block; height: 100%; flex: none; box-sizing: border-box; }
   .echelle-barre i:not(:last-child) { border-right: 3px solid var(--fond); }
-  .graduation { position: absolute; top: 36px; transform: translateX(-50%); font: 500 .68rem/1 var(--mono); color: var(--doux); white-space: nowrap; }
+  .graduation { position: absolute; top: 60px; transform: translateX(-50%); font: 500 .68rem/1 var(--mono); color: var(--doux); white-space: nowrap; }
   .graduation::before { content: ""; position: absolute; left: 50%; top: -8px; height: 5px; width: 1px; background: var(--doux); }
-  .repere { position: absolute; top: 2px; left: var(--pos, 0%); width: 4px; height: 38px; margin-left: -2px; background: var(--encre); border-radius: 1px; transition: left 1.7s var(--courbe); }
+  .repere { position: absolute; top: 28px; left: var(--pos, 0%); width: 4px; height: 32px; margin-left: -2px; background: var(--encre); border-radius: 1px; transition: left 1.7s var(--courbe); }
   .js .bloc:not(.vu) .repere { left: 0%; }
+  /* Minimum et maximum de la période : un trait avec deux butées au-dessus de la jauge, et leurs valeurs.
+     L'étiquette glisse de --c (centre du trait) tout en restant dans la jauge : translateX(-c %) de sa propre largeur. */
+  .plage {
+    position: absolute; top: 17px; height: 2px; background: var(--doux);
+    left: var(--min, 0%); width: calc(var(--max, 0%) - var(--min, 0%));
+    transition: left 1.7s var(--courbe), width 1.7s var(--courbe);
+  }
+  .plage::before, .plage::after { content: ""; position: absolute; top: -4px; width: 2px; height: 10px; background: var(--doux); }
+  .plage::before { left: -1px; }
+  .plage::after { right: -1px; }
+  .plage-texte {
+    position: absolute; top: 0; left: var(--c, 0%); transform: translateX(calc(var(--c, 0%) * -1));
+    font: 500 .66rem/1 var(--mono); color: var(--doux); white-space: nowrap;
+    transition: left 1.7s var(--courbe), transform 1.7s var(--courbe);
+  }
+  .js .bloc:not(.vu) .plage { left: 0%; width: 0%; }
   .repere::before { content: ""; position: absolute; top: -6px; left: 50%; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: var(--encre); border: 2px solid var(--fond); }
 
   .autres { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 26px 32px; padding-top: 26px; border-top: 1px solid var(--filet); }
@@ -523,6 +704,23 @@
   .lg-val b { font: 700 1.3rem/1.1 var(--mono); }
   .lg-unite { font: 500 .78rem/1.2 var(--mono); color: var(--doux); }
   .lg-niv { align-self: center; padding: 3px 7px; border-radius: 2px; font: 700 .68rem/1 var(--sans); font-style: normal; text-transform: uppercase; letter-spacing: .04em; }
+  /* Cases à cocher des courbes : une pastille par mesure, de la couleur de sa courbe */
+  .puces { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+  .puces:empty { display: none; }
+  .puce {
+    position: relative; display: inline-flex; align-items: center; gap: 8px;
+    min-height: 36px; padding: 6px 13px 6px 10px;
+    border: 2px solid var(--encre); border-radius: 999px; cursor: pointer;
+    font: 600 .85rem/1 var(--sans); -webkit-user-select: none; user-select: none;
+    transition: opacity .2s, background-color .2s;
+  }
+  .puce input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; }
+  .puce i { width: 12px; height: 12px; flex: none; border-radius: 50%; background: var(--c); border: 2px solid var(--c); transition: background-color .2s; }
+  .puce.off { opacity: .55; border-style: dashed; }
+  .puce.off i { background: transparent; }
+  .puce:has(input:focus-visible) { outline: 3px solid var(--cobalt); outline-offset: 2px; }
+  @media (hover: hover) { .puce:hover { background: rgba(14, 27, 36, .06); } }
+  @media (pointer: coarse) { .puce { min-height: 44px; } }
   .zone-graphe canvas {
     display: block; touch-action: pan-y;
     -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none;
@@ -542,10 +740,6 @@
   .ligne { transition: opacity .7s var(--courbe) calc(var(--i, 0) * 80ms + 250ms), background-color .2s ease 0s; }
   .js .bloc:not(.vu) .ligne { opacity: 0; }
   @media (hover: hover) { .ligne:hover { background: rgba(14, 27, 36, .05); } }
-  .allure { display: block; width: 120px; height: 30px; margin-left: auto; clip-path: inset(0 0 0 0); transition: clip-path 1.3s var(--courbe) calc(var(--i, 0) * 80ms + 450ms); }
-  .js .bloc:not(.vu) .allure { clip-path: inset(0 100% 0 0); }
-  .allure path { fill: none; stroke: var(--encre); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-  .allure circle { fill: var(--encre); }
 
   /* ---------- Comprendre les mesures ---------- */
   .bloc.large > h2 {
@@ -574,6 +768,14 @@
   .rond.pm10 { width: 20px; height: 20px; }
   .rond.pm25 { width: 5px; height: 5px; background: var(--cobalt); }
   .rond.pm1 { width: 2px; height: 2px; background: var(--cobalt); }
+  /* Molécule de CO₂ (O=C=O), agrandie : à l'échelle elle mesurerait moins d'un millième de pixel */
+  .rond.co2 {
+    width: 20px; height: 8px; border-radius: 0;
+    background:
+      radial-gradient(circle at 4px 50%, #d23c2a 3px, transparent 3.5px),
+      radial-gradient(circle at 50% 50%, var(--encre) 2.5px, transparent 3px),
+      radial-gradient(circle at calc(100% - 4px) 50%, #d23c2a 3px, transparent 3.5px);
+  }
   .tailles figcaption { flex-basis: 100%; font-size: .78rem; color: var(--doux); }
 
   /* ---------- Pied de page ---------- */
@@ -599,19 +801,20 @@
     .lecture > div { grid-template-columns: 1fr; gap: 2px; }
   }
   @media (max-width: 560px) {
-    /* la barre de période reste collée en haut, sur une seule ligne */
-    .barre-int { flex-wrap: nowrap; gap: 10px; padding-top: 8px; padding-bottom: 8px; }
-    .periode { padding: 8px 12px; }
+    /* la barre reste collée en haut : périodes sur la 1re ligne, pas et seuils sur la 2e */
+    .barre-int { gap: 8px 10px; padding-top: 8px; padding-bottom: 8px; }
+    .periodes { display: flex; width: 100%; }
+    .periode { flex: 1 1 auto; padding: 8px 10px; }
     .long, .option-long { display: none; }
     .option-court, .court { display: inline; }
     .option { gap: 8px; font-size: .85rem; }
-    .col-allure { display: none; }
+    .pas { font-size: .85rem; }
     th, td { padding: 12px 8px; }
     .hero-bas { gap: 24px; }
+    .chapitre { scroll-margin-top: 128px; }
   }
   @media (pointer: coarse) { .periode { min-height: 44px; } }
-  @media (max-width: 380px) { .periode { padding: 8px 9px; } }
-  @media (max-width: 340px) { .barre-int { flex-wrap: wrap; } }
+  @media (max-width: 380px) { .periode { padding: 8px 6px; } }
 
   /* ---------- Story scrolling : mouvements liés au défilement ---------- */
   /* Le bandeau reste épinglé pendant ~130 % d'écran de défilement. --sortie (0 → 1) orchestre la scène :
@@ -644,17 +847,27 @@
   /* Les chapitres se déploient en suivant le défilement : --e va de 0 (hors écran) à 1 (en place) */
   .js .chapitre .numero-chapitre .n { display: inline-block; transform-origin: 0 100%; }
   .js .chapitre .bloc-corps { transform-origin: 50% 0; }
-  @media (prefers-reduced-motion: reduce), print {
+  @media print {
     .js .piste, .js .manifeste { height: auto; }
     .js .hero { position: relative; height: auto; min-height: min(88svh, 820px); }
     .js .manifeste-scene { position: static; height: auto; padding-top: 12vh; padding-bottom: 12vh; }
     .js .mot-m { color: var(--encre); }
-    /* les valeurs écrites par le script sont neutralisées (!important l'emporte sur le style en ligne) */
     .js .hero, .js .hero-disque, .js .hero-haut, .js .hero-bas, .js .hero .titre, .js .hero > canvas,
     .js .chapitre .numero-chapitre .n, .js .chapitre .bloc-corps { scale: none !important; translate: none !important; filter: none !important; will-change: auto; }
     .js .hero { border-radius: 0 !important; }
     .js .hero-haut, .js .hero-bas, .js .hero .titre, .js .hero > canvas { opacity: 1 !important; }
   }
+  /* Animations réduites (choix fait sur le site) : mêmes règles que pour l'impression */
+  html.js.mouvement-reduit .piste, html.js.mouvement-reduit .manifeste { height: auto; }
+  html.js.mouvement-reduit .hero { position: relative; height: auto; min-height: min(88svh, 820px); }
+  html.js.mouvement-reduit .manifeste-scene { position: static; height: auto; padding-top: 12vh; padding-bottom: 12vh; }
+  html.js.mouvement-reduit .mot-m { color: var(--encre); }
+  /* les valeurs écrites par le script sont neutralisées (!important l'emporte sur le style en ligne) */
+  html.js.mouvement-reduit .hero, html.js.mouvement-reduit .hero-disque, html.js.mouvement-reduit .hero-haut,
+  html.js.mouvement-reduit .hero-bas, html.js.mouvement-reduit .hero .titre, html.js.mouvement-reduit .hero > canvas,
+  html.js.mouvement-reduit .chapitre .numero-chapitre .n, html.js.mouvement-reduit .chapitre .bloc-corps { scale: none !important; translate: none !important; filter: none !important; will-change: auto; }
+  html.js.mouvement-reduit .hero { border-radius: 0 !important; }
+  html.js.mouvement-reduit .hero-haut, html.js.mouvement-reduit .hero-bas, html.js.mouvement-reduit .hero .titre, html.js.mouvement-reduit .hero > canvas { opacity: 1 !important; }
   /* trait de progression sous le numéro de chapitre : se remplit pendant la lecture du chapitre */
   .chapitre .numero-chapitre::after {
     content: ""; flex: 0 0 100%; height: 3px; margin-top: 10px;
@@ -675,21 +888,33 @@
   /* Animations en boucle : mises en pause quand leur zone est hors écran (le script pose la classe .en-pause) */
   .en-pause, .en-pause *, .en-pause *::before, .en-pause *::after { animation-play-state: paused !important; }
 
-  /* ---------- Mouvement réduit : plus de boucles, de rotations ni de glissements, mais les fondus restent ---------- */
-  @media (prefers-reduced-motion: reduce) {
-    html { scroll-behavior: auto; }
-    .hero-disque, .tampon svg, .tampon-point, .statut .point::after, .descendre span,
-    .squelette i, .mot.attente #verdict-lettres { animation: none; }
-    .lettre { animation: fondu .6s ease both; animation-delay: calc(var(--i, 0) * 30ms + 100ms); }
-    .apparait { animation: fondu .7s ease both; animation-delay: calc(var(--d, 0) * 90ms + 100ms); }
-    .souligne.dessine path { animation: none; stroke-dashoffset: 0; }
-    .js .revele { transform: none; transition: opacity .7s ease; transition-delay: calc(var(--d, 0) * 60ms); }
-    .js .bloc::before { transform: none; transition: none; }
-    .js .bloc:not(.vu) .zone-graphe, .js .bloc:not(.vu) .allure { clip-path: none; opacity: 0; }
-    .zone-graphe, .allure { transition: opacity .7s ease; }
-    .repere { transition: none; }
-    .point-story, .point-story::before, .p-titre { transition: none; }
+  /* ---------- Animations réduites (bouton du pied de page) : plus de boucles, de rotations ni de glissements,
+     mais les fondus restent. Le réglage du système n'est volontairement pas suivi (voir le <head>). ---------- */
+  html.mouvement-reduit { scroll-behavior: auto; }
+  html.mouvement-reduit :is(.hero-disque, .tampon svg, .tampon-point, .descendre span,
+    .squelette i, .mot.attente #verdict-lettres, .ouv-fleche) { animation: none; }
+  html.mouvement-reduit .statut .point::after { animation: none; }
+  html.mouvement-reduit .lettre { animation: fondu .6s ease both; animation-delay: calc(var(--i, 0) * 30ms + 100ms); }
+  html.mouvement-reduit .apparait { animation: fondu .7s ease both; animation-delay: calc(var(--d, 0) * 90ms + 100ms); }
+  html.mouvement-reduit .souligne.dessine path { animation: none; stroke-dashoffset: 0; }
+  html.js.mouvement-reduit .revele { transform: none; transition: opacity .7s ease; transition-delay: calc(var(--d, 0) * 60ms); }
+  html.js.mouvement-reduit .bloc::before { transform: none; transition: none; }
+  html.js.mouvement-reduit .bloc:not(.vu) .zone-graphe { clip-path: none; opacity: 0; }
+  html.mouvement-reduit .zone-graphe { transition: opacity .7s ease; }
+  html.mouvement-reduit :is(.plage, .plage-texte, .repere) { transition: none; }
+  html.mouvement-reduit :is(.point-story, .p-titre) { transition: none; }
+  html.mouvement-reduit .point-story::before { transition: none; }
+
+  /* Bouton « Animations » du pied de page */
+  .bouton-anim {
+    display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 6px 12px;
+    border: 2px solid currentColor; border-radius: 2px; background: transparent; color: inherit; cursor: pointer;
+    font: 600 .72rem/1 var(--mono); letter-spacing: .04em;
   }
+  .bouton-anim::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #8cc8f5; }
+  .bouton-anim[aria-pressed="true"]::before { background: transparent; box-shadow: inset 0 0 0 2px currentColor; }
+  @media (pointer: coarse) { .bouton-anim { min-height: 44px; } }
+  @media print { .bouton-anim { display: none; } }
   @media print {
     .js .revele { opacity: 1; transform: none; }
     .barre { position: static; box-shadow: none; }
@@ -738,6 +963,31 @@
   </p>
 </noscript>
 
+<section class="ouverture" id="ouverture" aria-labelledby="ouverture-titre">
+  <div class="ouv-scene">
+    <canvas class="ouv-etoiles" id="ouv-etoiles" aria-hidden="true"></canvas>
+
+    <div class="ouv-image" id="ouv-image">
+      <img src="img/la-bonne-mair-900.jpg"
+           srcset="img/la-bonne-mair-900.jpg 900w, img/la-bonne-mair-1696.jpg 1696w"
+           sizes="(orientation: portrait) 100vw, 67vh"
+           width="1696" height="2528" decoding="async" fetchpriority="high"
+           alt="Notre-Dame de la Garde, la « Bonne Mère » de Marseille, dessinée sous un ciel étoilé, avec le titre La Bonne M'air"
+           data-i18n-attr="alt:ouv.alt">
+    </div>
+
+    <div class="ouv-marque" id="ouv-marque">
+      <p class="ouv-sur" data-i18n="ouv.sur">Surveillance de la qualité de l'air intérieur</p>
+      <h2 class="marque-nom" id="ouverture-titre">La Bonne M’air</h2>
+      <p class="ouv-sous" data-i18n="ouv.sous">Le capteur qui veille sur l’air que vous respirez.</p>
+    </div>
+
+    <p class="ouv-legende" id="ouv-legende" data-i18n-html="ouv.legende">Comme la <em>Bonne Mère</em> veille sur Marseille, <em>La Bonne M’air</em> veille sur votre air.</p>
+
+    <p class="ouv-defiler" id="ouv-defiler"><span data-i18n="ouv.defiler">Faites défiler</span><span class="ouv-fleche" aria-hidden="true">↓</span></p>
+  </div>
+</section>
+
 <div class="piste" id="piste">
 <header class="hero" id="hero" data-titre="Introduction" data-i18n-attr="data-titre:chap.intro">
   <div class="hero-disque" aria-hidden="true"></div>
@@ -760,6 +1010,11 @@
         <button type="button" data-lang="en" lang="en" aria-label="English" aria-pressed="false">EN</button>
         <button type="button" data-lang="ja" lang="ja" aria-label="日本語" aria-pressed="false">日本語</button>
       </div>
+
+      <!-- Visible seulement en mode jeu : ajoute des particules, retirées dès qu'on quitte le mode jeu -->
+      <button type="button" class="jeu-plus" id="jeu-plus">
+        <span aria-hidden="true">+</span> <span id="jeu-plus-texte">Particules</span>
+      </button>
 
       <button type="button" class="jeu-poussiere" id="jeu-poussiere" aria-pressed="false">
         <span id="jeu-texte">Jouer avec les particules</span>
@@ -802,6 +1057,57 @@
   </div>
 </section>
 
+<section class="reel" id="atouts" aria-labelledby="reel-titre">
+  <div class="reel-scene">
+    <div class="conteneur reel-tete">
+      <p class="reel-sur" data-i18n="reel.sur">Points forts</p>
+      <h2 id="reel-titre" data-i18n="reel.titre">Petit boîtier. Grandes attentions.</h2>
+    </div>
+
+    <div class="reel-fenetre">
+      <ol class="reel-piste" id="reel-piste">
+        <li class="atout">
+          <p class="atout-chiffre">4<small data-i18n="reel.1.u">mesures</small></p>
+          <h3 data-i18n="reel.1.t">Tout ce qui compte dans l’air d’une pièce.</h3>
+          <p data-i18n="reel.1.p">Particules fines PM1, PM2.5 et PM10, et CO₂ : les indicateurs clés d’un air intérieur sain.</p>
+        </li>
+        <li class="atout">
+          <p class="atout-chiffre">30<small data-i18n="reel.2.u">s</small></p>
+          <h3 data-i18n="reel.2.t">Une mesure toutes les 30 secondes.</h3>
+          <p data-i18n="reel.2.p">Les capteurs sont lus toutes les 10 secondes ; chaque envoi donne la moyenne et le pic de la période.</p>
+        </li>
+        <li class="atout">
+          <p class="atout-chiffre">2<small data-i18n="reel.3.u">capteurs</small></p>
+          <h3 data-i18n="reel.3.t">Un laser pour les particules. L’infrarouge pour le CO₂.</h3>
+          <p data-i18n="reel.3.p">Le NextPM compte les particules par diffusion laser ; le MH-Z19C mesure le CO₂ par absorption infrarouge (NDIR).</p>
+        </li>
+        <li class="atout">
+          <p class="atout-chiffre">1 000<small>ppm</small></p>
+          <h3 data-i18n="reel.4.t">L’écran vous dit quand aérer.</h3>
+          <p data-i18n="reel.4.p">Sur l’écran LED 64 × 32, le message « AÉRER » apparaît dès que le CO₂ dépasse 1 000 ppm.</p>
+        </li>
+        <li class="atout">
+          <p class="atout-chiffre">−100<small>ppm</small></p>
+          <h3 data-i18n="reel.5.t">Il remarque quand vous ouvrez la fenêtre.</h3>
+          <p data-i18n="reel.5.p">Une chute rapide du CO₂, d’au moins 100 ppm en deux minutes environ, est repérée comme une aération.</p>
+        </li>
+        <li class="atout">
+          <p class="atout-chiffre">12<small data-i18n="reel.6.u">h</small></p>
+          <h3 data-i18n="reel.6.t">Coupure réseau ? Rien n’est perdu.</h3>
+          <p data-i18n="reel.6.p">Sans Wi-Fi, la carte garde environ 12 heures de mesures en mémoire, puis les renvoie toute seule, à leur heure réelle.</p>
+        </li>
+        <li class="atout">
+          <p class="atout-chiffre">6<small data-i18n="reel.7.u">niveaux</small></p>
+          <h3 data-i18n="reel.7.t">Les seuils officiels de l’indice ATMO.</h3>
+          <p data-i18n="reel.7.p">Les particules sont jugées comme le fait Atmo France, de « Bon » à « Extrêmement mauvais ».</p>
+        </li>
+      </ol>
+    </div>
+
+    <div class="reel-avance" aria-hidden="true"><span id="reel-avance"></span></div>
+  </div>
+</section>
+
 <div class="barre" id="mesures">
   <div class="conteneur barre-int">
     <div class="periodes" role="group" aria-label="Période affichée" data-i18n-attr="aria-label:p.aria">
@@ -815,6 +1121,14 @@
 
       <button type="button" class="periode" id="bouton-perso" data-periode="perso" aria-label="Durée personnalisée" aria-pressed="false" aria-expanded="false" aria-controls="perso"><span id="perso-texte">Perso</span></button>
     </div>
+
+    <!-- Pas de la moyenne : les options sont écrites par le script (elles dépendent de la période choisie) -->
+    <label class="pas">
+      <span data-i18n="pas.label">Pas</span>
+      <select id="pas" data-i18n-attr="title:pas.aria" title="Pas de la moyenne affichée sur les graphes">
+        <option value="auto">Auto</option>
+      </select>
+    </label>
 
     <label class="option">
       <input type="checkbox" id="afficher-seuils" aria-label="Afficher les seuils sur les graphes" data-i18n-attr="aria-label:p.seuils_aria" checked>
@@ -863,30 +1177,17 @@
     </div>
   </section>
 
-  <section class="bloc chapitre" id="chapitre-particules" data-titre="Particules fines" data-i18n-attr="data-titre:chap.particules" aria-labelledby="titre-pm" hidden>
+  <section class="bloc chapitre" id="chapitre-air" data-titre="Particules fines et CO₂" data-i18n-attr="data-titre:chap.particules" aria-labelledby="titre-air" hidden>
     <div class="bloc-tete revele">
       <p class="numero-chapitre"><span class="n" data-n>00</span><span class="total" data-total>/ 00</span><span class="accroche" data-i18n="acc.particules">Ce que nous respirons</span></p>
-      <h2 id="titre-pm" data-i18n-html="pm.h2">Particules fines <span class="u">(µg/m³)</span></h2>
-      <p class="note" data-i18n="pm.note">PM1, PM2.5 et PM10 : des particules de moins de 1, 2,5 et 10 micromètres. Plus elles sont fines, plus elles pénètrent profondément dans les poumons.</p>
+      <h2 id="titre-air" data-i18n-html="pm.h2">Particules fines et CO₂ <span class="u">(µg/m³ · ppm)</span></h2>
+      <p class="note" data-i18n="pm.note">Particules PM1, PM2.5 et PM10 sur l’axe de gauche (µg/m³), CO₂ sur l’axe de droite (ppm). Cochez les mesures à afficher.</p>
     </div>
 
     <div class="bloc-corps revele" style="--d:1">
+      <div class="puces" role="group" aria-label="Mesures affichées sur le graphe" data-i18n-attr="aria-label:graphe.puces"></div>
       <div class="zone-graphe">
-        <canvas id="graphe-pm" role="img" aria-label="Courbes des particules fines PM1, PM2.5 et PM10 sur la période choisie" data-i18n-attr="aria-label:pm.aria"></canvas>
-      </div>
-    </div>
-  </section>
-
-  <section class="bloc chapitre" id="carte-co2" data-titre="CO₂" aria-labelledby="titre-co2" hidden>
-    <div class="bloc-tete revele">
-      <p class="numero-chapitre"><span class="n" data-n>00</span><span class="total" data-total>/ 00</span><span class="accroche" data-i18n="acc.co2">L’air se renouvelle-t-il ?</span></p>
-      <h2 id="titre-co2">CO₂ <span class="u">(ppm)</span></h2>
-      <p class="note" data-i18n="co2.note">Le CO₂ vient surtout de notre respiration : plus il monte, moins la pièce est aérée.</p>
-    </div>
-
-    <div class="bloc-corps revele" style="--d:1">
-      <div class="zone-graphe">
-        <canvas id="graphe-co2" role="img" aria-label="Courbe du CO₂ sur la période choisie" data-i18n-attr="aria-label:co2.aria"></canvas>
+        <canvas id="graphe-air" role="img" aria-label="Courbes des particules fines PM1, PM2.5, PM10 et du CO₂ sur la période choisie" data-i18n-attr="aria-label:pm.aria"></canvas>
       </div>
     </div>
   </section>
@@ -899,36 +1200,9 @@
     </div>
 
     <div class="bloc-corps revele" style="--d:1">
+      <div class="puces" role="group" aria-label="Mesures affichées sur le graphe" data-i18n-attr="aria-label:graphe.puces"></div>
       <div class="zone-graphe">
         <canvas id="graphe-meteo" role="img" aria-label="Courbes de la température et de l’humidité sur la période choisie" data-i18n-attr="aria-label:thum.aria"></canvas>
-      </div>
-    </div>
-  </section>
-
-  <section class="bloc chapitre" id="carte-resume" data-titre="Bilan de la période" data-i18n-attr="data-titre:chap.resume" aria-labelledby="titre-resume" hidden>
-    <div class="bloc-tete revele">
-      <p class="numero-chapitre"><span class="n" data-n>00</span><span class="total" data-total>/ 00</span><span class="accroche" data-i18n="acc.resume">Vue d’ensemble</span></p>
-      <h2 id="titre-resume" data-i18n="resume.h2">Résumé de la période</h2>
-      <p class="note" data-i18n="resume.note">Minimum, moyenne et maximum de chaque mesure, sur la période choisie.</p>
-    </div>
-
-    <div class="bloc-corps revele" style="--d:1">
-      <div class="defile">
-        <table>
-          <caption class="sr" data-i18n="resume.caption">Minimum, moyenne et maximum de chaque mesure sur la période affichée</caption>
-
-          <thead>
-            <tr>
-              <th data-i18n="resume.th_mesure">Mesure</th>
-              <th data-i18n="resume.th_min">Minimum</th>
-              <th data-i18n="resume.th_moy">Moyenne</th>
-              <th data-i18n="resume.th_max">Maximum</th>
-              <th class="col-allure" data-i18n="resume.th_allure">Allure</th>
-            </tr>
-          </thead>
-
-          <tbody id="resume-corps"></tbody>
-        </table>
       </div>
     </div>
   </section>
@@ -954,7 +1228,8 @@
             <div class="taille"><div class="zone"><span class="rond pm10"></span></div><b>PM10</b><small>10 µm</small></div>
             <div class="taille"><div class="zone"><span class="rond pm25"></span></div><b>PM2.5</b><small data-i18n="comp.t25">2,5 µm</small></div>
             <div class="taille"><div class="zone"><span class="rond pm1"></span></div><b>PM1</b><small>1 µm</small></div>
-            <figcaption data-i18n="comp.caption">Diamètres comparés, à l'échelle. Les trajets sont illustratifs : plus une particule est fine, plus elle se laisse agiter.</figcaption>
+            <div class="taille"><div class="zone"><span class="rond co2"></span></div><b>CO₂</b><small data-i18n="comp.tco2">≈ 0,3 nm · agrandie</small></div>
+            <figcaption data-i18n="comp.caption">Diamètres comparés, à l'échelle, sauf la molécule de CO₂ : 3 000 fois plus petite qu'une PM1, elle serait invisible. Les trajets sont illustratifs : plus c'est petit, plus ça s'agite.</figcaption>
           </figure>
         </div>
       </div>
@@ -998,6 +1273,7 @@
 <footer class="pied">
   <div class="conteneur pied-int">
     <div class="pied-texte">
+      <p class="pied-marque">La Bonne M’air</p>
       <dl class="pied-donnees">
         <dt data-i18n="pied.source.dt">Source</dt>
         <dd data-i18n="pied.source.dd">Capteur de qualité de l'air, qui envoie ses mesures au serveur AirCarto (api.aircarto.fr), environ toutes les 30&nbsp;secondes.</dd>
@@ -1028,6 +1304,7 @@
         <button type="button" data-lang="en" lang="en" aria-label="English" aria-pressed="false">EN</button>
         <button type="button" data-lang="ja" lang="ja" aria-label="日本語" aria-pressed="false">日本語</button>
       </div>
+      <button type="button" class="bouton-anim" id="bouton-anim" aria-pressed="false">Animations : activées</button>
       <a class="haut" href="#piste" data-i18n-html="pied.haut">Haut de page <span aria-hidden="true">↑</span></a>
     </div>
   </div>
@@ -1086,9 +1363,17 @@ const DUREE_PERIODE = { "-6h": 6 * 3600000, "-24h": 24 * 3600000, "-7d": 7 * 864
 // Durée personnalisée (bouton « Perso ») : bornes acceptées, en minutes.
 const PERSO_MIN = 5;
 const PERSO_MAX = 7 * 24 * 60;
-// Pour une durée personnalisée, la moyenne affichée prend le plus fin de ces pas qui donne au plus POINTS_MAX points.
+// Pour une durée personnalisée, la moyenne affichée (« Auto ») prend le plus fin de ces pas qui donne au plus POINTS_MAX points.
 const PAS_AFFICHAGE = ["1m", "2m", "5m", "10m", "15m", "30m", "1h", "2h", "3h", "6h"];
 const POINTS_MAX = 180;
+// Menu « Pas » : pas que l'on peut choisir à la main. Ne sont proposés que ceux qui ne sont pas plus fins que les données
+// reçues (1 min, ou 5 min au-delà de 24 h) et qui donnent entre POINTS_MIN_PAS et POINTS_MAX_PAS points.
+// Changer de pas ne refait pas de requête : la page recalcule les moyennes à partir des mesures déjà reçues.
+const PAS_CHOIX = ["1m", "2m", "5m", "10m", "15m", "30m", "1h", "2h", "3h", "6h", "12h", "1d"];
+const POINTS_MIN_PAS = 6;
+const POINTS_MAX_PAS = 2500;
+// « Dernière mesure » : moyenne des mesures reçues pendant ces dernières minutes (lisse le bruit d'une seule lecture).
+const FENETRE_DERNIERE_MS = 5 * 60000;
 const AGE_MAX_S = 30 * 86400;     // un âge plus grand est jugé invalide (champ ignoré)
 const SEUIL_REJOUE_S = 120;       // au-delà, la mesure est comptée comme « rejouée après une coupure »
 
@@ -1102,29 +1387,34 @@ const CHAMPS = {
   pm10: { nom: "PM10",        unite: "µg/m³", decimales: 1, couleur: "#0e1b24", axe: "y",  zero: true },
   temp: { nom: "Température", nomCle: "champ.temp.nom", unite: "°C",    decimales: 1, couleur: "#e2530f", axe: "y",  zero: false },
   hum:  { nom: "Humidité", nomCle: "champ.hum.nom", unite: "%",     decimales: 0, couleur: "#2347a8", axe: "y1", zero: true },
-  co2:  { nom: "CO₂",         unite: "ppm",   decimales: 0, couleur: "#0e1b24", axe: "y",  zero: false },
+  co2:  { nom: "CO₂",         unite: "ppm",   decimales: 0, couleur: "#7a4fd6", axe: "y1", zero: false },   // axe de droite du graphe commun
 };
 
-// Limites entre les niveaux (Bon | Moyen | Élevé | Très élevé).
-//  - PM2.5 et PM10 : seuils de l'indice ATMO (Atmosud).
+// Limites hautes de chaque niveau : une valeur ≤ limites[0] est « Bon », ≤ limites[1] « Moyen », etc.
+//  - PM2.5 et PM10 : indice ATMO national (Atmo France, arrêté du 10 juillet 2020), 6 niveaux :
+//      Bon | Moyen | Dégradé | Mauvais | Très mauvais | Extrêmement mauvais
+//      PM2.5 : 0-10 | 11-20 | 21-25 | 26-50 | 51-75 | > 75 µg/m³
+//      PM10  : 0-20 | 21-40 | 41-50 | 51-100 | 101-150 | > 150 µg/m³
 //  - PM1 : pas de seuil ATMO, on réutilise les limites de PM2.5.
-//  - CO2 : 800 ppm (objectif HCSP), 1000 et 1500 ppm (repères usuels).
+//  - CO2 (inchangé) : 800 ppm (objectif HCSP), 1000 et 1500 ppm (repères usuels) : 4 niveaux, de Bon à Mauvais.
 // tracer : indices des limites dessinées en pointillés sur le graphe.
-// plancher et plafond : bornes de la jauge « dernière mesure » (4 segments égaux).
+// plancher et plafond : bornes de la jauge « dernière mesure » (un segment de même largeur par niveau).
 const SEUILS = {
-  pm1:  { limites: [15, 37.5, 75],      tracer: [0],    oms: true, plancher: 0,   plafond: 150, libelle: "PM1 / PM2.5" },   // mêmes limites que PM2.5
-  pm25: { limites: [15, 37.5, 75],      tracer: [0],    oms: true, plancher: 0,   plafond: 150, libelle: "PM1 / PM2.5" },
-  pm10: { limites: [45, 75, 150],       tracer: [0],    oms: true, plancher: 0,   plafond: 300 },
-  co2:  { limites: [800, 1000, 1500],   tracer: [0, 1], oms: false, plancher: 400, plafond: 2500 },
+  pm1:  { limites: [10, 20, 25, 50, 75],   tracer: [1, 3], atmo: true,  plancher: 0,   plafond: 100, libelle: "PM1 / PM2.5" },   // mêmes limites que PM2.5
+  pm25: { limites: [10, 20, 25, 50, 75],   tracer: [1, 3], atmo: true,  plancher: 0,   plafond: 100, libelle: "PM1 / PM2.5" },
+  pm10: { limites: [20, 40, 50, 100, 150], tracer: [1, 3], atmo: true,  plancher: 0,   plafond: 200 },
+  co2:  { limites: [800, 1000, 1500],      tracer: [0, 1], atmo: false, plancher: 400, plafond: 2500 },
 };
 
-// couleur / fond : pastilles. ciel / texte : couleurs du bandeau et de la jauge.
-// mot : le grand verdict. Le niveau « Élevé » du tableau devient « chargé » en toutes lettres.
+// Couleurs officielles de l'indice ATMO (ciel : bandeau et jauge). couleur / fond : texte et fond des pastilles,
+// assombris ou éclaircis pour rester lisibles. texte : couleur du texte posé sur « ciel ».
 const COULEURS_NIVEAUX = [
-  { couleur: "#2f6b3a", fond: "#e2eedd", ciel: "#1f6f43", texte: "#f2f4f0" },
-  { couleur: "#7a5d00", fond: "#f7ecc4", ciel: "#f2c318", texte: "#0e1b24" },
-  { couleur: "#a84a12", fond: "#f8dcc3", ciel: "#f26a1b", texte: "#0e1b24" },
-  { couleur: "#9c2a22", fond: "#f3d9d5", ciel: "#a3231b", texte: "#f2f4f0" },
+  { couleur: "#0a6e68", fond: "#d5f6f3", ciel: "#50f0e6", texte: "#0e1b24" },   // Bon
+  { couleur: "#1d6b54", fond: "#d7efe7", ciel: "#50ccaa", texte: "#0e1b24" },   // Moyen
+  { couleur: "#6e6400", fond: "#f8f3c6", ciel: "#f0e641", texte: "#0e1b24" },   // Dégradé
+  { couleur: "#b01e1e", fond: "#ffdede", ciel: "#ff5050", texte: "#0e1b24" },   // Mauvais
+  { couleur: "#960032", fond: "#f4d5df", ciel: "#960032", texte: "#f2f4f0" },   // Très mauvais
+  { couleur: "#7a1d74", fond: "#eed6ec", ciel: "#872181", texte: "#f2f4f0" },   // Extrêmement mauvais
 ];
 // nom et mot sont lus dans le dictionnaire à chaque accès : ils suivent donc la langue courante.
 const NIVEAUX = COULEURS_NIVEAUX.map((c, i) => Object.defineProperties(Object.assign({}, c), {
@@ -1136,8 +1426,8 @@ const NEUTRE = { ciel: "#0e1b24", texte: "#f2f4f0" };
 // Une phrase d'action selon la mesure décisive et son niveau.
 const conseil = (famille, indice) => trad("conseil." + famille + "." + indice);   // famille : "co2" ou "pm"
 
-// Nombre de grains de poussière animés dans le bandeau, selon le niveau (0 à 3).
-const GRAINS = [150, 270, 430, 650];   // doublé : le bandeau était trop vide
+// Nombre de grains de poussière animés dans le bandeau, selon le niveau (0 à 5).
+const GRAINS = [150, 230, 320, 430, 540, 650];
 
 // =====================================================================
 // 2) PETITS OUTILS
@@ -1146,7 +1436,10 @@ const graphes = {};            // les graphes déjà dessinés, détruits avant 
 const cartes = {};             // un bloc « dernière mesure » par champ : créé une fois, puis mis à jour
 const ligneLecture = {};       // les lignes du bandeau (mesure décisive, heure, conseil)
 let periodeActuelle = "-24h";
-let cache = null;              // dernières données reçues : { periode, points, serie }
+let cache = null;              // dernières données reçues : { periode, nbPoints, lus, stats, rejouees, sansAge }
+let pasChoisi = lireMemoire("pas-graphes") || "auto";          // menu « Pas » : "auto" ou "15m", "1h"…
+const visibles = Object.assign({}, lireMemoire("courbes-graphes"));   // courbes décochées : { pm1: false… }
+const serieVisible = c => visibles[c] !== false;
 let numeroRequete = 0;         // pour ignorer une réponse arrivée trop tard
 let animerProchain = true;     // les graphes ne s'animent qu'au 1er affichage et au changement de période
 let derniereMaj = 0;
@@ -1180,8 +1473,30 @@ function reglerChart() {
 }
 
 // Vrai si la personne a demandé moins de mouvement dans les réglages de son système.
+// Vrai si la personne a choisi « Animations : réduites » (bouton du pied de page). Le réglage du système
+// (prefers-reduced-motion) n'est volontairement pas suivi : les animations font partie de la présentation du site.
 function reduit() {
-  return !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  return document.documentElement.classList.contains("mouvement-reduit");
+}
+
+// Bouton « Animations » : bascule, mémorise le choix et recharge la page (les scènes sont construites au démarrage).
+function initBoutonAnimations() {
+  const bouton = document.getElementById("bouton-anim");
+  if (!bouton) return;
+  const ecrire = () => {
+    const r = reduit();
+    bouton.setAttribute("aria-pressed", String(r));
+    bouton.textContent = trad(r ? "anim.off" : "anim.on");
+    bouton.title = trad(r ? "anim.titre_off" : "anim.titre_on");
+  };
+  ecrire();
+  I18N.surChangement(ecrire);
+  bouton.addEventListener("click", () => {
+    const r = !reduit();
+    try { localStorage.setItem("animations", r ? "reduites" : "actives"); } catch (e) { /* non mémorisé */ }
+    document.documentElement.classList.toggle("mouvement-reduit", r);
+    location.reload();
+  });
 }
 
 // Une animation qui plante ne doit jamais empêcher le reste de la page de marcher.
@@ -1288,15 +1603,24 @@ function niveau(champ, valeur) {
   return i < 0 ? null : NIVEAUX[i];
 }
 
-// Position (0 à 100) d'une valeur sur la jauge : 4 segments égaux, chacun étalé
+// Position (0 à 100) d'une valeur sur la jauge : un segment de même largeur par niveau, chacun étalé
 // sur son propre intervalle de valeurs, pour que les petites valeurs restent lisibles.
 function positionJauge(champ, valeur) {
   const s = SEUILS[champ];
   const bornes = [s.plancher].concat(s.limites, [s.plafond]);
-  const v = Math.min(Math.max(valeur, bornes[0]), bornes[4]);
+  const n = bornes.length - 1;   // nombre de segments
+  const v = Math.min(Math.max(valeur, bornes[0]), bornes[n]);
   let i = 0;
-  while (i < 3 && v > bornes[i + 1]) i++;
-  return (i + (v - bornes[i]) / (bornes[i + 1] - bornes[i])) * 25;
+  while (i < n - 1 && v > bornes[i + 1]) i++;
+  return (i + (v - bornes[i]) / (bornes[i + 1] - bornes[i])) * 100 / n;
+}
+
+// Petite mémoire du navigateur (pas, courbes cochées). Navigation privée ou stockage bloqué : on s'en passe.
+function lireMemoire(cle) {
+  try { return JSON.parse(window.localStorage.getItem(cle)); } catch (e) { return null; }
+}
+function ecrireMemoire(cle, valeur) {
+  try { window.localStorage.setItem(cle, JSON.stringify(valeur)); } catch (e) { /* tant pis */ }
 }
 
 // Le statut et l'état sont mémorisés sous forme de FONCTION qui renvoie le texte : quand la langue change,
@@ -1403,14 +1727,12 @@ function heureReelle(p) {
   return { t: recu - (valide ? age * 1000 : 0), age: valide ? age : null };
 }
 
-// Corrige l'heure de chaque point, puis place les mesures sur une grille de temps régulière
-// (pasMs) en faisant la moyenne de chaque case. S'il manque des mesures, on obtient des cases
-// vides (p = null) et donc un trou visible dans la courbe. "dernier" = heure réelle de la
-// dernière mesure de la case. Renvoie { serie, rejouees, sansAge } ou null s'il ne reste rien.
-function construireSerie(points, periode, maintenant) {
-  const reglages = reglagesPeriode(periode);
-  const pasMs = enMs(reglages.moyenne);
-  const debut = maintenant - reglages.duree;
+// Corrige l'heure de chaque point et ne garde que les mesures de la période, triées dans le temps.
+// Renvoie { lus: [{ t, v: { pm25: 12.3… } }], rejouees, sansAge } ou null s'il ne reste rien.
+// Ce travail n'est fait qu'une fois par requête : changer de pas ne fait ensuite que regrouper « lus ».
+function lirePoints(points, periode, maintenant) {
+  const debut = maintenant - reglagesPeriode(periode).duree;
+  const noms = Object.keys(CHAMPS);
   const lus = [];
   let rejouees = 0, sansAge = 0;
   points.forEach(p => {
@@ -1420,46 +1742,109 @@ function construireSerie(points, periode, maintenant) {
     else if (h.age > SEUIL_REJOUE_S) rejouees++;
     const t = Math.min(h.t, maintenant);   // une horloge en avance ne crée pas de mesure « dans le futur »
     if (t < debut) return;                 // mesurée avant la période affichée
-    lus.push({ t, p });
+    const v = {};
+    let utile = false;
+    noms.forEach(k => { if (estNombre(p[k])) { v[k] = p[k]; utile = true; } });
+    if (utile) lus.push({ t, v });
   });
   if (lus.length === 0) return null;
   lus.sort((a, b) => a.t - b.t);
+  return { lus, rejouees, sansAge };
+}
 
-  const t0 = Math.floor(lus[0].t / pasMs) * pasMs;
+// Place les mesures sur une grille de temps régulière (pasMs) en faisant la moyenne de chaque case.
+// S'il manque des mesures, on obtient des cases vides (p = null) et donc un trou visible dans la courbe.
+// Les cases sont calées sur l'heure locale (un pas de 1 jour va de minuit à minuit, pas de 1 h à 1 h).
+function regrouper(lus, pasMs) {
+  if (!lus.length) return [];
+  const decalage = -new Date(lus[0].t).getTimezoneOffset() * 60000;
+  const t0 = Math.floor((lus[0].t + decalage) / pasMs) * pasMs - decalage;
   const n = Math.floor((lus[lus.length - 1].t - t0) / pasMs) + 1;
   const cases = new Array(n).fill(null);
-  const noms = Object.keys(CHAMPS);
-  lus.forEach(({ t, p }) => {
+  for (let j = 0; j < lus.length; j++) {
+    const { t, v } = lus[j];
     const i = Math.floor((t - t0) / pasMs);
-    const c = cases[i] || (cases[i] = { somme: {}, nb: {}, dernier: 0 });
-    c.dernier = Math.max(c.dernier, t);
-    noms.forEach(k => {
-      if (estNombre(p[k])) { c.somme[k] = (c.somme[k] || 0) + p[k]; c.nb[k] = (c.nb[k] || 0) + 1; }
-    });
-  });
-  const serie = cases.map((c, i) => {
+    const c = cases[i] || (cases[i] = { somme: {}, nb: {} });
+    for (const k in v) { c.somme[k] = (c.somme[k] || 0) + v[k]; c.nb[k] = (c.nb[k] || 0) + 1; }
+  }
+  return cases.map((c, i) => {
     const t = t0 + i * pasMs;
     if (!c) return { t, p: null };
     const moyenne = {};
-    Object.keys(c.nb).forEach(k => { moyenne[k] = c.somme[k] / c.nb[k]; });
-    return { t, p: moyenne, dernier: c.dernier };
+    for (const k in c.nb) moyenne[k] = c.somme[k] / c.nb[k];
+    return { t, p: moyenne };
   });
-  return { serie, rejouees, sansAge };
+}
+
+// Pour chaque champ : minimum et maximum sur la période (mesures non moyennées, donc indépendants du pas choisi)
+// et « dernière mesure » = moyenne des mesures des FENETRE_DERNIERE_MS dernières minutes, datée de la plus récente.
+function statistiques(lus) {
+  const stats = {};
+  Object.keys(CHAMPS).forEach(k => {
+    let min = Infinity, max = -Infinity, tDer = 0;
+    for (let i = 0; i < lus.length; i++) {
+      const x = lus[i].v[k];
+      if (x === undefined) continue;
+      if (x < min) min = x;
+      if (x > max) max = x;
+      tDer = lus[i].t;
+    }
+    if (!tDer) return;
+    let somme = 0, nb = 0;
+    for (let i = lus.length - 1; i >= 0 && lus[i].t >= tDer - FENETRE_DERNIERE_MS; i--) {
+      const x = lus[i].v[k];
+      if (x !== undefined) { somme += x; nb++; }
+    }
+    stats[k] = { min, max, derniere: { valeur: somme / nb, t: tDer } };
+  });
+  return stats;
+}
+
+// ---------- Pas de la moyenne (menu « Pas ») ----------
+// Pas proposés pour une période : pas plus fins que les données reçues, et un nombre de points raisonnable.
+function pasPossibles(periode) {
+  const r = reglagesPeriode(periode);
+  const resolution = enMs(r.freq || "1m");   // points bruts (~30 s) : 1 min au plus fin, sinon la moyenne du serveur
+  return PAS_CHOIX.filter(p => {
+    const ms = enMs(p), n = r.duree / ms;
+    return ms >= resolution && n >= POINTS_MIN_PAS && n <= POINTS_MAX_PAS;
+  });
+}
+// Le pas réellement utilisé : celui choisi s'il convient à la période, sinon le pas automatique.
+function pasEffectif(periode) {
+  return (pasChoisi !== "auto" && pasPossibles(periode).includes(pasChoisi)) ? pasChoisi : reglagesPeriode(periode).moyenne;
+}
+function majMenuPas() {
+  const menu = document.getElementById("pas");
+  if (!menu) return;
+  const possibles = pasPossibles(periodeActuelle);
+  const options = [["auto", trad("pas.auto", { duree: libelleDuree(reglagesPeriode(periodeActuelle).moyenne) })]]
+    .concat(possibles.map(p => [p, libelleDuree(p)]));
+  menu.replaceChildren(...options.map(([valeur, texte]) => {
+    const o = el("option", "", texte);
+    o.value = valeur;
+    return o;
+  }));
+  menu.value = possibles.includes(pasChoisi) ? pasChoisi : "auto";
 }
 
 // =====================================================================
 // 4) GRAPHES
 // =====================================================================
 
-// Plugin Chart.js maison : trace des lignes horizontales en pointillés (les seuils).
+// Plugin Chart.js maison : trace des lignes horizontales en pointillés (les seuils), chacune sur l'axe de sa mesure
+// (particules à gauche, CO₂ à droite). Une ligne n'est tracée que si l'une de ses courbes est cochée.
 function creerPluginSeuils(lignes) {
   return {
     id: "seuils",
     afterDatasetsDraw(chart) {
-      const echelle = chart.scales.y;
-      if (!echelle) return;
       const { ctx, chartArea } = chart;
       lignes.forEach(l => {
+        const echelle = chart.scales[l.axe];
+        if (!echelle) return;
+        const affichee = chart.data.datasets.some((d, i) => l.champs.includes(d.champ) && chart.isDatasetVisible(i));
+        if (!affichee) return;
+        const droite = l.axe !== "y";   // étiquettes de l'axe de droite à droite, celles de gauche à gauche
         const y = echelle.getPixelForValue(l.valeur);
         if (y < chartArea.top || y > chartArea.bottom) return;
         ctx.save();
@@ -1473,8 +1858,8 @@ function creerPluginSeuils(lignes) {
         ctx.setLineDash([]);
         ctx.fillStyle = l.couleur;
         ctx.font = "600 11px " + POLICE_MONO;
-        ctx.textAlign = "right";
-        ctx.fillText(l.texte, chartArea.right - 4, y - 5);
+        ctx.textAlign = droite ? "right" : "left";
+        ctx.fillText(l.texte, droite ? chartArea.right - 4 : chartArea.left + 4, y - 5);
         ctx.restore();
       });
     },
@@ -1503,14 +1888,16 @@ function ecrireLecture(chart, idx) {
   if (!cadre || idx === chart.__idx) return;
   chart.__idx = idx;
   cadre.replaceChildren();
-  cadre.classList.toggle("vide", idx == null);
+  const affiches = chart.data.datasets.filter((d, i) => chart.isDatasetVisible(i));
+  cadre.classList.toggle("vide", idx == null || !affiches.length);
+  if (!affiches.length) { cadre.textContent = trad("graphe.aucune_serie"); return; }
   if (idx == null) {
     cadre.textContent = trad(ecranTactile() ? "graphe.aide_tactile" : "graphe.aide_souris");
     return;
   }
   cadre.append(el("div", "lg-titre", chart.data.labels[idx]));
   const liste = el("div", "lg-valeurs");
-  chart.data.datasets.forEach(d => {
+  affiches.forEach(d => {
     const v = d.data[idx];
     const item = el("div", "lg-val");
     const pastille = el("i");
@@ -1585,11 +1972,59 @@ function detruireGraphe(idCanvas) {
   }
 }
 
+// Boîte des cases à cocher d'un graphe (dans le même chapitre que son canvas).
+function boitePuces(idCanvas) {
+  const canvas = document.getElementById(idCanvas);
+  const corps = canvas && canvas.closest(".bloc-corps");
+  return corps ? corps.querySelector(".puces") : null;
+}
+
+// Une case par mesure du graphe : cocher / décocher affiche ou masque la courbe, sans redessiner le graphe.
+// Le choix est mémorisé dans le navigateur.
+function construirePuces(idCanvas, utiles) {
+  const boite = boitePuces(idCanvas);
+  if (!boite) return;
+  const signature = utiles.join(",") + "|" + I18N.langue();
+  if (boite.dataset.signature === signature) return;
+  boite.dataset.signature = signature;
+  boite.replaceChildren();
+  utiles.forEach(c => {
+    const puce = el("label", "puce");
+    const caseC = el("input");
+    caseC.type = "checkbox";
+    caseC.checked = serieVisible(c);
+    const pastille = el("i");
+    pastille.style.setProperty("--c", CHAMPS[c].couleur);
+    puce.classList.toggle("off", !caseC.checked);
+    puce.append(caseC, pastille, el("span", "", nomChamp(c)));
+    caseC.addEventListener("change", () => {
+      visibles[c] = caseC.checked;
+      ecrireMemoire("courbes-graphes", visibles);
+      puce.classList.toggle("off", !caseC.checked);
+      const chart = graphes[idCanvas];
+      if (!chart) return;
+      const i = chart.data.datasets.findIndex(d => d.champ === c);
+      if (i < 0) return;
+      chart.setDatasetVisibility(i, caseC.checked);
+      chart.update();
+      chart.__idx = undefined;
+      ecrireLecture(chart, null);
+    });
+    boite.append(puce);
+  });
+}
+
+function viderPuces(idCanvas) {
+  const boite = boitePuces(idCanvas);
+  if (boite) { boite.replaceChildren(); delete boite.dataset.signature; }
+}
+
 function dessiner(idCanvas, serie, champs, animer) {
-  if (typeof Chart === "undefined") { detruireGraphe(idCanvas); return 0; }
+  if (typeof Chart === "undefined") { detruireGraphe(idCanvas); viderPuces(idCanvas); return 0; }
   // seulement les champs réellement mesurés
   const utiles = champs.filter(c => serie.some(r => r.p && estNombre(r.p[c])));
-  if (utiles.length === 0) { detruireGraphe(idCanvas); return 0; }
+  if (utiles.length === 0) { detruireGraphe(idCanvas); viderPuces(idCanvas); return 0; }
+  construirePuces(idCanvas, utiles);
   const seul = utiles.length === 1;
   const etroit = window.innerWidth < 560;
 
@@ -1615,6 +2050,7 @@ function dessiner(idCanvas, serie, champs, animer) {
       pointHoverBorderWidth: 2,
       pointHoverBackgroundColor: couleur,
       yAxisID: CHAMPS[c].axe,
+      hidden: !serieVisible(c),   // case décochée
     };
   });
 
@@ -1647,6 +2083,7 @@ function dessiner(idCanvas, serie, champs, animer) {
     const axe = CHAMPS[c].axe;
     if (!echelles[axe]) {
       echelles[axe] = {
+        display: "auto",   // un axe dont toutes les courbes sont décochées disparaît
         position: axe === "y" ? "left" : "right",
         beginAtZero: false,
         title: { display: !etroit, text: CHAMPS[c].unite, font: { family: POLICE_MONO, size: 11 } },
@@ -1665,9 +2102,10 @@ function dessiner(idCanvas, serie, champs, animer) {
       const s = SEUILS[c];
       if (!s) return;
       s.tracer.forEach(i => {
-        const texte = (s.libelle || nomChamp(c)) + deuxPoints() + nb(s.limites[i]) + (s.oms ? trad("seuil.oms") : "");
-        if (lignes.some(l => l.texte === texte)) return;   // PM1 et PM2.5 partagent la même ligne
-        lignes.push({ valeur: s.limites[i], couleur: NIVEAUX[i + 1].couleur, texte });
+        const texte = (s.libelle || nomChamp(c)) + deuxPoints() + nb(s.limites[i]) + (s.atmo ? trad("seuil.source") : "");
+        const deja = lignes.find(l => l.texte === texte);   // PM1 et PM2.5 partagent la même ligne
+        if (deja) { deja.champs.push(c); return; }
+        lignes.push({ valeur: s.limites[i], couleur: NIVEAUX[i + 1].couleur, texte, axe: CHAMPS[c].axe, champs: [c] });
       });
     });
   }
@@ -1685,11 +2123,7 @@ function dessiner(idCanvas, serie, champs, animer) {
       interaction: { mode: "index", intersect: false },
       scales: echelles,
       plugins: {
-        legend: {
-          display: utiles.length > 1,
-          position: "bottom",
-          labels: { boxWidth: etroit ? 14 : 18, boxHeight: 3, padding: etroit ? 12 : 18, font: { family: POLICE_SANS, weight: "600" } },
-        },
+        legend: { display: false },   // remplacée par les cases à cocher au-dessus du graphe
         // Plus d'info-bulle flottante : elle cachait la courbe. La valeur se lit dans un cadre au-dessus du graphe.
         tooltip: {
           enabled: false,
@@ -1712,15 +2146,6 @@ function dessiner(idCanvas, serie, champs, animer) {
 // =====================================================================
 // 5) AFFICHAGE
 // =====================================================================
-
-// Dernière valeur non vide d'un champ (le dernier point peut être incomplet).
-function derniereValeur(serie, champ) {
-  for (let i = serie.length - 1; i >= 0; i--) {
-    const p = serie[i].p;
-    if (p && estNombre(p[champ])) return { valeur: p[champ], t: serie[i].dernier || serie[i].t };   // heure réelle de la mesure, pas le début de la case
-  }
-  return null;
-}
 
 // Vrai quand le chapitre « Dernière mesure » est déjà apparu à l'écran (ou si les animations d'apparition sont coupées).
 function chapitreMesuresVu() {
@@ -1769,27 +2194,31 @@ function rejouerCompteurs() {
   });
 }
 
-// La jauge : quatre segments de couleur, les limites en dessous, un repère qui glisse.
+// La jauge : un segment de couleur par niveau (6 pour les particules, 4 pour le CO₂), les limites en dessous,
+// un repère qui glisse jusqu'à la dernière mesure, et au-dessus le minimum et le maximum de la période.
 function creerEchelle(champ) {
   const echelle = el("div", "echelle");
   echelle.setAttribute("role", "img");
   const barre = el("div", "echelle-barre");
-  NIVEAUX.forEach(n => {
+  const segments = SEUILS[champ].limites.length + 1;
+  NIVEAUX.slice(0, segments).forEach(n => {
     const segment = el("i");
-    segment.style.width = "25%";
+    segment.style.width = (100 / segments) + "%";
     segment.style.background = n.ciel;
     barre.append(segment);
   });
   echelle.append(barre);
   const graduations = SEUILS[champ].limites.map((limite, i) => {
     const graduation = el("span", "graduation", nb(limite));
-    graduation.style.left = ((i + 1) * 25) + "%";
+    graduation.style.left = ((i + 1) * 100 / segments) + "%";
     echelle.append(graduation);
     return graduation;
   });
+  const plage = el("span", "plage");
+  const plageTexte = el("span", "plage-texte");
   const repere = el("span", "repere");
-  echelle.append(repere);
-  return { echelle, repere, graduations };
+  echelle.append(plageTexte, plage, repere);
+  return { echelle, repere, graduations, plage, plageTexte };
 }
 
 function creerCarte(champ) {
@@ -1810,6 +2239,8 @@ function creerCarte(champ) {
     carte.echelleEl = jauge.echelle;
     carte.repereEl = jauge.repere;
     carte.graduationsEls = jauge.graduations;
+    carte.plageEl = jauge.plage;
+    carte.plageTexteEl = jauge.plageTexte;
     carte.racine = el("div", "rangee");
     carte.racine.append(tete, jauge.echelle);
   } else {
@@ -1819,8 +2250,10 @@ function creerCarte(champ) {
   return carte;
 }
 
-function majCarte(carte, d, perime) {
+// s : statistiques du champ ({ min, max, derniere: { valeur, t } }).
+function majCarte(carte, s, perime) {
   const info = CHAMPS[carte.champ];
+  const d = s.derniere;
   animerNombre(carte, d.valeur, info.decimales);
   if (carte.badgeEl) {
     const niv = niveau(carte.champ, d.valeur);
@@ -1828,8 +2261,15 @@ function majCarte(carte, d, perime) {
     carte.badgeEl.style.background = niv.fond;
     carte.badgeEl.style.color = niv.couleur;
     carte.repereEl.style.setProperty("--pos", positionJauge(carte.champ, d.valeur) + "%");
+    const pMin = positionJauge(carte.champ, s.min), pMax = positionJauge(carte.champ, s.max);
+    const valMin = nb(s.min, info.decimales), valMax = nb(s.max, info.decimales);
+    carte.plageEl.style.setProperty("--min", pMin.toFixed(2) + "%");
+    carte.plageEl.style.setProperty("--max", pMax.toFixed(2) + "%");
+    carte.plageTexteEl.style.setProperty("--c", ((pMin + pMax) / 2).toFixed(2) + "%");
+    carte.plageTexteEl.textContent = trad("carte.plage", { min: valMin, max: valMax });
     carte.echelleEl.setAttribute("aria-label", trad("carte.aria", {
-      nom: nomChamp(carte.champ), val: nb(d.valeur, info.decimales), unite: info.unite, niveau: niv.nom.toLowerCase() }));
+      nom: nomChamp(carte.champ), val: nb(d.valeur, info.decimales), unite: info.unite, niveau: niv.nom.toLowerCase() })
+      + " " + trad("carte.aria_plage", { min: valMin, max: valMax, unite: info.unite }));
     SEUILS[carte.champ].limites.forEach((limite, i) => { carte.graduationsEls[i].textContent = nb(limite); });
   }
   carte.nomEl.textContent = nomChamp(carte.champ);
@@ -1837,20 +2277,16 @@ function majCarte(carte, d, perime) {
 }
 
 // Blocs « dernière mesure ». Renvoie l'heure de la mesure la plus récente.
-function afficherDerniere(serie, pasMs) {
+function afficherDerniere(stats, pasMs) {
   const rangees = document.getElementById("rangees");
   const autres = document.getElementById("autres");
-  const dernieres = {};
   let plusRecent = 0;
-  Object.keys(CHAMPS).forEach(c => {
-    const d = derniereValeur(serie, c);
-    if (d) { dernieres[c] = d; plusRecent = Math.max(plusRecent, d.t); }
-  });
+  Object.keys(stats).forEach(c => { plusRecent = Math.max(plusRecent, stats[c].derniere.t); });
   const perime = Math.max(2 * pasMs, 30 * 60000);   // au-delà, on signale que la valeur est ancienne
 
   Object.keys(CHAMPS).forEach(c => {
-    const d = dernieres[c];
-    if (!d) {
+    const s = stats[c];
+    if (!s) {
       if (cartes[c]) { cartes[c].racine.remove(); delete cartes[c]; }
       return;
     }
@@ -1859,7 +2295,7 @@ function afficherDerniere(serie, pasMs) {
       (SEUILS[c] ? rangees : autres).append(cartes[c].racine);
       void cartes[c].racine.offsetWidth;   // le repère part de 0 puis glisse jusqu'à sa place
     }
-    majCarte(cartes[c], d, plusRecent - d.t > perime);
+    majCarte(cartes[c], s, plusRecent - s.derniere.t > perime);
   });
 
   document.getElementById("note-derniere").textContent = texteNote(plusRecent);
@@ -1867,11 +2303,11 @@ function afficherDerniere(serie, pasMs) {
 }
 
 // La mesure la plus mauvaise parmi celles qui ont des seuils (et qui sont assez récentes).
-function calculerPire(serie, plusRecent, pasMs) {
+function calculerPire(stats, plusRecent, pasMs) {
   const perime = Math.max(2 * pasMs, 30 * 60000);
   let pire = null;
   Object.keys(SEUILS).forEach(c => {
-    const d = derniereValeur(serie, c);
+    const d = stats[c] && stats[c].derniere;
     if (!d || plusRecent - d.t > perime) return;
     const indice = indiceNiveau(c, d.valeur);
     const score = positionJauge(c, d.valeur);
@@ -1906,17 +2342,40 @@ function ecrireMot(texte) {
   });
 }
 
-// Réduit la taille du verdict si le plus long mot dépasse la largeur disponible
-// (utile quand les polices du site n'ont pas pu se charger).
-function ajusterVerdict() {
+// Taille du verdict : facteur (1 = taille normale, moins sur un écran trop bas), puis réduction si le plus long mot
+// dépasse la largeur disponible (utile quand les polices du site n'ont pas pu se charger).
+function ajusterVerdict(facteur) {
   const zone = document.getElementById("verdict");
   zone.style.fontSize = "";
+  let base = parseFloat(getComputedStyle(zone).fontSize);
+  if (facteur && facteur < 1) { base = Math.max(24, Math.floor(base * facteur)); zone.style.fontSize = base + "px"; }
   const dispo = zone.parentElement.clientWidth;
   let large = 0;
   zone.querySelectorAll(".mot-un").forEach(g => { large = Math.max(large, g.offsetWidth); });
   if (large > dispo && large > 0) {
-    const base = parseFloat(getComputedStyle(zone).fontSize);
     zone.style.fontSize = Math.max(24, Math.floor(base * dispo / large * 0.97)) + "px";
+  }
+}
+
+// Sur un écran bas (téléphone), le bandeau débordait et cachait le bas de son contenu, dont « Voir les mesures ».
+// On essaie des mises en page de plus en plus serrées (CSS : .hero[data-serre]) et un verdict de plus en plus petit,
+// jusqu'à ce que tout tienne. Recalculé au chargement, au changement de largeur, de langue ou de verdict
+// (pas quand seule la hauteur change : la barre d'adresse du téléphone ferait sauter la page en plein défilement).
+// [niveau de resserrement, facteur de taille du verdict]. Téléphone : on cache d'abord les lignes sous le verdict
+// (empilées, elles prennent beaucoup de hauteur) ; grand écran : on réduit d'abord le grand mot.
+const ETAPES_HERO_ETROIT = [[0, 1], [1, 1], [1, 0.82], [2, 0.82], [2, 0.66], [3, 0.66], [3, 0.5], [3, 0.4]];
+const ETAPES_HERO_LARGE = [[0, 1], [1, 1], [1, 0.85], [1, 0.72], [1, 0.6], [2, 0.6], [2, 0.5], [3, 0.5], [3, 0.4]];
+function ajusterHero() {
+  const hero = document.getElementById("hero");
+  const contenu = hero && hero.querySelector(".hero-contenu");
+  const bas = contenu && contenu.lastElementChild;
+  if (!bas) return;
+  const etapes = window.innerWidth < 640 ? ETAPES_HERO_ETROIT : ETAPES_HERO_LARGE;
+  for (let e = 0; e < etapes.length; e++) {
+    hero.dataset.serre = etapes[e][0];
+    ajusterVerdict(etapes[e][1]);
+    // offsetTop / offsetHeight : positions de mise en page, sans les animations d'apparition (transform)
+    if (bas.offsetTop + bas.offsetHeight <= contenu.clientHeight + 2) return;
   }
 }
 
@@ -1932,7 +2391,7 @@ function ecrireTextesBandeau() {
   document.getElementById("verdict").className = "mot " + classeTaille(mot);
   document.getElementById("verdict-sr").textContent = mot;
   ecrireMot(mot);
-  ajusterVerdict();
+  ajusterHero();
 }
 
 function majBandeau(cle, fabrique, couleurs, indiceGrains) {
@@ -2003,11 +2462,13 @@ function afficherVerdict(pire, plusRecent, ancien) {
     majBandeau("inconnu", () => ({ prefixe: trad("verdict.qualite"), mot: trad("verdict.inconnue"), titre: trad("meta.titre") }), NEUTRE, 0);
   }
   majLecture(pire, plusRecent, ancien);
+  ajusterHero();   // les lignes sous le verdict changent la hauteur du bandeau
 }
 
 function afficherVerdictVide() {
   majBandeau("vide", () => ({ prefixe: trad("verdict.pas_de"), mot: trad("verdict.aucune"), titre: trad("meta.titre") }), NEUTRE, 0);
   document.getElementById("lecture").hidden = true;
+  ajusterHero();
 }
 
 // Vrai si la dernière mesure est trop ancienne pour parler de l'air « en ce moment ».
@@ -2061,66 +2522,6 @@ function majTextesFixes() {
   majPiedMaj();
 }
 
-// Petite courbe pour le tableau résumé (les trous restent des trous).
-function allure(valeurs) {
-  const NS = "http://www.w3.org/2000/svg";
-  const svg = document.createElementNS(NS, "svg");
-  svg.setAttribute("class", "allure");
-  svg.setAttribute("viewBox", "0 0 120 30");
-  svg.setAttribute("aria-hidden", "true");
-  svg.setAttribute("focusable", "false");
-  const nombres = valeurs.filter(estNombre);
-  const min = Math.min(...nombres);
-  const max = Math.max(...nombres);
-  const n = valeurs.length;
-  let d = "";
-  let coupe = true;
-  let dernier = null;
-  valeurs.forEach((v, i) => {
-    if (!estNombre(v)) { coupe = true; return; }
-    const x = 3 + (n > 1 ? (i / (n - 1)) * 114 : 57);
-    const y = max === min ? 15 : 27 - ((v - min) / (max - min)) * 24;
-    d += (coupe ? "M" : "L") + x.toFixed(1) + " " + y.toFixed(1) + " ";
-    coupe = false;
-    dernier = { x, y };
-  });
-  const chemin = document.createElementNS(NS, "path");
-  chemin.setAttribute("d", d.trim());
-  svg.append(chemin);
-  if (dernier) {
-    const point = document.createElementNS(NS, "circle");
-    point.setAttribute("cx", dernier.x.toFixed(1));
-    point.setAttribute("cy", dernier.y.toFixed(1));
-    point.setAttribute("r", "2.6");
-    svg.append(point);
-  }
-  return svg;
-}
-
-function afficherResume(serie) {
-  const corps = document.getElementById("resume-corps");
-  corps.replaceChildren();
-  let rang = 0;
-  Object.keys(CHAMPS).forEach(c => {
-    const vals = serie.map(r => r.p && r.p[c]).filter(estNombre);
-    if (vals.length === 0) return;
-    const info = CHAMPS[c];
-    const moyenne = vals.reduce((a, b) => a + b, 0) / vals.length;
-
-    const tr = el("tr", "ligne");
-    tr.style.setProperty("--i", rang++);
-    const th = el("th", "", nomChamp(c) + " (" + info.unite + ")");
-    th.scope = "row";
-    tr.append(th);
-    [Math.min(...vals), moyenne, Math.max(...vals)].forEach(v =>
-      tr.append(el("td", "", nb(v, info.decimales))));
-    const cellule = el("td", "col-allure");
-    cellule.append(allure(serie.map(r => (r.p && estNombre(r.p[c])) ? r.p[c] : null)));
-    tr.append(cellule);
-    corps.append(tr);
-  });
-}
-
 // Tableau des seuils, construit à partir de SEUILS (une seule source de vérité).
 function remplirSeuils() {
   const corps = document.getElementById("seuils-corps");
@@ -2139,7 +2540,8 @@ function remplirSeuils() {
     ["pm25", "pm10", "co2"].forEach(c => {
       const l = SEUILS[c].limites;
       let texte;
-      if (i === 0) texte = trad("seuil.bas", { a: nb(l[0]) });
+      if (i > l.length) texte = "—";   // le CO₂ n'a que 4 niveaux
+      else if (i === 0) texte = trad("seuil.bas", { a: nb(l[0]) });
       else if (i < l.length) texte = trad("seuil.entre", { a: nb(l[i - 1]), b: nb(l[i]) });
       else texte = trad("seuil.haut", { a: nb(l[l.length - 1]) });
       tr.append(el("td", "", texte));
@@ -2164,43 +2566,41 @@ function viderTout() {
   sectionsDonnees().forEach(s => { s.hidden = true; });
   Object.keys(cartes).forEach(c => { cartes[c].racine.remove(); delete cartes[c]; });
   document.getElementById("note-derniere").textContent = "";
-  document.getElementById("resume-corps").replaceChildren();
   actualiserChapitres();
 }
 
 // Redessine toute la page à partir des dernières données reçues (sans nouvelle requête).
+// Les moyennes des graphes sont recalculées ici, au pas choisi : changer de pas est donc instantané.
 function afficherTout() {
   if (!cache) return;
-  const { periode, points, serie, rejouees, sansAge } = cache;
-  const pasMs = enMs(reglagesPeriode(periode).moyenne);
+  const { periode, nbPoints, lus, stats, rejouees, sansAge } = cache;
+  const pasRef = enMs(reglagesPeriode(periode).moyenne);   // pas automatique : sert à juger si le capteur est en retard
+  const moyenne = pasEffectif(periode);
+  const serie = regrouper(lus, enMs(moyenne));
   const animer = animerProchain && !reduit();
   animerProchain = false;
 
   document.getElementById("squelette").hidden = true;
-  const plusRecent = afficherDerniere(serie, pasMs);
+  const plusRecent = afficherDerniere(stats, pasRef);
   tDerniere = plusRecent;
-  pasAffiche = pasMs;
-  majStatut(plusRecent, pasMs);
-  afficherVerdict(calculerPire(serie, plusRecent, pasMs), plusRecent, capteurMuet(plusRecent, pasMs));
+  pasAffiche = pasRef;
+  majStatut(plusRecent, pasRef);
+  afficherVerdict(calculerPire(stats, plusRecent, pasRef), plusRecent, capteurMuet(plusRecent, pasRef));
 
   // Les sections de mesures n'apparaissent qu'une fois les données reçues
   sectionsDonnees().forEach(s => { s.hidden = false; });
-  [["graphe-pm", ["pm1", "pm25", "pm10"]],
-   ["graphe-meteo", ["temp", "hum"]],
-   ["graphe-co2", ["co2"]]].forEach(([id, champs]) => {
+  [["graphe-air", ["pm1", "pm25", "pm10", "co2"]],
+   ["graphe-meteo", ["temp", "hum"]]].forEach(([id, champs]) => {
     const bloc = document.getElementById(id).closest(".bloc");
     bloc.hidden = false;                      // visible pendant le dessin, pour que Chart.js mesure la place
     const n = dessiner(id, serie, champs, animer);
     bloc.hidden = (n === 0);                  // pas de mesure : on cache la section
   });
 
-  afficherResume(serie);
-
-  const moyenne = reglagesPeriode(periode).moyenne;
   majEtat("etat", () => {
-    const phrases = [trad("etat.points", { n: points.length, duree: libelleDuree(moyenne) })];
+    const phrases = [trad("etat.points", { n: nbPoints, duree: libelleDuree(moyenne) })];
     if (rejouees > 0) phrases.push(tradp("etat.rejouees", rejouees, { n: rejouees }));
-    if (sansAge === points.length) phrases.push(trad("etat.sans_age_tous", { champ: CHAMP_AGE }));
+    if (sansAge === nbPoints) phrases.push(trad("etat.sans_age_tous", { champ: CHAMP_AGE }));
     else if (sansAge > 0) phrases.push(tradp("etat.sans_age", sansAge, { n: sansAge, champ: CHAMP_AGE }));
     if (typeof Chart === "undefined") phrases.push(trad(window.__chartKO ? "etat.chart_ko" : "etat.chart_attente"));
     return phrases.join(I18N.langue() === "ja" ? "" : " ");   // le japonais s'écrit sans espace entre les phrases
@@ -2318,6 +2718,12 @@ function creerNuage() {
   let tete = new Int32Array(0), suiv = new Int32Array(0), colonnes = 0, lignes = 0;
   const AGITATION = 0.14;           // agitation brownienne : réduite (0,22 avant) car le frottement plus faible l'amplifie
   let larg = 0, haut = 0;
+  // Vitesse proportionnelle à la taille de l'écran : toutes les vitesses ci-dessus sont en px par image, donc un grain
+  // traversait un téléphone en quelques secondes mais restait presque immobile sur un grand écran. Elles sont multipliées
+  // par « echelle » (1 pour une diagonale de ECRAN_REF px), calculée à chaque changement de taille du bandeau.
+  const ECRAN_REF = 1200;
+  let echelle = 1;
+  let bonus = 0;          // grains ajoutés avec « + Particules » (mode jeu seulement)
   let grains = [];
   let vivants = 0;
   let base = GRAINS[0];
@@ -2342,7 +2748,7 @@ function creerNuage() {
 
   function ajusterCible() {
     const tactile = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
-    cible = Math.max(60, Math.round(base * Math.min(1, larg / 900 + 0.45) * (tactile ? 0.75 : 1)));
+    cible = Math.max(60, Math.round(base * Math.min(1, larg / 900 + 0.45) * (tactile ? 0.75 : 1))) + bonus;
   }
 
   function lireCouleur() {
@@ -2430,14 +2836,15 @@ function creerNuage() {
     const recouvrement = somme - d;
     a.x += nx * recouvrement * mb / mt; a.y += ny * recouvrement * mb / mt;
     b.x -= nx * recouvrement * ma / mt; b.y -= ny * recouvrement * ma / mt;
-    const vn = ((a.vx + a.dx) - (b.vx + b.dx)) * nx + ((a.vy + a.dy) - (b.vy + b.dy)) * ny;
+    const vn = ((a.vx + a.dx * echelle) - (b.vx + b.dx * echelle)) * nx + ((a.vy + a.dy * echelle) - (b.vy + b.dy * echelle)) * ny;
     if (vn < 0) {   // ils se rapprochent : choc
       const J = -(1 + RESTITUTION) * vn / (1 / ma + 1 / mb);
       a.vx += J / ma * nx; a.vy += J / ma * ny;
       b.vx -= J / mb * nx; b.vy -= J / mb * ny;
       // chaque grain gagne de la vitesse au choc (quelle que soit sa masse) : ils repartent plus vite qu'ils ne sont arrivés
-      a.vx += nx * GAIN_CHOC; a.vy += ny * GAIN_CHOC;
-      b.vx -= nx * GAIN_CHOC; b.vy -= ny * GAIN_CHOC;
+      const gain = GAIN_CHOC * echelle;
+      a.vx += nx * gain; a.vy += ny * gain;
+      b.vx -= nx * gain; b.vy -= ny * gain;
       const l = Math.min(1, 0.55 - vn * 0.9);   // le choc fait briller les deux grains
       if (a.lum < l) a.lum = l;
       if (b.lum < l) b.lum = l;
@@ -2506,8 +2913,8 @@ function creerNuage() {
       if (g.vivant && g.a > g.amax) g.a = g.amax;
       if (!g.vivant && g.a <= 0) { grains.splice(i, 1); continue; }
       // agitation aléatoire (mouvement brownien) + lente dérive
-      g.vx = g.vx * frottement + (Math.random() - 0.5) * AGITATION * g.ag * dt;
-      g.vy = g.vy * frottement + (Math.random() - 0.5) * AGITATION * g.ag * dt + g.grav * dt;
+      g.vx = g.vx * frottement + (Math.random() - 0.5) * AGITATION * echelle * g.ag * dt;
+      g.vy = g.vy * frottement + (Math.random() - 0.5) * AGITATION * echelle * g.ag * dt + g.grav * echelle * dt;
       g.lum *= lueur;
       if (actif) {
         const ox = g.x - curseur.x, oy = g.y - curseur.y, d2 = ox * ox + oy * oy;
@@ -2519,10 +2926,11 @@ function creerNuage() {
         }
       }
       const v = Math.hypot(g.vx, g.vy);
-      if (v > 20) { g.vx *= 20 / v; g.vy *= 20 / v; }
-      else if (v > 7) { g.vx *= freinRapide; g.vy *= freinRapide; }
-      g.x += (g.vx + g.dx) * dt;
-      g.y += (g.vy + g.dy) * dt;
+      const vMax = 20 * echelle;
+      if (v > vMax) { g.vx *= vMax / v; g.vy *= vMax / v; }
+      else if (v > 7 * echelle) { g.vx *= freinRapide; g.vy *= freinRapide; }
+      g.x += (g.vx + g.dx * echelle) * dt;
+      g.y += (g.vy + g.dy * echelle) * dt;
       // Rebond sur les bords : la vitesse ET la dérive changent de sens, sinon le grain resterait collé au mur.
       const m = g.r;
       if (g.x < m) { g.x = m; g.vx = Math.abs(g.vx) * REBOND; g.dx = Math.abs(g.dx); if (g.lum < 0.3) g.lum = 0.3; }
@@ -2531,7 +2939,7 @@ function creerNuage() {
       else if (g.y > haut - m) {
         g.y = haut - m;
         if (!g.vivant) g.vy = 0;                                         // déjà en train de s'effacer au sol
-        else if (g.vy >= 0 && g.vy < 0.7) { g.vivant = false; vivants--; g.vy = 0; g.vx *= 0.3; }   // se dépose doucement
+        else if (g.vy >= 0 && g.vy < 0.7 * echelle) { g.vivant = false; vivants--; g.vy = 0; g.vx *= 0.3; }   // se dépose doucement
         else { g.vy = -Math.abs(g.vy) * REBOND; g.dy = -Math.abs(g.dy); if (g.lum < 0.3) g.lum = 0.3; }   // arrivé vite (geste) : rebondit
       }
     }
@@ -2578,6 +2986,7 @@ function creerNuage() {
     const ancienneLarg = larg, ancienneHaut = haut;
     larg = hero.clientWidth;
     haut = hero.clientHeight;
+    if (larg > 0 && haut > 0) echelle = Math.min(2.5, Math.max(0.55, Math.hypot(larg, haut) / ECRAN_REF));
     if (ancienneLarg > 0 && ancienneHaut > 0 && larg > 0 && haut > 0 && (larg !== ancienneLarg || haut !== ancienneHaut)) {
       // la fenêtre change de taille (téléphone : barre d'adresse, rotation) : les grains suivent, la répartition reste aléatoire et homogène
       const kx = larg / ancienneLarg, ky = haut / ancienneHaut;
@@ -2594,7 +3003,52 @@ function creerNuage() {
     if (!tourne) poserSansAnimation();
   }
 
-  // Texte du bouton du mode jeu, selon l'état et la langue.
+  // ---------- Particules en plus (mode jeu) ----------
+  // Chaque appui sur « + Particules » ajoute BONUS_PAS grains (jusqu'à BONUS_MAX, moins sur téléphone pour rester fluide).
+  // Ils apparaissent en fondu, éparpillés et lancés dans tous les sens. En quittant le mode jeu, le surplus s'efface aussitôt.
+  const BONUS_PAS = 150;
+  function bonusMax() {
+    return (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) ? 600 : 1200;
+  }
+  function ajouterGrains() {
+    const n = Math.min(BONUS_PAS, bonusMax() - bonus);
+    if (n <= 0) return;
+    bonus += n;
+    ajusterCible();
+    for (let k = 0; k < n; k++) {
+      const g = nouveau();
+      const angle = Math.random() * 6.2832, elan = (0.5 + Math.random() * 2) * echelle;
+      g.vx = Math.cos(angle) * elan;
+      g.vy = Math.sin(angle) * elan;
+      g.lum = 0.8;          // ils arrivent en brillant
+      g.bonus = true;
+      grains.push(g);
+      vivants++;
+    }
+  }
+  function retirerBonus() {
+    if (!bonus) return;
+    bonus = 0;
+    ajusterCible();
+    let surplus = vivants - cible;
+    // d'abord les grains ajoutés, puis (si certains se sont déposés et ont été remplacés) n'importe lesquels
+    for (const prioritaire of [true, false]) {
+      for (let i = 0; i < grains.length && surplus > 0; i++) {
+        const g = grains[i];
+        if (g.vivant && (!prioritaire || g.bonus)) { g.vivant = false; vivants--; surplus--; }
+      }
+    }
+  }
+
+  // Texte des boutons du mode jeu, selon l'état et la langue.
+  const boutonPlus = document.getElementById("jeu-plus");
+  const textePlus = document.getElementById("jeu-plus-texte");
+  function ecrireBoutonPlus() {
+    if (!boutonPlus) return;
+    if (textePlus) textePlus.textContent = trad("jeu.plus");
+    boutonPlus.setAttribute("aria-label", trad("jeu.plus_aria"));
+    boutonPlus.disabled = bonus >= bonusMax();
+  }
   const boutonJeu = document.getElementById("jeu-poussiere");
   const texteJeu = document.getElementById("jeu-texte");
   function ecrireBoutonJeu(actif) {
@@ -2658,8 +3112,11 @@ function creerNuage() {
           ouvertParJeu = false;
           vuPlein = false;
           oublier();
+          retirerBonus();
         }
+        ecrireBoutonPlus();
       };
+      if (boutonPlus) boutonPlus.addEventListener("click", () => { ajouterGrains(); ecrireBoutonPlus(); });
       if (bouton) {
         bouton.addEventListener("click", () => jeu(!hero.classList.contains("jeu")));
         const finPlein = () => {
@@ -2677,7 +3134,7 @@ function creerNuage() {
       }
       actualiser();
     },
-    majLangue() { ecrireBoutonJeu(hero.classList.contains("jeu")); },
+    majLangue() { ecrireBoutonJeu(hero.classList.contains("jeu")); ecrireBoutonPlus(); },
     // niveau : 0 (bon) à 3 (très élevé)
     regler(indice) {
       base = GRAINS[indice] || GRAINS[0];
@@ -2741,7 +3198,9 @@ function construireSommaire(sections) {
     lien.dataset.cible = section.id;
     if (i === 0) lien.addEventListener("click", e => {
       e.preventDefault();
-      window.scrollTo({ top: 0, behavior: reduit() ? "auto" : "smooth" });
+      const piste = document.getElementById("piste");
+      const haut = piste ? piste.getBoundingClientRect().top + window.scrollY : 0;
+      window.scrollTo({ top: haut, behavior: reduit() ? "auto" : "smooth" });
     });
     lien.setAttribute("aria-label", i === 0 ? titre : trad("nav.chapitre", { i, titre }));
     lien.append(el("span", "p-num", String(i).padStart(2, "0")), el("span", "p-titre", titre));
@@ -2856,7 +3315,22 @@ function initStoryScrolling() {
   const flou = !!(window.matchMedia && window.matchMedia("(hover: hover) and (pointer: fine)").matches);
   const borne = v => (v < 0 ? 0 : v > 1 ? 1 : v);
 
-  const memo = { barre: -1, scene: -1 };
+  const memo = { barre: -1, scene: -1, ouv: -1, dansOuv: null, reel: -1 };
+
+  // Ouverture « La Bonne M'air » et cartes des points forts
+  const ouv = document.getElementById("ouverture");
+  const ouvEl = ouv ? {
+    image: document.getElementById("ouv-image"),
+    marque: document.getElementById("ouv-marque"),
+    legende: document.getElementById("ouv-legende"),
+    defiler: document.getElementById("ouv-defiler"),
+    etoiles: document.getElementById("ouv-etoiles"),
+  } : null;
+  const reel = document.getElementById("atouts");
+  const reelPiste = document.getElementById("reel-piste");
+  const reelAvance = document.getElementById("reel-avance");
+  const lisse = t => t * t * (3 - 2 * t);
+
   const fiches = new WeakMap();   // éléments utiles de chaque chapitre, cherchés une seule fois
   let geo = null;
   let horsJeu = false;            // vrai : le bandeau a commencé à se ranger, le mode « jeu » n'a plus lieu d'être
@@ -2881,9 +3355,21 @@ function initStoryScrolling() {
 
   // Seul endroit qui lit la mise en page. Toutes les positions sont converties en coordonnées de la page.
   function mesurer() {
+    // Cartes des points forts : la section est aussi haute qu'il faut pour faire défiler toute la rangée de cartes.
+    // (Écriture avant les lectures ci-dessous : la mise en page n'est recalculée qu'une fois.)
+    let reelDelta = 0;
+    if (reel && reelPiste) {
+      reelDelta = Math.max(0, reelPiste.offsetWidth - document.documentElement.clientWidth);
+      reel.style.height = reduit() ? "" : Math.round(window.innerHeight + reelDelta * 1.2) + "px";
+    }
     const y0 = window.scrollY;
     const hautDe = e => e.getBoundingClientRect().top + y0;
     geo = {
+      reelDelta,
+      reelTop: reel ? hautDe(reel) : 0,
+      reelH: reel ? reel.offsetHeight : 0,
+      ouvTop: ouv ? hautDe(ouv) : 0,
+      ouvH: ouv ? ouv.offsetHeight : 0,
       doc: document.documentElement.scrollHeight,
       pisteTop: piste ? hautDe(piste) : 0,
       pisteH: piste ? piste.offsetHeight : 0,
@@ -2932,6 +3418,40 @@ function initStoryScrolling() {
     if (scene.canvas) scene.canvas.style.opacity = borne(1.25 - p).toFixed(3);
   }
 
+  // Ouverture : p (0 → 1) le long de la scène épinglée.
+  //   0    → 0,3  : le nom « La Bonne M'air » est seul à l'écran, puis s'efface en montant ;
+  //   0,16 → 0,5  : l'affiche se dévoile (fondu, léger zoom arrière, flou qui se dissipe sur ordinateur) ;
+  //   0,5  → 0,84 : la phrase « Comme la Bonne Mère… » ;
+  //   0,84 → 1    : l'affiche s'efface vers le bandeau des mesures.
+  function ecrireOuverture(p) {
+    const e = ouvEl;
+    const sortie = borne((p - 0.1) / 0.2);
+    if (e.marque) {
+      e.marque.style.opacity = (1 - sortie).toFixed(3);
+      e.marque.style.scale = (1 - sortie * 0.16).toFixed(4);
+      e.marque.style.translate = "0 " + (-sortie * 70).toFixed(1) + "px";
+      e.marque.style.filter = (flou && sortie > 0 && sortie < 1) ? "blur(" + (sortie * 8).toFixed(1) + "px)" : "";
+      e.marque.style.visibility = sortie >= 1 ? "hidden" : "";
+    }
+    const entree = lisse(borne((p - 0.16) / 0.34));
+    const fin = borne((p - 0.84) / 0.16);
+    if (e.image) {
+      e.image.style.opacity = (entree * (1 - fin)).toFixed(3);
+      e.image.style.scale = (1.22 - 0.22 * entree + 0.1 * fin).toFixed(4);
+      e.image.style.filter = (flou && entree < 1) ? "blur(" + ((1 - entree) * 14).toFixed(1) + "px)" : "";
+    }
+    if (e.legende) {
+      const arrivee = borne((p - 0.5) / 0.1);
+      e.legende.style.opacity = (arrivee * (1 - borne((p - 0.76) / 0.08))).toFixed(3);
+      e.legende.style.translate = "0 " + ((1 - arrivee) * 26).toFixed(1) + "px";
+    }
+    if (e.defiler) e.defiler.style.opacity = (1 - borne(p / 0.06)).toFixed(3);
+    if (e.etoiles) {
+      e.etoiles.style.translate = "0 " + (-p * 40).toFixed(1) + "px";   // léger effet de profondeur
+      e.etoiles.style.opacity = (1 - fin * 0.8).toFixed(3);
+    }
+  }
+
   // Un chapitre se déploie en entrant (e : 0 → 1) ; p = avancement de sa lecture (trait sous le numéro).
   function ecrireChapitre(f, p, e) {
     if (f.numero) f.numero.style.setProperty("--p", p);
@@ -2948,6 +3468,27 @@ function initStoryScrolling() {
     enAttente = false;
     if (geoSale) { mesurer(); geoSale = false; }
     const g = geo, y = window.scrollY, vh = window.innerHeight, fixe = reduit();   // innerHeight : lecture sans coût, toujours à jour
+
+    // Ouverture « La Bonne M'air »
+    if (ouvEl) {
+      const q = fixe ? 0.6 : borne((y - g.ouvTop) / Math.max(1, g.ouvH - vh));
+      const qq = Math.round(q * 1000) / 1000;
+      if (qq !== memo.ouv) { memo.ouv = qq; ecrireOuverture(qq); }
+    }
+    // Scènes noires plein écran (ouverture, points forts) : les barres de la page s'effacent
+    const libre = !fixe && !!((ouvEl && y < g.ouvTop + g.ouvH - vh * 0.6) || (reel && y > g.reelTop - vh * 0.3 && y < g.reelTop + g.reelH - vh * 0.7));
+    if (libre !== memo.dansOuv) { memo.dansOuv = libre; document.documentElement.classList.toggle("scene-libre", libre); }
+
+    // Points forts : la rangée de cartes glisse vers la gauche (petite pause au début et à la fin)
+    if (reelPiste && g.reelDelta > 0 && !fixe) {
+      const r = borne((borne((y - g.reelTop) / Math.max(1, g.reelH - vh)) - 0.06) / 0.88);
+      const rq = Math.round(r * 1000) / 1000;
+      if (rq !== memo.reel) {
+        memo.reel = rq;
+        reelPiste.style.transform = "translate3d(" + (-rq * g.reelDelta).toFixed(1) + "px, 0, 0)";
+        if (reelAvance) reelAvance.style.transform = "scaleX(" + rq + ")";
+      }
+    }
 
     // Barre de progression de la page
     const maximum = g.doc - vh;
@@ -3072,7 +3613,10 @@ function initFigureParticules() {
     { classe: "pm1",  couleur: "#2347a8", diametre: 2,  agitation: 0.55, trace: 56, fil: 1 },
     { classe: "pm25", couleur: "#2347a8", diametre: 5,  agitation: 0.33, trace: 48, fil: 1.2 },
     { classe: "pm10", couleur: ENCRE,     diametre: 20, agitation: 0.12, trace: 30, fil: 2 },
+    // Molécule de CO₂ (agrandie) : bien plus petite, elle s'agite bien plus, et tourne sur elle-même.
+    { classe: "co2",  couleur: "#52616b", diametre: 14, agitation: 0.85, trace: 70, fil: 0.8, molecule: true },
   ];
+  const OXYGENE = "#d23c2a";
   const PAS = 1000 / 60;   // la simulation avance par pas de 1/60 s, quelle que soit la fréquence de l'écran
   const AMORTI = 0.85;     // part de la vitesse conservée à chaque pas
   const RAPPEL = 0.004;    // rappel vers le centre de la case : la particule reste dans son cadre
@@ -3087,7 +3631,7 @@ function initFigureParticules() {
     canvas.setAttribute("aria-hidden", "true");
     zone.append(canvas);
     zone.classList.add("anime");
-    particules.push(Object.assign({ zone, canvas, ctx, x: 0, y: 0, vx: 0, vy: 0, l: 0, h: 0, chemin: [] }, d));
+    particules.push(Object.assign({ zone, canvas, ctx, x: 0, y: 0, vx: 0, vy: 0, ang: Math.random() * 6.2832, va: 0, l: 0, h: 0, chemin: [] }, d));
   });
   if (!particules.length) return;
 
@@ -3110,6 +3654,15 @@ function initFigureParticules() {
         c.stroke();
       }
       c.globalAlpha = 1;
+      if (p.molecule) {   // O=C=O : deux atomes d'oxygène (rouges) de part et d'autre du carbone
+        const ux = Math.cos(p.ang) * 4.6, uy = Math.sin(p.ang) * 4.6;
+        c.fillStyle = OXYGENE;
+        c.beginPath(); c.arc(p.x - ux, p.y - uy, 2.8, 0, 6.2832); c.fill();
+        c.beginPath(); c.arc(p.x + ux, p.y + uy, 2.8, 0, 6.2832); c.fill();
+        c.fillStyle = ENCRE;
+        c.beginPath(); c.arc(p.x, p.y, 2.3, 0, 6.2832); c.fill();
+        return;
+      }
       c.fillStyle = p.couleur;
       c.beginPath();
       c.arc(p.x, p.y, p.diametre / 2, 0, 6.2832);
@@ -3124,6 +3677,7 @@ function initFigureParticules() {
     p.vy = p.vy * AMORTI + gauss() * p.agitation - p.y * RAPPEL;
     p.x += p.vx;
     p.y += p.vy;
+    if (p.molecule) { p.va = p.va * 0.9 + gauss() * 0.02; p.ang += p.va; }
     if (p.x > bx) { p.x = bx; p.vx = -Math.abs(p.vx) * 0.5; } else if (p.x < -bx) { p.x = -bx; p.vx = Math.abs(p.vx) * 0.5; }
     if (p.y > by) { p.y = by; p.vy = -Math.abs(p.vy) * 0.5; } else if (p.y < -by) { p.y = -by; p.vy = Math.abs(p.vy) * 0.5; }
     p.chemin.push(p.x, p.y);
@@ -3178,6 +3732,79 @@ function initFigureParticules() {
   actualiser();
 }
 
+// Ciel étoilé de l'ouverture : prolonge les étoiles de l'affiche sur toute la largeur de l'écran et les fait scintiller.
+// Ne tourne que lorsque l'ouverture est à l'écran (et jamais en « mouvement réduit » : une seule image fixe).
+function initEtoilesOuverture() {
+  const canvas = document.getElementById("ouv-etoiles");
+  const ctx = canvas && canvas.getContext ? canvas.getContext("2d") : null;
+  if (!ctx) return;
+  let larg = 0, haut = 0, etoiles = [], visible = true, tourne = false, image = 0;
+
+  function semer() {
+    const n = Math.round(Math.min(320, larg * haut / 5200));
+    etoiles = [];
+    for (let i = 0; i < n; i++) {
+      const brillante = Math.random() < 0.06;
+      etoiles.push({
+        x: Math.random() * larg, y: Math.random() * haut,
+        r: brillante ? 1.2 + Math.random() * 0.9 : 0.35 + Math.random() * 0.8,
+        base: 0.25 + Math.random() * 0.55, phase: Math.random() * 6.2832,
+        vitesse: 0.0006 + Math.random() * 0.0022, brillante,
+      });
+    }
+  }
+  function dessiner(t) {
+    ctx.clearRect(0, 0, larg, haut);
+    ctx.fillStyle = "#fff";
+    for (let i = 0; i < etoiles.length; i++) {
+      const e = etoiles[i];
+      ctx.globalAlpha = Math.max(0, Math.min(1, e.base + 0.45 * Math.sin(t * e.vitesse + e.phase)));
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, e.r, 0, 6.2832);
+      ctx.fill();
+      if (e.brillante) {   // petite croix de lumière, comme sur l'affiche
+        const l = e.r * 5;
+        ctx.globalAlpha *= 0.55;
+        ctx.fillRect(e.x - l, e.y - 0.4, 2 * l, 0.8);
+        ctx.fillRect(e.x - 0.4, e.y - l, 0.8, 2 * l);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+  function mesurer() {
+    const ratio = Math.min(window.devicePixelRatio || 1, 2);
+    larg = canvas.clientWidth; haut = canvas.clientHeight;
+    canvas.width = Math.max(1, Math.round(larg * ratio));
+    canvas.height = Math.max(1, Math.round(haut * ratio));
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    semer();
+    dessiner(performance.now());
+  }
+  function boucle(t) {
+    image = 0;
+    if (!tourne) return;
+    dessiner(t);
+    image = requestAnimationFrame(boucle);
+  }
+  function actualiser() {
+    const doitTourner = visible && !document.hidden && !reduit();
+    if (doitTourner && !tourne) { tourne = true; image = requestAnimationFrame(boucle); }
+    else if (!doitTourner && tourne) { tourne = false; if (image) cancelAnimationFrame(image); image = 0; }
+  }
+  mesurer();
+  let largeurAvant = window.innerWidth;
+  window.addEventListener("resize", () => {   // la barre d'adresse du téléphone (hauteur seule) ne ressème pas les étoiles
+    if (window.innerWidth === largeurAvant) return;
+    largeurAvant = window.innerWidth;
+    mesurer();
+  });
+  if ("IntersectionObserver" in window) {
+    new IntersectionObserver(e => { visible = e[e.length - 1].isIntersecting; actualiser(); }).observe(document.getElementById("ouverture"));
+  }
+  document.addEventListener("visibilitychange", actualiser);
+  actualiser();
+}
+
 // Le fond noir des boutons de période glisse de l'un à l'autre.
 function placerCurseur() {
   const actif = document.querySelector(".periode.actif");
@@ -3199,7 +3826,7 @@ async function rafraichir() {
     derniereMaj = Date.now();
     majPiedMaj();
 
-    const resultat = points.length === 0 ? null : construireSerie(points, periode, Date.now());
+    const resultat = points.length === 0 ? null : lirePoints(points, periode, Date.now());
     if (!resultat) {
       viderTout();
       document.getElementById("squelette").hidden = true;
@@ -3208,7 +3835,7 @@ async function rafraichir() {
       majEtat("etat erreur", () => trad("etat.aucune_mesure"));
       return;
     }
-    cache = { periode, points, serie: resultat.serie, rejouees: resultat.rejouees, sansAge: resultat.sansAge };
+    cache = { periode, nbPoints: points.length, lus: resultat.lus, stats: statistiques(resultat.lus), rejouees: resultat.rejouees, sansAge: resultat.sansAge };
     afficherTout();
   } catch (erreur) {
     if (numero !== numeroRequete) return;
@@ -3245,6 +3872,7 @@ function choisirPeriode(cle) {
     b.setAttribute("aria-pressed", String(actif));
   });
   majPerso();
+  majMenuPas();
   placerCurseur();
   majEtat("etat", () => trad("etat.chargement"));
   rafraichir();
@@ -3325,6 +3953,15 @@ function initControles() {
   });
   initPerso();
   document.getElementById("afficher-seuils").addEventListener("change", afficherTout);
+  // Menu « Pas » : les moyennes sont recalculées à partir des mesures déjà reçues, sans nouvelle requête.
+  const menuPas = document.getElementById("pas");
+  majMenuPas();
+  if (menuPas) menuPas.addEventListener("change", () => {
+    pasChoisi = menuPas.value;
+    ecrireMemoire("pas-graphes", pasChoisi);
+    animerProchain = true;
+    afficherTout();
+  });
 }
 
 function demarrer() {
@@ -3345,7 +3982,10 @@ function demarrer() {
   securise(initTampon);
   securise(pauseHorsEcran);
   securise(initFigureParticules);
+  securise(initEtoilesOuverture);
+  securise(initBoutonAnimations);
   securise(initPleinEcran);
+  securise(ajusterHero);   // avant même les données : le bandeau tient dans l'écran dès l'arrivée
   securise(() => {   // « Haut de page » : le bandeau est épinglé (sticky), l'ancre #hero ne menait donc pas tout en haut
     const haut = document.querySelector(".haut");
     if (haut) haut.addEventListener("click", e => {
@@ -3359,7 +3999,7 @@ function demarrer() {
   // Après le chargement des polices, tout ce qui a été mesuré est recalculé.
   // "loadingdone" couvre le cas où document.fonts.ready se résout avant que les polices soient demandées.
   const apresPolices = () => {
-    securise(ajusterVerdict);
+    securise(ajusterHero);
     securise(placerCurseur);
     securise(ajusterTampon);
     Object.keys(graphes).forEach(id => securise(() => graphes[id].update("none")));
@@ -3378,7 +4018,7 @@ function demarrer() {
       // La barre d'adresse d'un téléphone change seulement la hauteur : rien de tout cela ne dépend de la hauteur.
       if (window.innerWidth === largeurAvant) return;
       largeurAvant = window.innerWidth;
-      securise(ajusterVerdict);
+      securise(ajusterHero);
       securise(placerCurseur);
       securise(ajusterTampon);
       // passage portrait <-> paysage : les graphes se redessinent avec la bonne densité d'étiquettes
@@ -3399,6 +4039,7 @@ function demarrer() {
     securise(remplirSeuils);
     securise(majPerso);
     securise(ecrireAide);
+    securise(majMenuPas);
     securise(majPleinLangue);
     securise(() => { if (nuage) nuage.majLangue(); });
     securise(majTampon);
@@ -3410,7 +4051,7 @@ function demarrer() {
     if (cache) securise(afficherTout);     // cartes, graphes (dates, noms), tableau, verdict, messages
     securise(actualiserChapitres);
     securise(placerCurseur);               // les libellés des boutons de période n'ont plus la même largeur
-    securise(ajusterVerdict);
+    securise(ajusterHero);
     securise(ajusterTampon);
   });
 
