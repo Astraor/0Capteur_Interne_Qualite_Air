@@ -21,10 +21,14 @@
  * Pour couper aussi les logs du framework ESP32, ajoute dans platformio.ini :
  *   build_flags = -DCORE_DEBUG_LEVEL=0
  *
- * ÉCRAN : deux interrupteurs en haut du fichier
- *   DOUBLE_BUFFER (dessin sans scintillement),
- *   ANIMATIONS (clignement, chiffres qui glissent, spinner...).
- *   Une seule police (standard 5x7), pas de blanc : titres et unités en cyan.
+ * ÉCRAN : interrupteurs en haut du fichier
+ *   DOUBLE_BUFFER (dessin sans scintillement), TRANSITION_FONDU (fondu entre les pages),
+ *   ANIMATIONS (clignement, chiffres qui glissent, sommet de la courbe qui clignote).
+ *   Pages : CO2 | AERER (si CO2 élevé) | PARTICULES (PM1, PM2.5, PM10 ensemble) | QUALITE AIR | courbe CO2 | Wi-Fi.
+ *   Trois polices (petite Picopixel, 5x7, grande FreeSansBold), pas de blanc : titres en cyan.
+ *   Ancienne version de l'affichage : sauvegarde/main_avant_refonte.cpp
+ *   Démarrage : logo animé "LA BONNE M'AIR" (basilique stylisée, voir afficherSplash).
+ *   En bas à droite : mini logo Wi-Fi coloré selon le signal + repères secteur / heure / envoi (dessinerTemoins).
  *
  * CHAMPS ENVOYÉS (JSON plat, nombres uniquement) :
  *   standard : device_id, uptime, rssi, heap, co2, pm1, pm25, pm10
@@ -49,6 +53,14 @@
  * ENVOI : une tâche dédiée (tacheEnvoi) gère le réseau ET le fichier hors ligne, pour que l'écran,
  * les capteurs et la détection secteur ne se figent plus pendant un envoi. loop() se contente de
  * lui déposer les mesures (deposerMesure) : un seul acteur touche au fichier, donc aucun conflit.
+ *
+ * RYTHME D'ENVOI : le serveur n'accepte qu'UN envoi toutes les 10 s, sans envoi groupé. Le renvoi des
+ * mesures stockées est donc limité à ~6 par minute, quoi qu'on fasse sur la carte. Pour s'en approcher :
+ *   - l'écart est compté entre les DÉBUTS de deux envois (10 s + une petite marge auto-ajustée sur les 429) ;
+ *   - une ligne écartée sans envoi (illisible, heure inconnue) ne consomme pas de créneau ;
+ *   - plus de 10 mesures en retard : une mesure fraîche par minute au lieu de 30 s (plus de créneaux pour
+ *     le retard) ; "status" donne le temps de rattrapage estimé.
+ *   100 mesures en retard : ~20 min (contre ~35 min avant). Plancher absolu imposé par le serveur : ~17 min.
  *
  * VERSIONS : ce programme est écrit pour ESP32 Arduino 2.x. Dans platformio.ini :
  *   platform = espressif32@^6.0.0
@@ -80,10 +92,12 @@
 #define MHZ_ABC                   1  // 1 = auto-calibration ; 0 si la pièce n'est jamais aérée
 #define NEXTPM_MOYENNE_60S        0  // 0 = moyennes 10 s | 1 = moyennes 60 s
 #define ECRAN_ETEINT_NUIT         0  // 1 = écran éteint entre HEURE_NUIT_DEBUT et HEURE_NUIT_FIN
-#define AFFICHER_TEMOINS          1  // 1 = 4 points de 1 pixel en bas à droite : WiFi | secteur | heure NTP | envoi
+#define AFFICHER_TEMOINS          1  // 1 = zone d'état en bas à droite (7x7 px) : logo Wi-Fi coloré selon le signal,
+                                     //     et dessous 3 repères : secteur | heure NTP | envoi (voir dessinerTemoins)
 #define MASQUER_SECRETS           0  // 1 = les mots de passe saisis s'affichent en ****
 #define DOUBLE_BUFFER             1  // 1 = dessin sans scintillement | 0 si l'écran reste noir ou s'affiche mal
-#define ANIMATIONS                0  // 1 = clignement, chiffres qui glissent, spinner | 0 = affichage calme
+#define ANIMATIONS                0  // 1 = clignement, chiffres qui glissent, sommet de courbe qui clignote | 0 = calme
+#define TRANSITION_FONDU          1  // 1 = fondu au noir (~150 ms) entre deux pages | 0 = changement sec
 
 // --- Bibliothèques utilisées ---
 // WiFi / HTTPClient : connexion et envoi au serveur | LittleFS : fichier en mémoire flash (stockage hors ligne)
@@ -107,6 +121,10 @@
 #define double_buffer  // à définir AVANT l'include de PxMatrix : active showBuffer()
 #endif
 #include <PxMatrix.h>
+// Polices fournies avec Adafruit GFX (dossier Fonts de la bibliothèque)
+#include <Fonts/Picopixel.h>           // petite : 5 px de haut, libellés et unités
+#include <Fonts/FreeSansBold9pt7b.h>   // moyenne-grande : "AERER", "OK"
+#include <Fonts/FreeSansBold12pt7b.h>  // grande : chiffres de 17 px (valeur du CO2)
 
 #if WIFI_ACTIVE
 #include "esp_wpa2.h"
@@ -174,13 +192,19 @@ static const int HEURE_NUIT_FIN   = 7;
 // --- Intervalles (ms) ---
 // Rythme de chaque travail : loop() lance un travail quand (maintenant - dernier passage) >= son intervalle.
 static const unsigned long INTERVALLE_LECTURE_MS   = 10000;      // lecture des capteurs
-static const unsigned long INTERVALLE_PAGE_MS       = 5000;       // durée d'affichage de chaque page
+static const unsigned long INTERVALLE_PAGE_MS       = 6000;       // durée d'affichage de chaque page (la page PARTICULES montre 3 valeurs)
 static const unsigned long PERIODE_MESURE_MS        = 30000;      // une mesure (moyenne + pic) toutes les 30 s
 static const unsigned long PERIODE_MESURE_BATT_MS   = 60000;      // idem sur batterie
-static const unsigned long ECART_PUSH_MIN_MS        = 10000;      // entre 2 envois (le serveur exige >= 10 s)
+static const unsigned long PERIODE_MESURE_RATTRAPAGE_MS = 60000;  // pendant le renvoi d'un gros retard (voir SEUIL_RATTRAPAGE)
+static const uint32_t SEUIL_RATTRAPAGE              = 10;         // plus de 10 mesures en retard : 1 mesure / min le temps de rattraper
+static const unsigned long ECART_PUSH_MIN_MS        = 10000;      // entre 2 envois (le serveur exige >= 10 s, pas d'envoi groupé)
+static const unsigned long MARGE_PUSH_INIT_MS       = 800;        // marge au-dessus des 10 s (absorbe la variation du temps de connexion)
+static const unsigned long MARGE_PUSH_MIN_MS        = 400;        // la marge descend jusque-là tant que le serveur ne dit rien
+static const unsigned long MARGE_PUSH_MAX_MS        = 5000;       // ... et remonte (+500 ms) à chaque refus 429 "trop rapproché"
+static const unsigned long ATTENTE_NTP_REESSAI_MS   = 2000;       // une mesure attend l'heure NTP : on réessaie toutes les 2 s
 static const unsigned long INTERVALLE_RESEAU_MS     = 15000;
 static const unsigned long INTERVALLE_LUMI_MS        = 60000;
-static const unsigned long INTERVALLE_HIST_MS        = MODE_DEMO ? 5000UL : 60000UL;  // une barre de l'histogramme CO2 par minute (5 s en démo)
+static const unsigned long INTERVALLE_HIST_MS        = MODE_DEMO ? 5000UL : 60000UL;  // un point de la courbe CO2 par minute (5 s en démo)
 static const unsigned long CHAUFFE_MHZ_MS            = 180000UL;  // MH-Z19C : environ 3 min pour se stabiliser (fiche technique)
 static const unsigned long ANTIREBOND_SECTEUR_MS     = 500;
 static const unsigned long WIFI_TIMEOUT_PSK_MS       = 20000UL;   // délai max pour se connecter à un Wi-Fi classique
@@ -199,40 +223,51 @@ static const char* FICHIER_BACKLOG = "/backlog.jsonl";
 static const char* FICHIER_TMP     = "/backlog.tmp";
 static const size_t TAILLE_MAX_BACKLOG = 500000;   // ~500 Ko (~12 h hors ligne). Le compactage recopie le fichier : il faut
                                                    // de la place pour l'original ET la copie (partition LittleFS : ~1,4 Mo)
-static const size_t SEUIL_COMPACTAGE = 100000;     // ~100 Ko déjà renvoyés : on recopie le fichier pour récupérer la place
+// (le compactage ne se fait plus pendant le renvoi : il bloquait les envois plusieurs secondes. Le fichier est
+//  supprimé quand tout est renvoyé, et compacté seulement s'il est plein : voir stockerRecord)
 static const unsigned long ATTENTE_HEURE_MAX_MS = 900000UL;  // 15 min : au-delà sans heure NTP, une mesure d'un démarrage précédent est abandonnée
 
 // --- Initiatives : paramètres ---
-#define HIST_N 30  // points de la courbe CO2 (30 min)
-static const float SEUIL_AERER_PPM      = 1000;    // page "AERER" au-dessus
+// Zone des témoins : x 57..63, y 25..31. Le bas des pages (thermomètre, VU-mètres, courbe) s'arrête donc à x 55 (x 56 = séparation).
+#define LARGEUR_BAS (AFFICHER_TEMOINS ? 56 : 64)
+#define HIST_N (LARGEUR_BAS - 3)  // points de la courbe CO2 : minutes terminées (53) + la minute en cours = 54 colonnes
+static const float SEUIL_AERER_PPM      = 1000;    // page "AERER" au-dessus (et x_pct_co2_1000)
 static const float SEUIL_ALARME_PPM     = 1500;    // buzzer au-dessus
 static const float AERATION_CHUTE_PPM   = 100;     // chute de CO2 en ~2 min = aération
 static const unsigned long BUZZER_PAUSE_MS = 300000UL;  // un bip toutes les 5 min au plus
 
-// --- Seuils d'affichage (valeur < seuil[i] => niveau i) ---
+// --- Seuils d'affichage ---
+// Une échelle = ses seuils + la façon de les comparer :
+//   inclus = false : valeur <  seuil[i] => niveau i   (CO2 : seuils "à partir de")
+//   inclus = true  : valeur <= seuil[i] => niveau i   (indice ATMO : seuils "jusqu'à", valeur arrondie au 1/10)
+struct Echelle { const float* seuils; uint8_t n; bool inclus; };
+
 // CO2 (ppm) : vert < 800 | jaune < 1000 | orange < 1500 | rouge >= 1500
 static const float SEUILS_CO2[] = {800, 1000, 1500};
-static const uint8_t NB_SEUILS_CO2 = 3;
-// PM2.5 (ug/m3), paliers ATMO : vert 0-10 | jaune 11-20 | orange 21-25 | rouge 26-50 | violet > 50
-// (aussi utilisé pour PM1, qui n'a pas de seuils réglementaires)
-static const float SEUILS_PM25[] = {11, 21, 26, 51};
-static const uint8_t NB_SEUILS_PM25 = 4;
-// PM10 (ug/m3), paliers ATMO : vert 0-20 | jaune 21-40 | orange 41-50 | rouge 51-100 | violet > 100
-// (à valider avec AtmoSud)
-static const float SEUILS_PM10[] = {21, 41, 51, 101};
-static const uint8_t NB_SEUILS_PM10 = 4;
+static const Echelle ECH_CO2 = {SEUILS_CO2, 3, false};
+// PM2.5 (ug/m3), indice ATMO (arrêté du 10 juillet 2020, https://www.atmo-france.org/article/lindice-atmo) :
+//   bon <= 10 | moyen <= 20 | dégradé <= 25 | mauvais <= 50 | très mauvais <= 75 | extrêmement mauvais > 75
+// Aussi utilisé pour PM1 (pas de seuils réglementaires). L'ATMO porte sur des moyennes JOURNALIÈRES :
+// ici on l'applique à la valeur instantanée, à titre indicatif.
+static const float SEUILS_PM25[] = {10, 20, 25, 50, 75};
+static const Echelle ECH_PM25 = {SEUILS_PM25, 5, true};
+// PM10 (ug/m3), indice ATMO :
+//   bon <= 20 | moyen <= 40 | dégradé <= 50 | mauvais <= 100 | très mauvais <= 150 | extrêmement mauvais > 150
+static const float SEUILS_PM10[] = {20, 40, 50, 100, 150};
+static const Echelle ECH_PM10 = {SEUILS_PM10, 5, true};
 
-// Niveaux : 0 vert | 1 jaune | 2 orange | 3 rouge | 4 violet
-// (sur un panneau LED, un "jaune" trop orangé (255,170,0) paraît orange : on met plus de vert)
-static const uint8_t PALETTE[5][3] = {
-  {0, 200, 0}, {255, 220, 0}, {255, 100, 0}, {255, 0, 0}, {190, 0, 255}
+// Niveaux : 0 vert | 1 jaune | 2 orange | 3 rouge | 4 pourpre | 5 magenta (le CO2 s'arrête au rouge)
+// (sur un panneau LED, un "jaune" trop orangé (255,170,0) paraît orange : on met plus de vert ;
+//  le pourpre est éclairci, sinon il se confond avec le rouge)
+#define NB_NIVEAUX 6
+static const uint8_t PALETTE[NB_NIVEAUX][3] = {
+  {0, 200, 0}, {255, 220, 0}, {255, 100, 0}, {255, 0, 0}, {255, 0, 120}, {170, 0, 255}
 };
-// 8 caractères maximum (page "QUALITE AIR")
-static const char* LABELS_NIVEAU[5] = {"BON", "MOYEN", "DEGRADE", "MAUVAIS", "CRITIQUE"};
+// Qualificatifs ATMO. Page "QUALITE AIR" : 7 caractères par ligne au plus ; un libellé plus long est coupé
+// en deux lignes à l'espace ("TRES" / "MAUVAIS").
+static const char* LABELS_NIVEAU[NB_NIVEAUX] = {"BON", "MOYEN", "DEGRADE", "MAUVAIS", "TRES MAUVAIS", "EXTREM. MAUVAIS"};
 
 // --- Animations d'écran ---
-static const char* BANDEAU_AERER = "AERER LA PIECE";
-static const int BANDEAU_PX = 2;                       // pixels de défilement par image
 static const unsigned long ANIM_PAS_MS = 40;           // une image d'animation toutes les 40 ms (25 i/s)
 
 // =====================================================================
@@ -334,7 +369,7 @@ uint32_t nCO2Total = 0, nCO2Haut = 0;  // pour x_pct_co2_1000
 float tamponCO2[12];                   // ~2 min de lectures (détection d'aération)
 uint8_t tamponIdx = 0, tamponN = 0;
 bool aerationPeriode = false;
-uint16_t histCO2[HIST_N];              // histogramme : moyenne du CO2 de chacune des 30 dernières minutes
+uint16_t histCO2[HIST_N];              // courbe : moyenne du CO2 de chacune des dernières minutes (0 = minute sans mesure)
 uint8_t histIdx = 0, histN = 0;
 float histSomme = 0;                   // somme des lectures CO2 de la minute en cours
 uint16_t histNb = 0;                   // nombre de lectures correspondantes
@@ -350,7 +385,9 @@ bool etatCandidat = true;
 unsigned long tChangementSecteur = 0;
 
 // Réseau et envoi
-enum ResultatPush { PUSH_OK, PUSH_REESSAYER, PUSH_REJETE, PUSH_CLE_INVALIDE, PUSH_ATTENDRE };  // ATTENDRE : l'heure NTP manque encore
+// REJETE : le serveur a refusé la mesure (400/413) | INVALIDE : écartée sur la carte, SANS envoi (ligne illisible,
+// heure inconnue) : ne consomme pas le créneau de 10 s | ATTENDRE : l'heure NTP manque encore
+enum ResultatPush { PUSH_OK, PUSH_REESSAYER, PUSH_REJETE, PUSH_INVALIDE, PUSH_CLE_INVALIDE, PUSH_ATTENDRE };
 // Mesures fraîches en attente d'envoi (RAM) : loop() les dépose, la tâche d'envoi les prend.
 // Protégées par mutexEnvoi. Au-delà de NB_PENDANTES, la plus ancienne est sacrifiée.
 #define NB_PENDANTES 4
@@ -359,9 +396,13 @@ uint8_t nbPendantes = 0;
 SemaphoreHandle_t mutexEnvoi = NULL;
 volatile bool demandeVider = false;  // commande "vider_file" : la tâche d'envoi s'en charge
 unsigned long tAttenteHeure = 0;     // depuis quand une mesure attend l'heure NTP (0 = personne n'attend)
-unsigned long tDernierPush = 0;
-unsigned long ecartMinMs = ECART_PUSH_MIN_MS;
-uint8_t echecsPush = 0;
+unsigned long tEssaiNtp = 0;         // dernier essai d'une mesure qui attend l'heure NTP
+unsigned long tDernierPush = 0;      // DÉBUT du dernier POST (c'est ce que le serveur compte)
+bool dejaPoste = false;              // aucun POST depuis le démarrage : le premier part tout de suite
+unsigned long ecartMinMs = ECART_PUSH_MIN_MS;   // délai demandé par le serveur (next_push_in_s, 10 s au moins)
+unsigned long margePushMs = MARGE_PUSH_INIT_MS; // marge ajoutée, ajustée selon les refus 429
+uint8_t succesDeSuite = 0;           // envois réussis consécutifs (pour réduire la marge)
+uint8_t echecsPush = 0;              // échecs réseau / serveur consécutifs (espacement progressif)
 bool cleInvalide = false;  // le serveur a refusé la clé (401)
 uint8_t etatEnvoi = 0;     // 0 gris | 1 vert (OK) | 2 orange (réessai) | 3 rouge (refus)
 int dernierCodeHttp = 0;
@@ -399,21 +440,20 @@ unsigned long tResultatWifi = 0;
 bool fsOK = false;
 size_t offsetRejeu = 0;       // position de la prochaine ligne à renvoyer
 size_t tailleBacklog = 0;     // taille du fichier (lignes déjà renvoyées comprises)
-uint32_t nbLignesAttente = 0;
+volatile uint32_t nbLignesAttente = 0;  // écrit par la tâche d'envoi, lu par loop() (période de rattrapage)
 
 // Affichage
 // Pages de l'écran, affichées en rotation (une toutes les INTERVALLE_PAGE_MS). NB_PAGES = nombre de pages.
 // PAGE_AERER n'apparaît que si le CO2 est élevé, PAGE_COURBE qu'après 2 minutes de mesures.
-enum Page { PAGE_CO2, PAGE_AERER, PAGE_PM1, PAGE_PM25, PAGE_PM10, PAGE_GLOBAL, PAGE_COURBE, PAGE_WIFI, NB_PAGES };
+enum Page { PAGE_CO2, PAGE_AERER, PAGE_PM, PAGE_GLOBAL, PAGE_COURBE, PAGE_WIFI, NB_PAGES };
 uint8_t pageCourante = PAGE_CO2;
 bool aRedessiner = false;  // un seul redessin par tour de loop()
-bool aTransition = false;  // effet de balayage au changement de page
+bool aTransition = false;  // fondu à faire au prochain affichage (changement de page)
 bool ecranEteint = false;
-int xBandeau = 64;             // position du texte défilant (page AERER)
+uint8_t luminositeCourante = 255;  // luminosité choisie par majLuminosite (le fondu y revient)
 unsigned long tAnim = 0;       // dernière image d'animation
-uint32_t phaseHazard = 0;      // mouvement des rubans de la page AERER
 bool etatCligne = false;       // les yeux sont-ils fermés (dernière image) ?
-uint32_t phaseChauffe = 0;     // image du spinner / scanner de préchauffage
+uint32_t phaseChauffe = 0;     // seconde affichée par le compte à rebours de préchauffage
 uint8_t phasePoint = 0;          // point clignotant de la page courbe (0 / 1, change toutes les 500 ms)
 
 // Dates (en ms depuis le démarrage) du dernier passage de chaque travail de loop().
@@ -476,9 +516,12 @@ bool estNuit() {
   return (h >= HEURE_NUIT_DEBUT || h < HEURE_NUIT_FIN);
 }
 
-// Durée d'une période de mesure : plus longue sur batterie, pour économiser l'énergie et le réseau.
+// Durée d'une période de mesure : plus longue sur batterie (énergie), et pendant le renvoi d'un gros retard :
+// le serveur n'accepte qu'un envoi toutes les 10 s, donc chaque mesure fraîche en moins laisse un créneau au retard.
 unsigned long periodeMesureMs() {
-  return estSurSecteur ? PERIODE_MESURE_MS : PERIODE_MESURE_BATT_MS;
+  if (!estSurSecteur) return PERIODE_MESURE_BATT_MS;
+  if (nbLignesAttente > SEUIL_RATTRAPAGE && reseauOK()) return PERIODE_MESURE_RATTRAPAGE_MS;
+  return PERIODE_MESURE_MS;
 }
 
 // =====================================================================
@@ -901,11 +944,32 @@ void forcerEtat(Mesure &m, EtatCapteur etat) {
 }
 
 // Une valeur PM = 2 registres de 16 bits (poids faible d'abord), en millièmes de ug/m3.
+// i = position de la valeur dans la réponse (0 pour le 1er couple de registres, 1 pour le 2e...).
+float pmDepuisReponse(uint8_t i) {
+  uint32_t raw = ((uint32_t)nextpm.getResponseBuffer(2 * i + 1) << 16) | nextpm.getResponseBuffer(2 * i);
+  return raw / 1000.0f;
+}
+
 // Renvoie -1 si le capteur n'a pas répondu.
 float lirePM(uint16_t reg) {
   if (nextpm.readHoldingRegisters(reg, 2) != nextpm.ku8MBSuccess) return -1;
-  uint32_t raw = ((uint32_t)nextpm.getResponseBuffer(1) << 16) | nextpm.getResponseBuffer(0);
-  return raw / 1000.0;
+  return pmDepuisReponse(0);
+}
+
+// PM1, PM2.5, PM10 se suivent (6 registres) : une seule requête Modbus au lieu de trois.
+// Si le capteur refuse la lecture groupée, on revient définitivement à la lecture une par une.
+bool lectureGroupeePM = true;
+bool lireTroisPM(float &pm1, float &pm25, float &pm10) {
+  if (lectureGroupeePM) {
+    if (nextpm.readHoldingRegisters(REG_PM1, 6) == nextpm.ku8MBSuccess) {
+      pm1 = pmDepuisReponse(0); pm25 = pmDepuisReponse(1); pm10 = pmDepuisReponse(2);
+      return true;
+    }
+    lectureGroupeePM = false;
+    LOG("NextPM : lecture groupée refusée, lecture registre par registre.\n");
+  }
+  pm1 = lirePM(REG_PM1); pm25 = lirePM(REG_PM25); pm10 = lirePM(REG_PM10);
+  return pm1 >= 0 && pm25 >= 0 && pm10 >= 0;
 }
 
 // Lit le NextPM (particules fines) en Modbus : d'abord son état, puis PM1 / PM2.5 / PM10,
@@ -936,22 +1000,31 @@ void lireNextPM() {
   }
 
   // 3) particules, puis température / humidité internes
-  float pm1  = lirePM(REG_PM1);
-  float pm25 = lirePM(REG_PM25);
-  float pm10 = lirePM(REG_PM10);
-  bool ok = (pm1 >= 0 && pm25 >= 0 && pm10 >= 0);
+  float pm1 = -1, pm25 = -1, pm10 = -1;
+  bool ok = lireTroisPM(pm1, pm25, pm10);
   majMesure(mPM1, ok, pm1); majMesure(mPM25, ok, pm25); majMesure(mPM10, ok, pm10);
 
-  if (nextpm.readHoldingRegisters(REG_TEMP, 1) == nextpm.ku8MBSuccess)
-    tempPM = (int16_t)nextpm.getResponseBuffer(0) / 100.0;  // peut être négative
-  if (nextpm.readHoldingRegisters(REG_HUM, 1) == nextpm.ku8MBSuccess)
-    humPM = nextpm.getResponseBuffer(0) / 100.0;
+  // humidité (0x6A) et température (0x6B) se suivent : une seule requête
+  if (nextpm.readHoldingRegisters(REG_HUM, 2) == nextpm.ku8MBSuccess) {
+    humPM  = nextpm.getResponseBuffer(0) / 100.0f;
+    tempPM = (int16_t)nextpm.getResponseBuffer(1) / 100.0f;  // peut être négative
+  } else {
+    if (nextpm.readHoldingRegisters(REG_TEMP, 1) == nextpm.ku8MBSuccess)
+      tempPM = (int16_t)nextpm.getResponseBuffer(0) / 100.0f;
+    if (nextpm.readHoldingRegisters(REG_HUM, 1) == nextpm.ku8MBSuccess)
+      humPM = nextpm.getResponseBuffer(0) / 100.0f;
+  }
 }
 
 // Lit le MH-Z19C (CO2 en ppm). Pendant le préchauffage il n'y a pas de valeur fiable : on le signale simplement.
 void lireMHZ() {
 #if MHZ_ACTIVE
-  if (millis() < CHAUFFE_MHZ_MS) { forcerEtat(mCO2, CAPTEUR_CHAUFFE); return; }
+  // (drapeau : sans lui, millis() qui repasse à 0 au bout de 49 jours relancerait 3 min de "préchauffage")
+  static bool chauffeFinie = false;
+  if (!chauffeFinie) {
+    if (millis() < CHAUFFE_MHZ_MS) { forcerEtat(mCO2, CAPTEUR_CHAUFFE); return; }
+    chauffeFinie = true;
+  }
   int co2 = mhz.getCO2();
   majMesure(mCO2, (mhz.errorCode == RESULT_OK && co2 > 0), (float)co2);
 #else
@@ -964,7 +1037,7 @@ void lectureDemo() {
   float phase = (millis() % 60000UL) / 60000.0f;
   float tri = (phase < 0.5f) ? phase * 2.0f : (1.0f - phase) * 2.0f;  // 0 -> 1 -> 0
   mCO2.valeur = 400 + tri * 1800;   // 400 à 2200 ppm
-  mPM25.valeur = tri * 70;          // 0 à 70 ug/m3
+  mPM25.valeur = tri * 90;          // 0 à 90 ug/m3 : parcourt les 6 niveaux ATMO
   mPM1.valeur = mPM25.valeur * 0.6f;
   mPM10.valeur = mPM25.valeur * 1.3f;
   forcerEtat(mCO2, CAPTEUR_OK); forcerEtat(mPM1, CAPTEUR_OK);
@@ -1018,7 +1091,7 @@ void accumulerLectures() {
   if (mCO2.etat == CAPTEUR_OK && mCO2.aJour) {
     agregatAjouter(agCO2, mCO2.valeur);
     nCO2Total++;
-    if (mCO2.valeur > 1000) nCO2Haut++;
+    if (mCO2.valeur > SEUIL_AERER_PPM) nCO2Haut++;
     detecterAeration(mCO2.valeur);
     histSomme += mCO2.valeur;  // pour la moyenne de la minute (histogramme)
     histNb++;
@@ -1031,17 +1104,23 @@ void accumulerLectures() {
   }
 }
 
-// Une fois par minute : range la MOYENNE du CO2 de la minute écoulée (pas une valeur instantanée)
+// Moyenne du CO2 de la minute EN COURS (0 si aucune lecture valide pour l'instant) : dernière colonne de la courbe
+uint16_t minuteEnCours() {
+  return histNb ? (uint16_t)(histSomme / histNb + 0.5f) : 0;
+}
+
+// Une fois par minute : range la MOYENNE du CO2 de la minute écoulée (pas une valeur instantanée).
+// Une minute sans lecture valide est rangée comme un trou (0) : l'axe du temps reste juste.
 void ajouterHistorique() {
-  if (histNb == 0) return;  // aucune lecture valide pendant cette minute
-  histCO2[histIdx] = (uint16_t)(histSomme / histNb + 0.5f);
+  if (histNb == 0 && histN == 0) return;  // rien encore (préchauffage) : la courbe ne commence pas par des trous
+  histCO2[histIdx] = minuteEnCours();
   histIdx = (histIdx + 1) % HIST_N;
   if (histN < HIST_N) histN++;
   histSomme = 0;
   histNb = 0;
 }
 
-// i = 0 : le point le plus ancien
+// i = 0 : le point le plus ancien (0 = minute sans mesure)
 uint16_t valeurHistorique(uint8_t i) {
   uint8_t debut = (histN < HIST_N) ? 0 : histIdx;
   return histCO2[(debut + i) % HIST_N];
@@ -1050,7 +1129,9 @@ uint16_t valeurHistorique(uint8_t i) {
 // Tendance du CO2 sur ~3 min : dir = +1 monte | -1 descend | 0 stable. false si pas assez de points.
 bool tendanceCO2(int &dir) {
   if (histN < 4) return false;
-  int diff = (int)valeurHistorique(histN - 1) - (int)valeurHistorique(histN - 4);
+  uint16_t recent = valeurHistorique(histN - 1), ancien = valeurHistorique(histN - 4);
+  if (recent == 0 || ancien == 0) return false;  // trou dans les mesures
+  int diff = (int)recent - (int)ancien;
   dir = (diff > 30) ? 1 : ((diff < -30) ? -1 : 0);
   return true;
 }
@@ -1222,7 +1303,7 @@ void validerLigne(size_t suite) {
     return;
   }
   prefs.putULong("off", (uint32_t)offsetRejeu);
-  if (offsetRejeu > SEUIL_COMPACTAGE) compacterBacklog(offsetRejeu);
+  // (plus de compactage ici : recopier jusqu'à 500 Ko bloquait les envois plusieurs secondes en plein rattrapage)
 }
 
 // =====================================================================
@@ -1249,6 +1330,10 @@ ResultatPush posterAuServeur(const String &payload) {
   HTTPClient http;
   http.setConnectTimeout(2000);
   http.setTimeout(3000);
+  // Le serveur compte 10 s entre le début de deux requêtes : on note l'heure AVANT l'envoi
+  // (avant, elle était notée après la réponse : la durée du POST s'ajoutait à chaque créneau).
+  tDernierPush = millis();
+  dejaPoste = true;
   if (!http.begin(URL_SERVEUR)) {
     LOG("Échec : http.begin() a refusé l'URL.\n");
     echecsPush++; etatEnvoi = 2;
@@ -1256,8 +1341,7 @@ ResultatPush posterAuServeur(const String &payload) {
   }
   // En-têtes : le contenu est du JSON, et la clé du groupe identifie la station auprès du serveur.
   http.addHeader("Content-Type", "application/json");
-  String cle = lireCle();
-  http.addHeader("X-Group-Key", cle);
+  http.addHeader("X-Group-Key", lireCle());
 
   LOG("Envoi : %s\n", payload.c_str());
   // Envoie la requête. code = code HTTP du serveur (200 = OK, 401 = clé refusée...) ou valeur négative si le réseau a échoué.
@@ -1280,24 +1364,31 @@ ResultatPush posterAuServeur(const String &payload) {
   int suivant = 0;
   if (!deserializeJson(rep, corps)) suivant = rep["next_push_in_s"] | 0;
 
-  // Succès : on respecte le délai demandé par le serveur (+ 2 s de marge).
+  // Succès : on respecte le délai demandé par le serveur (next_push_in_s). La marge au-dessus diminue
+  // doucement tant que le serveur ne refuse rien (10 succès de suite : -100 ms).
   if (code >= 200 && code < 300) {
     echecsPush = 0;
-    unsigned long voulu = (unsigned long)(suivant + 2) * 1000UL;  // on respecte next_push_in_s
+    unsigned long voulu = (unsigned long)suivant * 1000UL;
     ecartMinMs = (voulu > ECART_PUSH_MIN_MS) ? voulu : ECART_PUSH_MIN_MS;
+    if (++succesDeSuite >= 10) {
+      succesDeSuite = 0;
+      if (margePushMs >= MARGE_PUSH_MIN_MS + 100) margePushMs -= 100;
+    }
     etatEnvoi = 1;
     return PUSH_OK;
   }
+  succesDeSuite = 0;
   if (code == 401) {  // clé absente, fausse, révoquée ou expirée : inutile d'insister
     cleInvalide = true;
     etatEnvoi = 3;
     Serial.println("Clé refusée : envois suspendus (mesures gardées en mémoire). Corrige avec 'set cle ...'.");
     return PUSH_CLE_INVALIDE;
   }
-  if (code == 429) {  // envoi trop rapproché : on espace
-    ecartMinMs += 3000;
-    if (ecartMinMs > 60000UL) ecartMinMs = 60000UL;
-    echecsPush++; etatEnvoi = 2;
+  if (code == 429) {  // envoi trop rapproché : on agrandit la marge (ce n'est pas une panne : pas d'espacement progressif)
+    margePushMs += 500;
+    if (margePushMs > MARGE_PUSH_MAX_MS) margePushMs = MARGE_PUSH_MAX_MS;
+    if (suivant > 0) ecartMinMs = max(ECART_PUSH_MIN_MS, (unsigned long)suivant * 1000UL);
+    etatEnvoi = 2;
     return PUSH_REESSAYER;
   }
   if (code == 400 || code == 413) {  // cette mesure est refusée : la renvoyer ne servirait à rien
@@ -1315,7 +1406,7 @@ ResultatPush envoyerLigne(const String &ligne) {
   JsonDocument doc;
   if (deserializeJson(doc, ligne)) {
     LOG("Ligne illisible : abandonnée.\n");
-    return PUSH_REJETE;
+    return PUSH_INVALIDE;
   }
   long age = calculerAge(doc);
   if (age == -2) {  // l'heure NTP va arriver : on garde la ligne et on réessaiera, on ne la jette pas
@@ -1323,12 +1414,12 @@ ResultatPush envoyerLigne(const String &ligne) {
     if (tAttenteHeure == 0) tAttenteHeure = now;
     if (now - tAttenteHeure < ATTENTE_HEURE_MAX_MS) return PUSH_ATTENDRE;
     LOG("Heure NTP absente depuis trop longtemps : mesure abandonnée.\n");  // tAttenteHeure reste armé : les suivantes suivent sans attendre
-    return PUSH_REJETE;
+    return PUSH_INVALIDE;
   }
   tAttenteHeure = 0;
   if (age < 0) {
     LOG("Heure de la mesure inconnue (redémarrage sans heure NTP) : abandonnée.\n");
-    return PUSH_REJETE;
+    return PUSH_INVALIDE;
   }
   doc.remove("_u"); doc.remove("_e"); doc.remove("_b");
   doc["x_age_s"] = age;
@@ -1434,26 +1525,32 @@ void finaliserPeriode() {
   deposerMesure(ligne);
 }
 
-// Renvoie la plus ancienne mesure stockée
+// Renvoie la plus ancienne mesure stockée. Les lignes écartées SANS envoi (vides, illisibles, heure inconnue)
+// sont passées à la suite, sans attendre le créneau de 10 s : avant, chacune coûtait un créneau entier.
 void rejouerUneLigne() {
-  String ligne;
-  size_t suite = 0;
-  if (!lireProchaineLigne(ligne, suite)) {  // fichier incohérent : on repart propre
-    reinitialiserBacklog();
-    return;
+  for (uint8_t essais = 0; essais < 50 && nbLignesAttente > 0; essais++) {
+    String ligne;
+    size_t suite = 0;
+    if (!lireProchaineLigne(ligne, suite)) {  // fichier incohérent : on repart propre
+      reinitialiserBacklog();
+      return;
+    }
+    ligne.trim();
+    if (ligne.length() == 0) { validerLigne(suite); continue; }
+    LOG("Renvoi d'une mesure stockée (%u en attente)...\n", (unsigned)nbLignesAttente);
+    ResultatPush r = envoyerLigne(ligne);
+    if (r == PUSH_INVALIDE) { validerLigne(suite); esp_task_wdt_reset(); continue; }
+    if (r == PUSH_ATTENDRE) { tEssaiNtp = millis(); return; }   // on relira dans ATTENTE_NTP_REESSAI_MS
+    if (r == PUSH_OK || r == PUSH_REJETE) validerLigne(suite);
+    return;  // un POST a eu lieu : le créneau est pris
   }
-  ligne.trim();
-  if (ligne.length() == 0) { validerLigne(suite); return; }
-  LOG("Renvoi d'une mesure stockée (%u en attente)...\n", (unsigned)nbLignesAttente);
-  ResultatPush r = envoyerLigne(ligne);
-  tDernierPush = millis();  // aussi quand on attend l'heure : on ne relit pas le fichier à chaque tour
-  if (r == PUSH_OK || r == PUSH_REJETE) validerLigne(suite);
 }
 
-// Délai minimal entre deux envois : s'allonge si le serveur ou le réseau échoue
+// Délai minimal entre le début de deux envois : délai du serveur + marge,
+// multiplié (x2 à x6) après des pannes réseau / serveur consécutives.
 unsigned long ecartCourantMs() {
   unsigned long facteur = 1 + (echecsPush > 5 ? 5 : echecsPush);
-  return ecartMinMs * facteur;
+  return (ecartMinMs + margePushMs) * facteur;
 }
 
 // Exécutée UNIQUEMENT par la tâche d'envoi (tacheEnvoi). Elle seule touche au réseau et au fichier hors ligne.
@@ -1480,39 +1577,46 @@ void gererEnvois(unsigned long now) {
     }
     return;
   }
-  if (now - tDernierPush < ecartCourantMs()) return;  // le serveur refuse les envois trop rapprochés
+  if (dejaPoste && now - tDernierPush < ecartCourantMs()) return;  // le serveur refuse les envois trop rapprochés
 
   String ligne;
   if (sortirPendante(ligne)) {
     ResultatPush r = envoyerLigne(ligne);
-    tDernierPush = millis();
     if (r == PUSH_REESSAYER || r == PUSH_CLE_INVALIDE || r == PUSH_ATTENDRE) stockerRecord(ligne);
     return;
   }
-  if (nbLignesAttente > 0) rejouerUneLigne();
+  if (nbLignesAttente == 0) return;
+  if (tAttenteHeure != 0 && now - tEssaiNtp < ATTENTE_NTP_REESSAI_MS) return;  // l'heure NTP n'est pas encore là
+  rejouerUneLigne();
 }
 
-// Tâche d'envoi : un POST qui traîne (jusqu'à ~5 s) ne bloque plus l'écran ni les capteurs
+// Tâche d'envoi : un POST qui traîne (jusqu'à ~5 s) ne bloque plus l'écran ni les capteurs.
+// Réveil toutes les 50 ms : le créneau suivant est pris au plus près des 10 s.
 void tacheEnvoi(void* param) {
   esp_task_wdt_add(NULL);  // surveillée par le watchdog, comme loop()
   for (;;) {
     esp_task_wdt_reset();
     gererEnvois(millis());
-    vTaskDelay(pdMS_TO_TICKS(200));
+    vTaskDelay(pdMS_TO_TICKS(50));
   }
 }
 
 // =====================================================================
 // AFFICHAGE (écran 64 x 32)
 // =====================================================================
-// Une seule police : la standard 5x7 (6 px par caractère en taille 1, 12 px en taille 2).
-// Grille commune aux pages de mesure (y en pixels) :
-//   0..6     en-tête : titre (gauche) + unité ou état (droite), taille 1
-//   8        trait sur toute la largeur (x 0..63), couleur du niveau
-//   10..23   valeur en grand (taille 2) + visage 13x13 à droite
-//   25..27   jauge : un segment par niveau, le niveau actuel est allumé à fond
-//   28..30   pointeur sous la jauge : position exacte de la valeur dans son niveau
-//   31       libre (réservé aux témoins optionnels)
+// Trois polices :
+//   PETITE  Picopixel (5 px de haut)          : libellés, unités, qualificatifs     -> ecrireP / ecrirePDroite
+//   MOYENNE police standard 5x7 (taille 1)    : valeurs des particules, textes      -> ecrireTexte / ecrireNombre
+//   GRANDE  FreeSansBold 12 pt (chiffres 17 px) : valeur du CO2 ; 9 pt pour "AERER" -> ecrireGrand
+// Avec Picopixel et FreeSans (polices "GFX"), le curseur est la LIGNE DE BASE du texte : les fonctions
+// ci-dessous prennent toujours le HAUT du texte (ou la ligne de base pour ecrireGrand), et remettent
+// la police standard après usage.
+//
+// Grille commune (y en pixels) :
+//   0..5     ligne de titre en petite police : nom à gauche, unité / qualificatif / état à droite
+//   7..23    contenu principal (grand chiffre, lignes de particules, visage...)
+//   26..31   bas de page (barre, VU-mètre), sur x 0..LARGEUR_BAS-1
+//   x 57..63, y 25..31 : zone des témoins (Wi-Fi, secteur, heure, envoi), jamais recouverte
 
 // ---------- couleurs ----------
 // Convertit une couleur (rouge, vert, bleu de 0 à 255) en 16 bits (5-6-5), le format des pixels de l'écran.
@@ -1527,58 +1631,53 @@ uint16_t atten(uint16_t c, uint8_t k) {
   return (uint16_t)((r << 11) | (g << 5) | b);
 }
 
-// Couleurs des 5 niveaux, calculées une seule fois depuis PALETTE
-uint16_t colNiv[5];     // pleine
-uint16_t colFond[5];    // niveau non atteint (segment éteint de la jauge)
+// Couleurs des niveaux, calculées une seule fois depuis PALETTE
+uint16_t colNiv[NB_NIVEAUX];     // pleine
+uint16_t colFond[NB_NIVEAUX];    // niveau non atteint (barre éteinte du VU-mètre, fond du thermomètre)
 
 // Calcule une seule fois les couleurs pleines et atténuées de chaque niveau, à partir de PALETTE.
 void initialiserCouleurs() {
-  for (uint8_t i = 0; i < 5; i++) {
+  for (uint8_t i = 0; i < NB_NIVEAUX; i++) {
     colNiv[i]  = rgb565(PALETTE[i][0], PALETTE[i][1], PALETTE[i][2]);
     colFond[i] = atten(colNiv[i], 70);
   }
 }
 
 // Couleurs neutres (jamais utilisées pour un niveau de qualité). Pas de blanc : il rend mal sur un panneau LED.
-static const uint16_t COL_TITRE  = rgb565(0, 255, 230);    // cyan clair à pleine intensité : titres (les LED bleues sont faibles : on mise sur le vert)
-static const uint16_t COL_UNITE  = COL_TITRE;              // unités : même couleur, pour rester lisibles
-static const uint16_t COL_FILET  = rgb565(0, 110, 150);    // trait quand il n'y a pas de niveau
-static const uint16_t COL_PISTE  = rgb565(40, 45, 60);     // fond de la barre de préchauffage
-static const uint16_t COL_ERREUR = rgb565(230, 0, 0);
+static const uint16_t COL_TITRE   = rgb565(0, 255, 230);   // cyan vif : titres (les LED bleues sont faibles : on mise sur le vert)
+static const uint16_t COL_DISCRET = rgb565(0, 140, 130);   // cyan sombre : unités, textes secondaires
+static const uint16_t COL_PISTE   = rgb565(40, 45, 60);    // fond d'une barre de progression, visage en attente
+static const uint16_t COL_ERREUR  = rgb565(230, 0, 0);
 
 // ---------- niveaux ----------
-// Niveau d'une valeur : numéro du premier seuil qu'elle n'a pas encore atteint (0 = vert, 1 = jaune...).
-// Exemple : CO2 = 900 ppm avec les seuils 800 / 1000 / 1500 -> niveau 1 (jaune).
-uint8_t niveau(float v, const float* seuils, uint8_t n) {
-  for (uint8_t i = 0; i < n; i++) {
-    if (v < seuils[i]) return i;
+// Valeur telle qu'affichée : 1 décimale sous 10, entier au-dessus (les seuils ATMO sont des entiers).
+float arrondiAffiche(float v) {
+  return (v < 9.95f) ? roundf(v * 10.0f) / 10.0f : roundf(v);
+}
+
+// Niveau d'une valeur : numéro du premier seuil qu'elle n'a pas dépassé (0 = vert, 1 = jaune...).
+// Exemples : CO2 = 900 ppm (800 / 1000 / 1500, "<")  -> niveau 1 (jaune)
+//            PM2.5 = 10.0 (10 / 20 / 25..., "<=")   -> niveau 0 (bon) ; 10.1 -> niveau 1 (moyen)
+// Échelle "inclus" : on compare la valeur arrondie comme à l'écran (couleur et chiffre toujours d'accord).
+uint8_t niveau(float v, const Echelle &e) {
+  if (e.inclus) v = arrondiAffiche(v);
+  for (uint8_t i = 0; i < e.n; i++) {
+    if (e.inclus ? (v <= e.seuils[i]) : (v < e.seuils[i])) return i;
   }
-  return n;
+  return e.n;
 }
 
-// Niveau 0..n de la mesure, ou -1 tant que le capteur n'est pas prêt
 // Même chose pour une Mesure, mais -1 tant que le capteur n'est pas prêt.
-int niveauMesure(const Mesure &m, const float* seuils, uint8_t n) {
+int niveauMesure(const Mesure &m, const Echelle &e) {
   if (m.etat != CAPTEUR_OK) return -1;
-  return niveau(m.valeur, seuils, n);
-}
-
-// Où se situe la valeur à l'intérieur de son niveau (0.0 = début, 1.0 = fin)
-float fractionDansNiveau(float v, int niv, const float* seuils, uint8_t n) {
-  float bas  = (niv <= 0) ? 0.0f : seuils[niv - 1];
-  float haut = (niv < n) ? seuils[niv] : seuils[n - 1] * 1.5f;  // dernier niveau : borne arbitraire
-  if (haut <= bas) return 0.5f;
-  float f = (v - bas) / (haut - bas);
-  if (f < 0.0f) f = 0.0f;
-  if (f > 1.0f) f = 1.0f;
-  return f;
+  return niveau(m.valeur, e);
 }
 
 // Pire niveau parmi CO2, PM2.5 et PM10 (-1 si aucun capteur prêt) + nom du polluant responsable
 int niveauGlobal(const char** pire) {
-  int n1 = niveauMesure(mCO2, SEUILS_CO2, NB_SEUILS_CO2);
-  int n2 = niveauMesure(mPM25, SEUILS_PM25, NB_SEUILS_PM25);
-  int n3 = niveauMesure(mPM10, SEUILS_PM10, NB_SEUILS_PM10);
+  int n1 = niveauMesure(mCO2, ECH_CO2);
+  int n2 = niveauMesure(mPM25, ECH_PM25);
+  int n3 = niveauMesure(mPM10, ECH_PM10);
   int pireN = n1;
   const char* nom = "CO2";
   if (n2 > pireN) { pireN = n2; nom = "PM2.5"; }
@@ -1587,7 +1686,7 @@ int niveauGlobal(const char** pire) {
   return pireN;
 }
 
-// Vrai si le CO2 dépasse le seuil d'aération : déclenche la page « AERER LA PIECE ».
+// Vrai si le CO2 dépasse le seuil d'aération : déclenche la page « AERER ».
 bool alerteAerer() {
   return mCO2.etat == CAPTEUR_OK && mCO2.valeur >= SEUIL_AERER_PPM;
 }
@@ -1610,7 +1709,12 @@ bool yeuxFermes() {
 #endif
 }
 
-// ---------- texte (police standard 5x7) ----------
+// Flèche de tendance : monte = rouge, baisse = vert, stable = discret
+uint16_t couleurTendance(int dir) {
+  return (dir > 0) ? colNiv[3] : ((dir < 0) ? colNiv[0] : COL_DISCRET);
+}
+
+// ---------- texte : police standard 5x7 ----------
 // Largeur réelle d'un texte (sans l'espace final)
 int largeurTexte(const char* s, uint8_t taille) {
   return (int)strlen(s) * 6 * taille - taille;
@@ -1618,6 +1722,7 @@ int largeurTexte(const char* s, uint8_t taille) {
 
 // (x, y) = coin haut-gauche ; un caractère de taille 1 fait 5 px de large et 7 de haut
 void ecrireTexte(const char* s, int x, int y, uint8_t taille, uint16_t couleur) {
+  display.setFont(nullptr);
   display.setTextSize(taille);
   display.setTextColor(couleur);
   display.setCursor(x, y);
@@ -1628,143 +1733,96 @@ void ecrireCentre(const char* s, int cx, int y, uint8_t taille, uint16_t couleur
   ecrireTexte(s, cx - largeurTexte(s, taille) / 2, y, taille, couleur);
 }
 
-// xFin = dernière colonne occupée par le texte
-void ecrireDroite(const char* s, int xFin, int y, uint8_t taille, uint16_t couleur) {
-  ecrireTexte(s, xFin - largeurTexte(s, taille) + 1, y, taille, couleur);
+// Nombre en 5x7 avec un point décimal ÉTROIT (1 px au lieu d'un caractère entier : "4.2" et non "4 .2").
+int largeurNombre(const char* s) {
+  int w = 0;
+  for (const char* p = s; *p; p++) w += (*p == '.') ? 2 : 6;
+  return w - 1;
 }
 
-// Nombre à afficher (la décimale seulement sous 100) : 4 caractères au maximum
-void formaterValeur(char* buf, size_t n, float v, bool decimale) {
-  if (v > 9999.0f) v = 9999.0f;
-  int dix = (int)roundf(v * 10.0f);
-  if (dix < 0) dix = 0;
-  if (decimale && dix < 1000) snprintf(buf, n, "%d.%d", dix / 10, dix % 10);
-  else snprintf(buf, n, "%d", (int)roundf(v));
+// xFin = dernière colonne occupée ; y = haut des chiffres
+void ecrireNombre(const char* s, int xFin, int y, uint16_t c) {
+  int x = xFin - largeurNombre(s) + 1;
+  char ch[2] = {0, 0};
+  for (const char* p = s; *p; p++) {
+    if (*p == '.') { display.drawPixel(x, y + 6, c); x += 2; continue; }
+    ch[0] = *p;
+    ecrireTexte(ch, x, y, 1, c);
+    x += 6;
+  }
+}
+
+// Valeur de particules : 1 décimale sous 10, entier au-dessus, 999 au plus (3 caractères)
+void formaterPM(char* buf, size_t n, float v) {
+  v = constrain(arrondiAffiche(v), 0.0f, 999.0f);
+  if (v < 9.95f) snprintf(buf, n, "%d.%d", (int)v, (int)roundf(v * 10.0f) % 10);
+  else snprintf(buf, n, "%d", (int)v);
+}
+
+// ---------- texte : polices GFX (petite et grande) ----------
+// Encre d'un texte : décalage x1 du premier pixel allumé et largeur w (comme getTextBounds)
+void bornesTexte(const GFXfont* f, const char* s, int16_t &x1, uint16_t &w) {
+  int16_t y1; uint16_t h;
+  display.setFont(f);
+  display.setTextSize(1);
+  display.getTextBounds(s, 0, 0, &x1, &y1, &w, &h);
+  display.setFont(nullptr);
+}
+
+int largeurP(const char* s) {
+  int16_t x1; uint16_t w;
+  bornesTexte(&Picopixel, s, x1, w);
+  return w;
+}
+
+// Petite police, yHaut = haut des majuscules (5 px). Renvoie le x juste après le texte (pour enchaîner).
+int ecrireP(const char* s, int x, int yHaut, uint16_t c) {
+  display.setFont(&Picopixel);
+  display.setTextSize(1);
+  display.setTextColor(c);
+  display.setCursor(x, yHaut + 4);   // Picopixel : la ligne de base est la dernière rangée des majuscules
+  display.print(s);
+  int xFin = display.getCursorX();
+  display.setFont(nullptr);
+  return xFin;
+}
+
+// xFin = dernière colonne occupée par le texte. Renvoie le x de début.
+int ecrirePDroite(const char* s, int xFin, int yHaut, uint16_t c) {
+  int16_t x1; uint16_t w;
+  bornesTexte(&Picopixel, s, x1, w);
+  int x = xFin - (int)w + 1 - x1;
+  ecrireP(s, x, yHaut, c);
+  return x + x1;
+}
+
+// Grande police, centrée sur la colonne cx ; base = ligne de base (bas des chiffres)
+void ecrireGrand(const char* s, int cx, int base, uint16_t c, const GFXfont* f = &FreeSansBold12pt7b) {
+  int16_t x1; uint16_t w;
+  bornesTexte(f, s, x1, w);
+  display.setFont(f);
+  display.setTextSize(1);
+  display.setTextColor(c);
+  display.setCursor(cx - (int)w / 2 - x1, base);
+  display.print(s);
+  display.setFont(nullptr);
+}
+
+// Unité des particules en petite police : µg/m³ (masse par volume d'air). Picopixel n'a ni "µ" ni "³" :
+// µ = "u" + un jambage d'1 px, ³ = petit 3 de 3x3 en exposant. xFin = dernière colonne occupée.
+void ecrireUniteUgM3(int xFin, int yHaut, uint16_t c) {
+  int16_t x1; uint16_t w;
+  bornesTexte(&Picopixel, "ug/m", x1, w);
+  int x = xFin - ((int)w + 4) + 1;
+  ecrireP("ug/m", x, yHaut, c);
+  display.drawPixel(x, yHaut + 5, c);                      // jambage du µ
+  int xe = x + w + 1;                                      // ³ : 3 x 3 en haut
+  display.drawFastHLine(xe, yHaut, 3, c);
+  display.drawFastHLine(xe + 1, yHaut + 1, 2, c);
+  display.drawFastHLine(xe, yHaut + 2, 3, c);
 }
 
 // ---------- éléments graphiques ----------
-// Unité des particules fines : µg/m³ (masse par volume d'air ; le ppm ne s'applique qu'aux gaz comme le CO2).
-// La police 5x7 n'a ni "µ" ni "³" : on les dessine pixel par pixel, "g/m" vient de la police.
-// Largeur 27 px : de xFin - 26 à xFin ; y = haut du texte.
-static const char* UNITE_PM = "ug/m3";   // repère transmis à dessinerEntete()
-void ecrireUnitePM(int xFin, int y, uint16_t c) {
-  const int x = xFin - 26;
-  for (int r = 2; r <= 7; r++) display.drawPixel(x, y + r, c);       // µ : jambage gauche (descend sous la ligne)
-  for (int r = 2; r <= 6; r++) display.drawPixel(x + 4, y + r, c);   // µ : jambage droit
-  display.drawFastHLine(x + 1, y + 6, 3, c);                         // µ : fond arrondi
-  ecrireTexte("g/m", x + 6, y, 1, c);                                // x + 6 .. x + 22
-  display.drawFastHLine(x + 24, y, 3, c);                            // ³ : petit 3 en exposant (3 x 5 px)
-  display.drawPixel(x + 26, y + 1, c);
-  display.drawFastHLine(x + 25, y + 2, 2, c);
-  display.drawPixel(x + 26, y + 3, c);
-  display.drawFastHLine(x + 24, y + 4, 3, c);
-}
-
-// En-tête commun : titre cyan à gauche (x 1), texte à droite (jusqu'à x 62),
-// trait sur toute la largeur dessous (y 8), à la couleur du niveau.
-void dessinerEntete(const char* titre, const char* droite, uint16_t colDroite, int niv) {
-  ecrireTexte(titre, 1, 0, 1, COL_TITRE);
-  if (droite && strcmp(droite, UNITE_PM) == 0) ecrireUnitePM(62, 0, colDroite);
-  else if (droite) ecrireDroite(droite, 62, 0, 1, colDroite);
-  display.drawFastHLine(0, 8, 64, (niv >= 0) ? colNiv[niv] : COL_FILET);
-}
-
-// Visage 13 x 13 (x, y = coin haut-gauche)
-// niv 0 : grand sourire | 1 : neutre | 2 : moue | 3 : bouche ouverte | 4 : bouche ouverte + yeux en croix
-void dessinerVisage(int x, int y, int niv, uint16_t c, bool clin) {
-  int cx = x + 6, cy = y + 6;
-  display.fillCircle(cx, cy, 6, c);   // visage plein, traits en noir
-
-  // yeux
-  if (niv >= 4) {                      // yeux en croix
-    for (int k = -1; k <= 1; k += 2) {
-      int ex = cx + 3 * k, ey = cy - 2;
-      display.drawPixel(ex - 1, ey - 1, 0); display.drawPixel(ex + 1, ey - 1, 0);
-      display.drawPixel(ex, ey, 0);
-      display.drawPixel(ex - 1, ey + 1, 0); display.drawPixel(ex + 1, ey + 1, 0);
-    }
-  } else if (clin) {                   // yeux fermés (clignement)
-    display.drawFastHLine(cx - 3, cy - 2, 2, 0);
-    display.drawFastHLine(cx + 2, cy - 2, 2, 0);
-  } else {                             // yeux ouverts
-    display.fillRect(cx - 3, cy - 3, 2, 2, 0);
-    display.fillRect(cx + 2, cy - 3, 2, 2, 0);
-  }
-
-  // bouche
-  switch (niv) {
-    case 0:                            // grand sourire
-      display.drawPixel(cx - 3, cy + 1, 0); display.drawPixel(cx + 3, cy + 1, 0);
-      display.drawPixel(cx - 2, cy + 2, 0); display.drawPixel(cx + 2, cy + 2, 0);
-      display.drawFastHLine(cx - 1, cy + 3, 3, 0);
-      break;
-    case 1:                            // neutre
-      display.drawFastHLine(cx - 2, cy + 3, 5, 0);
-      break;
-    case 2:                            // moue
-      display.drawPixel(cx - 2, cy + 4, 0); display.drawPixel(cx + 2, cy + 4, 0);
-      display.drawFastHLine(cx - 1, cy + 3, 3, 0);
-      break;
-    case 3:                            // bouche ouverte
-      display.fillRect(cx - 1, cy + 2, 3, 3, 0);
-      break;
-    default:                           // grande bouche
-      display.fillRect(cx - 2, cy + 2, 5, 3, 0);
-      break;
-  }
-}
-
-// Spinner de préchauffage : un point lumineux avec une traîne qui tourne (centre cx, cy ; rayon 5)
-static const int8_t SPIN[12][2] = {
-  {0, -5}, {3, -4}, {4, -3}, {5, 0}, {4, 3}, {3, 4},
-  {0, 5}, {-3, 4}, {-4, 3}, {-5, 0}, {-4, -3}, {-3, -4}
-};
-void dessinerSpinner(int cx, int cy, uint16_t c) {
-  static const uint8_t lum[5] = {255, 170, 110, 60, 30};
-  int tete = 0;
-#if ANIMATIONS
-  tete = (int)((millis() / 80UL) % 12UL);
-#endif
-  for (int i = 0; i < 5; i++) {
-    int idx = (tete - i + 12) % 12;
-    display.drawPixel(cx + SPIN[idx][0], cy + SPIN[idx][1], (i == 0) ? c : atten(c, lum[i]));
-  }
-}
-
-// Icône d'erreur : cercle rouge barré d'une croix (13 x 13)
-void dessinerIconeErreur(int x, int y) {
-  int cx = x + 6, cy = y + 6;
-  display.drawCircle(cx, cy, 6, COL_ERREUR);
-  display.drawLine(cx - 3, cy - 3, cx + 3, cy + 3, COL_ERREUR);
-  display.drawLine(cx + 3, cy - 3, cx - 3, cy + 3, COL_ERREUR);
-}
-
-// Jauge : un segment par niveau (y 25..27), 1 px d'écart, de x = 0 à x = 63.
-// Le niveau actuel est allumé à fond, les autres sont atténués (on lit tout de suite où l'on se situe :
-// vert, jaune, orange, rouge...). Dessous, un pointeur triangulaire (y 28..30), à la couleur du niveau,
-// marque la position exacte de la valeur dans son niveau (frac : 0.0 = début, 1.0 = fin).
-void dessinerJauge(int niv, uint8_t nSeuils, float frac) {
-  const int N = nSeuils + 1;
-  int tipX = 0;
-  for (int i = 0; i < N; i++) {
-    int xs = (i * 65) / N;
-    int xe = ((i + 1) * 65) / N - 2;     // 1 px de séparation ; le dernier segment finit à x = 63
-    int w = xe - xs + 1;
-    if (i == niv) {
-      display.fillRect(xs, 25, w, 3, colNiv[i]);
-      tipX = xs + (int)(frac * (w - 1) + 0.5f);
-    } else {
-      display.fillRect(xs, 25, w, 3, colFond[i]);
-    }
-  }
-  if (niv < 0 || niv >= N) return;
-  if (tipX < 2) tipX = 2;                // le pointeur (5 px de large) reste dans l'écran
-  if (tipX > 61) tipX = 61;
-  display.drawPixel(tipX, 28, colNiv[niv]);
-  display.drawFastHLine(tipX - 1, 29, 3, colNiv[niv]);
-  display.drawFastHLine(tipX - 2, 30, 5, colNiv[niv]);
-}
-
 // Flèche de tendance 5x5 (cx = centre, y = haut) : dir > 0 monte | dir < 0 descend | 0 stable
 void dessinerFleche(int cx, int y, int dir, uint16_t c) {
   if (dir > 0) {
@@ -1781,182 +1839,301 @@ void dessinerFleche(int cx, int y, int dir, uint16_t c) {
   }
 }
 
-// ---------- page d'une mesure ----------
-void dessinerPage(const char* titre, const char* unite, const Mesure &m, const float* seuils, uint8_t nSeuils, bool decimale) {
-  // Capteur OK : valeur en grand, colorée selon son niveau, avec le visage et la jauge.
-  if (m.etat == CAPTEUR_OK) {
-    float v = valAff(m);
-    int niv = niveau(v, seuils, nSeuils);
-    uint16_t c = colNiv[niv];
+// VU-mètre : 6 barres de 2 px, de hauteurs croissantes (2 à 7 px), une par niveau ATMO.
+// Les barres jusqu'au niveau atteint sont allumées, chacune à SA couleur (vert, jaune, orange...) ;
+// les suivantes restent sombres. niv = -1 : tout éteint. x = gauche, yBas = bas des barres. Largeur 17 px.
+void dessinerVU(int x, int yBas, int niv) {
+  for (int i = 0; i < NB_NIVEAUX; i++) {
+    int h = 2 + i;
+    display.fillRect(x + 3 * i, yBas - h + 1, 2, h, (i <= niv) ? colNiv[i] : colFond[i]);
+  }
+}
 
-    dessinerEntete(titre, unite, COL_UNITE, niv);
-    char buf[12];
-    formaterValeur(buf, sizeof(buf), v, decimale);
-    ecrireCentre(buf, 24, 10, 2, c);                      // valeur centrée dans la zone de gauche (x 0..47)
-    dessinerVisage(50, 10, niv, c, yeuxFermes());         // visage à droite (x 50..62)
-    dessinerJauge(niv, nSeuils, fractionDansNiveau(v, niv, seuils, nSeuils));
-
-  } else if (m.etat == CAPTEUR_CHAUFFE) {
-    // Préchauffage : barre de progression et compte à rebours (CO2), ou barre « scanner » qui va et vient, plus un spinner.
-    unsigned long t = millis();
-    dessinerEntete(titre, "CHAUF", COL_TITRE, -1);
-    display.fillRect(0, 25, 64, 3, COL_PISTE);
-    if (&m == &mCO2 && t < CHAUFFE_MHZ_MS) {              // compte à rebours + barre de progression
-      char att[8];
-      snprintf(att, sizeof(att), "%lu", (CHAUFFE_MHZ_MS - t + 999UL) / 1000UL);
-      ecrireCentre(att, 24, 10, 2, COL_TITRE);
-      int w = (int)(64UL * t / CHAUFFE_MHZ_MS);
-      if (w > 0) display.fillRect(0, 25, w, 3, COL_TITRE);
-    } else {                                              // durée inconnue : barre "scanner" qui va et vient
-      ecrireCentre("--", 24, 10, 2, COL_UNITE);
-      int p = 24;
-#if ANIMATIONS
-      p = (int)((millis() / 25UL) % 96UL);
-      if (p > 48) p = 96 - p;
-#endif
-      display.fillRect(p, 25, 16, 3, atten(COL_TITRE, 110));
-      display.fillRect(p + 4, 25, 8, 3, COL_TITRE);
+// Visage rond de rayon 8 (17 x 17), centré en (cx, cy). Traits en noir, un par niveau :
+//   0 grand sourire | 1 sourire | 2 bouche droite | 3 bouche triste | 4 bouche ouverte + sourcils |
+//   5 bouche grande ouverte + yeux en croix | -1 (capteurs pas prêts) : visage gris, bouche droite
+void dessinerVisage(int cx, int cy, int niv, uint16_t c, bool clin) {
+  display.fillCircle(cx, cy, 8, c);
+  // yeux
+  if (niv >= 5) {                                          // yeux en croix (3 x 3)
+    for (int k = -1; k <= 1; k += 2) {
+      int ex = cx + 4 * k, ey = cy - 3;
+      display.drawPixel(ex - 1, ey - 1, 0); display.drawPixel(ex + 1, ey - 1, 0);
+      display.drawPixel(ex, ey, 0);
+      display.drawPixel(ex - 1, ey + 1, 0); display.drawPixel(ex + 1, ey + 1, 0);
     }
-    dessinerSpinner(56, 16, COL_TITRE);
-
+  } else if (clin) {                                       // clignement
+    display.drawFastHLine(cx - 4, cy - 2, 2, 0);
+    display.drawFastHLine(cx + 3, cy - 2, 2, 0);
   } else {
-    // Capteur en panne : en-tête et message d'erreur en rouge.
-    dessinerEntete(titre, "PANNE", COL_ERREUR, -1);
-    display.drawFastHLine(0, 8, 64, COL_ERREUR);
-    ecrireCentre("ERR", 24, 10, 2, COL_ERREUR);
-    dessinerIconeErreur(50, 10);
-    for (int x = 0; x < 64; x += 4) display.drawFastHLine(x, 26, 2, atten(COL_ERREUR, 140));
+    display.fillRect(cx - 4, cy - 3, 2, 2, 0);
+    display.fillRect(cx + 3, cy - 3, 2, 2, 0);
+  }
+  // bouche
+  switch (niv) {
+    case 0:                                                // grand sourire
+      display.drawPixel(cx - 4, cy + 1, 0); display.drawPixel(cx + 4, cy + 1, 0);
+      display.drawPixel(cx - 3, cy + 2, 0); display.drawPixel(cx + 3, cy + 2, 0);
+      display.drawFastHLine(cx - 2, cy + 3, 5, 0);
+      break;
+    case 1:                                                // sourire
+      display.drawPixel(cx - 3, cy + 2, 0); display.drawPixel(cx + 3, cy + 2, 0);
+      display.drawFastHLine(cx - 2, cy + 3, 5, 0);
+      break;
+    case 3:                                                // triste
+      display.drawFastHLine(cx - 2, cy + 2, 5, 0);
+      display.drawPixel(cx - 3, cy + 3, 0); display.drawPixel(cx + 3, cy + 3, 0);
+      break;
+    case 4:                                                // bouche ouverte + sourcils froncés
+      display.fillRect(cx - 2, cy + 1, 5, 3, 0);
+      display.drawFastHLine(cx - 5, cy - 5, 2, 0); display.drawFastHLine(cx + 4, cy - 5, 2, 0);
+      break;
+    case 5:                                                // grande bouche ouverte
+      display.fillRect(cx - 2, cy + 1, 5, 4, 0);
+      break;
+    default:                                               // 2 et -1 : bouche droite
+      display.drawFastHLine(cx - 3, cy + 3, 7, 0);
+      break;
   }
 }
 
-// ---------- page AERER ----------
-// Largeur d'un cycle du texte défilant : le texte + un espace de 24 px avant la répétition
-int largeurBandeau() {
-  return (int)strlen(BANDEAU_AERER) * 12 + 24;
+// ---------- page CO2 ----------
+// Ligne de titre : CO2 ppm | flèche de tendance | qualificatif (couleur du niveau)
+// Centre : la valeur en grand (FreeSansBold 12 pt), couleur du niveau
+// Bas : thermomètre PROPORTIONNEL de 400 à 2000 ppm (x 0..LARGEUR_BAS-1) : chaque zone (vert < 800,
+//       jaune < 1000, orange < 1500, rouge) est allumée jusqu'à la valeur, sombre au-delà ; un curseur marque la valeur.
+static const float THERMO_MIN_PPM = 400, THERMO_MAX_PPM = 2000;
+
+int xThermometre(float ppm) {
+  int x = (int)lroundf((ppm - THERMO_MIN_PPM) * (LARGEUR_BAS - 1) / (THERMO_MAX_PPM - THERMO_MIN_PPM));
+  return constrain(x, 0, LARGEUR_BAS - 1);
 }
 
-// Ruban de signalisation en diagonale, animé. sens = +1 ou -1 (les deux rubans vont en sens inverse).
-void dessinerRuban(int y, int h, int sens, uint16_t c) {
-  int ph = (int)(phaseHazard / 2);
-  for (int yy = 0; yy < h; yy++) {
-    for (int x = 0; x < 64; x++) {
-      int v = x + sens * yy - sens * ph;
-      if ((v & 7) < 4) display.drawPixel(x, y + yy, c);
+void dessinerThermometre(float v, int niv) {
+  const float bornes[5] = {THERMO_MIN_PPM, SEUILS_CO2[0], SEUILS_CO2[1], SEUILS_CO2[2], THERMO_MAX_PPM};
+  int xv = xThermometre(v);
+  for (int i = 0; i < 4; i++) {
+    int x0 = xThermometre(bornes[i]);
+    int x1 = xThermometre(bornes[i + 1]) - ((i < 3) ? 1 : 0);   // 1 px noir entre deux zones
+    for (int x = x0; x <= x1; x++) display.drawFastVLine(x, 28, 2, (x <= xv) ? colNiv[i] : colFond[i]);
+  }
+  display.drawFastVLine(xv, 26, 6, colNiv[niv]);                  // curseur
+}
+
+void dessinerPageCO2() {
+  const Mesure &m = mCO2;
+  ecrireP("CO2", 0, 0, COL_TITRE);
+
+  if (m.etat == CAPTEUR_CHAUFFE) {                     // préchauffage : compte à rebours + barre de progression
+    unsigned long t = millis();
+    unsigned long reste = (t < CHAUFFE_MHZ_MS) ? (CHAUFFE_MHZ_MS - t + 999UL) / 1000UL : 0;
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%lu", reste);
+    ecrirePDroite("PRECHAUFFAGE", 63, 0, COL_TITRE);
+    ecrireGrand(buf, 32, 23, COL_TITRE);
+    display.fillRect(0, 28, LARGEUR_BAS, 2, COL_PISTE);
+    int w = (t < CHAUFFE_MHZ_MS) ? (int)((unsigned long)LARGEUR_BAS * t / CHAUFFE_MHZ_MS) : LARGEUR_BAS;
+    display.fillRect(0, 28, w, 2, COL_TITRE);
+    return;
+  }
+  if (m.etat == CAPTEUR_ERREUR) {                      // panne
+    ecrirePDroite("PANNE", 63, 0, COL_ERREUR);
+    ecrireGrand("ERR", 32, 23, COL_ERREUR);
+    for (int x = 0; x < LARGEUR_BAS; x += 4) display.drawFastHLine(x, 28, 2, atten(COL_ERREUR, 140));
+    return;
+  }
+
+  float v = valAff(m);
+  int niv = niveau(v, ECH_CO2);
+  uint16_t c = colNiv[niv];
+  ecrireP("ppm", 13, 0, COL_DISCRET);
+  ecrirePDroite(LABELS_NIVEAU[niv], 63, 0, c);
+  int dir;
+  if (tendanceCO2(dir)) dessinerFleche(31, 0, dir, couleurTendance(dir));
+  char buf[8];
+  snprintf(buf, sizeof(buf), "%d", (int)lroundf(constrain(v, 0.0f, 9999.0f)));
+  ecrireGrand(buf, 32, 23, c);
+  dessinerThermometre(v, niv);
+}
+
+// ---------- page PARTICULES ----------
+// Les trois tailles de particules sur une seule page, une ligne chacune (y 8, 16, 24) :
+//   nom (petite police) | valeur en 5x7, couleur du niveau ATMO, alignée à droite (x 35) | VU-mètre (x 39..55)
+// PM1 suit l'échelle de PM2.5 (pas de seuils réglementaires).
+void dessinerPagePM() {
+  // titre long + unité quand tout va bien ; sinon titre court + état (sinon ils se chevauchent)
+  if (mPM25.etat == CAPTEUR_OK) {
+    ecrireP("PARTICULES", 0, 0, COL_TITRE);
+    ecrireUniteUgM3(63, 0, COL_DISCRET);
+  } else {
+    ecrireP("PM", 0, 0, COL_TITRE);
+    if (mPM25.etat == CAPTEUR_CHAUFFE) ecrirePDroite("DEMARRAGE", 63, 0, COL_TITRE);
+    else                               ecrirePDroite("PANNE", 63, 0, COL_ERREUR);
+  }
+
+  static const char* NOMS[3] = {"PM1", "PM2.5", "PM10"};
+  const Mesure* mesures[3] = {&mPM1, &mPM25, &mPM10};
+  const Echelle* echelles[3] = {&ECH_PM25, &ECH_PM25, &ECH_PM10};
+  for (int r = 0; r < 3; r++) {
+    int y = 8 + 8 * r;
+    ecrireP(NOMS[r], 0, y + 1, COL_TITRE);
+    if (mesures[r]->etat == CAPTEUR_OK) {
+      float v = valAff(*mesures[r]);
+      int niv = niveau(v, *echelles[r]);
+      char buf[8];
+      formaterPM(buf, sizeof(buf), v);
+      ecrireNombre(buf, 35, y, colNiv[niv]);
+      dessinerVU(39, y + 6, niv);
+    } else {
+      ecrireNombre("--", 35, y, COL_DISCRET);
+      dessinerVU(39, y + 6, -1);
     }
   }
 }
 
+// ---------- page AERER (seulement quand le CO2 dépasse SEUIL_AERER_PPM) ----------
+// Ligne de titre : CO2 <valeur> ppm + tendance | "AERER" en grand qui pulse doucement | consigne en bas.
 void dessinerPageAerer() {
-  int niv = niveauMesure(mCO2, SEUILS_CO2, NB_SEUILS_CO2);
+  int niv = niveauMesure(mCO2, ECH_CO2);
   if (niv < 0) niv = 3;
   uint16_t c = colNiv[niv];
-  uint16_t cr = atten(c, 150);
-
-  dessinerRuban(0, 3, 1, cr);                                          // ruban y 0..2
-  ecrireTexte(BANDEAU_AERER, xBandeau, 4, 2, c);                       // texte y 4..17
-  ecrireTexte(BANDEAU_AERER, xBandeau + largeurBandeau(), 4, 2, c);    // copie suivante : boucle sans saut
-  dessinerRuban(19, 3, -1, cr);                                        // ruban y 19..21
-
-  // ligne d'information (y 24..30) : CO2 <valeur> + flèche de tendance
   char buf[8];
-  snprintf(buf, sizeof(buf), "%d", (int)roundf(mCO2.valeur));
-  ecrireTexte("CO2", 1, 24, 1, COL_TITRE);                             // x 1..17
-  ecrireTexte(buf, 22, 24, 1, c);                                      // 4 chiffres max : x 22..44
+  snprintf(buf, sizeof(buf), "%d", (int)lroundf(mCO2.valeur));
+  ecrireP("CO2", 0, 0, COL_TITRE);
+  int x = ecrireP(buf, 14, 0, c);
+  ecrireP("ppm", x + 2, 0, COL_DISCRET);
   int dir;
-  if (tendanceCO2(dir)) {
-    uint16_t cf = (dir > 0) ? colNiv[3] : ((dir < 0) ? colNiv[0] : COL_UNITE);  // monte = rouge, baisse = vert
-    dessinerFleche(59, 25, dir, cf);                                   // x 57..61, y 25..29
-  }
+  if (tendanceCO2(dir)) dessinerFleche(61, 0, dir, couleurTendance(dir));
+
+  bool fort = ((millis() / 600UL) % 2UL) == 0;        // pulsation : vif / atténué toutes les 0,6 s
+  ecrireGrand("AERER", 32, 21, fort ? c : atten(c, 110), &FreeSansBold9pt7b);
+  const char* consigne = "OUVRIR FENETRE";
+  ecrireP(consigne, (LARGEUR_BAS - largeurP(consigne)) / 2, 26, COL_TITRE);
 }
 
-// ---------- page globale ----------
-// En-tête : AIR + polluant responsable. Dessous : visage + niveau en toutes lettres. Puis la jauge.
+// ---------- page QUALITÉ DE L'AIR (synthèse) ----------
+// Visage (couleur du pire niveau) | qualificatif ATMO en 5x7 (1 ou 2 lignes) | VU-mètre du niveau.
+// En haut à droite : le polluant responsable quand l'air n'est pas "bon".
 void dessinerPageGlobal() {
+  ecrireP("QUALITE AIR", 0, 0, COL_TITRE);
   const char* cause = "";
   int niv = niveauGlobal(&cause);
-  if (niv < 0) {                                  // capteurs pas encore prêts
-    dessinerEntete("AIR", NULL, 0, -1);
-    dessinerSpinner(8, 16, COL_TITRE);
-    ecrireCentre("ATTENTE", 38, 13, 1, COL_TITRE);
+  if (niv < 0) {                                         // capteurs pas encore prêts
+    dessinerVisage(9, 18, -1, COL_PISTE, false);
+    ecrireTexte("ATTENTE", 21, 12, 1, COL_TITRE);
+    dessinerVU(21, 31, -1);
     return;
   }
   uint16_t c = colNiv[niv];
-  dessinerEntete("AIR", (niv > 0) ? cause : NULL, COL_TITRE, niv);
-  dessinerVisage(1, 10, niv, c, yeuxFermes());                         // x 1..13, y 10..22
-  ecrireCentre(LABELS_NIVEAU[niv], 39, 13, 1, c);                      // 8 caractères max : x 16..62
-  dessinerJauge(niv, 4, 0.5f);                                         // 5 niveaux, segment actuel allumé
+  if (niv > 0) ecrirePDroite(cause, 63, 0, c);
+  dessinerVisage(9, 18, niv, c, yeuxFermes());
+  // qualificatif : 7 caractères par ligne (x 21..61) ; plus long : coupé en 2 lignes à l'espace
+  const char* label = LABELS_NIVEAU[niv];
+  const char* espace = strchr(label, ' ');
+  if (!espace) {
+    ecrireTexte(label, 21, 12, 1, c);
+  } else {
+    char l1[12];
+    size_t n = min((size_t)(espace - label), sizeof(l1) - 1);
+    memcpy(l1, label, n);
+    l1[n] = '\0';
+    ecrireTexte(l1, 21, 8, 1, c);
+    ecrireTexte(espace + 1, 21, 16, 1, c);
+  }
+  dessinerVU(21, 31, niv);
 }
 
 // ---------- page courbe CO2 ----------
-// Histogramme "thermomètre", pensé pour un panneau LED : formes pleines, couleurs vives, rien de fin
-// (les dégradés, les pointillés et les couleurs atténuées sortent ternes ou sales sur un panneau LED).
-//  - 15 barres de 3 px (1 px d'écart) : chacune = moyenne de 2 minutes, la plus récente à droite (30 min en tout)
-//  - échelle FIXE 400..1600 ppm : une hauteur veut toujours dire la même chose, d'une page à l'autre
-//  - à gauche, une règle de 2 px aux couleurs des niveaux : on lit d'un coup d'oeil où se situe chaque barre
-//  - le sommet de la barre la plus récente clignote en cyan (la mesure "en direct")
-//  - flèche de tendance dans l'en-tête
-//   0..6 en-tête | 8 trait | 10..31 barres (10..30 si AFFICHER_TEMOINS)
-static const int COURBE_MIN_PPM = 400;    // bas de l'échelle
-static const int COURBE_MAX_PPM = 1600;   // haut de l'échelle (au-delà : barre pleine hauteur)
-static const int COURBE_NB_BARRES = HIST_N / 2;
+// Courbe "aire" de la dernière heure, pensée pour un panneau LED :
+//  - 1 colonne de 1 px = 1 minute (moyenne) : 53 minutes terminées + la minute en cours, à droite (x 55)
+//  - chaque colonne prend la couleur du niveau de sa valeur : corps atténué, sommet à pleine intensité
+//    -> le sommet dessine la courbe (trait vif), l'aire colorée montre d'un coup d'oeil les périodes à risque
+//  - échelle automatique : de 400 ppm (air extérieur) à 1200 ppm au moins, agrandie par paliers de 200 ppm si
+//    le pic de l'heure dépasse. La règle à gauche (x 0) donne la couleur des niveaux à chaque hauteur.
+//  - pointillés à 1000 ppm (seuil AERER), visibles seulement là où la courbe est en dessous
+//  - minute sans mesure (capteur indisponible) : colonne vide, l'axe du temps reste juste
+//  - ligne de titre : CO2, durée couverte | flèche de tendance + valeur actuelle ;
+//    le sommet de la minute en cours clignote en cyan (ANIMATIONS)
+//   0..5 ligne de titre | 7..31 courbe, x 0..LARGEUR_BAS-1 (la zone des témoins est à droite)
+static const int COURBE_MIN_PPM      = 400;    // bas de l'échelle
+static const int COURBE_HAUT_MIN_PPM = 1200;   // haut de l'échelle, au minimum
+static const int COURBE_PALIER_PPM   = 200;    // l'échelle s'agrandit par paliers
+static const int COURBE_HAUT_MAX_PPM = 5000;
+static const int COURBE_X0           = 2;                       // x 0 : règle | x 1 : vide | x 2.. : colonnes
+static const int COURBE_NB_COL       = LARGEUR_BAS - COURBE_X0; // 54 colonnes (62 sans témoins)
+static_assert(COURBE_NB_COL == HIST_N + 1, "la courbe affiche HIST_N minutes + la minute en cours");
+
+// Valeur de la colonne col (0 = la plus à gauche, la dernière = minute en cours) ; 0 = pas de mesure
+uint16_t valeurColonne(int col) {
+  int depuisDroite = COURBE_NB_COL - 1 - col;
+  if (depuisDroite == 0) return minuteEnCours();
+  int i = (int)histN - depuisDroite;      // index dans l'historique (0 = le plus ancien)
+  return (i >= 0) ? valeurHistorique(i) : 0;
+}
+
+// Hauteur (1..hMax pixels) d'une valeur sur l'échelle COURBE_MIN_PPM..haut
+int hauteurCourbe(float v, int haut, int hMax) {
+  int h = 1 + (int)((v - COURBE_MIN_PPM) * (hMax - 1) / (float)(haut - COURBE_MIN_PPM) + 0.5f);
+  return constrain(h, 1, hMax);
+}
 
 void dessinerPageCourbe() {
-  if (histN == 0) {
-    dessinerEntete("CO2", NULL, 0, -1);
-    ecrireCentre("ATTENTE", 32, 15, 1, COL_UNITE);
+  // --- valeur actuelle : la mesure en direct, sinon la dernière minute connue ---
+  float actuel = (mCO2.etat == CAPTEUR_OK) ? mCO2.valeur : 0.0f;
+  for (int i = (int)histN - 1; i >= 0 && actuel <= 0; i--) actuel = valeurHistorique(i);
+  ecrireP("CO2", 0, 0, COL_TITRE);
+  if (actuel <= 0) {
+    ecrireCentre("ATTENTE", 28, 15, 1, COL_TITRE);
     return;
   }
 
-  // --- en-tête : titre, flèche de tendance, valeur actuelle ---
-  float actuel = (mCO2.etat == CAPTEUR_OK) ? mCO2.valeur : (float)valeurHistorique(histN - 1);
-  int nvAct = niveau(actuel, SEUILS_CO2, NB_SEUILS_CO2);
-  dessinerEntete("CO2", NULL, 0, nvAct);
-  char buf[8];
+  // --- ligne de titre : durée couverte, flèche de tendance, valeur actuelle ---
+  char buf[12];
+  snprintf(buf, sizeof(buf), "%d min", COURBE_NB_COL);
+  ecrireP(buf, 14, 0, COL_DISCRET);
+  int nvAct = niveau(actuel, ECH_CO2);
   snprintf(buf, sizeof(buf), "%d", (int)roundf(actuel));
-  ecrireDroite(buf, 62, 0, 1, colNiv[nvAct]);
+  int xVal = ecrirePDroite(buf, 63, 0, colNiv[nvAct]);
   int dir;
-  if (tendanceCO2(dir)) {
-    uint16_t cf = (dir > 0) ? colNiv[3] : ((dir < 0) ? colNiv[0] : COL_UNITE);  // monte = rouge, baisse = vert
-    dessinerFleche(59 - largeurTexte(buf, 1), 1, dir, cf);                        // juste à gauche de la valeur
-  }
+  if (tendanceCO2(dir)) dessinerFleche(xVal - 4, 0, dir, couleurTendance(dir));   // juste à gauche de la valeur
 
-#if AFFICHER_TEMOINS
-  const int yBase = 30;                               // la ligne 31 est réservée aux témoins
-#else
   const int yBase = 31;
-#endif
-  const int hMax = yBase - 9;                         // zone de dessin : y 10..yBase
+  const int hMax = yBase - 6;                         // zone de dessin : y 7..yBase (25 px)
 
-  // --- règle des niveaux (x 0..1) : même échelle que les barres, couleurs des niveaux ---
-  for (int y = 10; y <= yBase; y++) {
-    float v = COURBE_MIN_PPM + (yBase - y) * (float)(COURBE_MAX_PPM - COURBE_MIN_PPM) / (hMax - 1);
-    display.drawFastHLine(0, y, 2, colNiv[niveau(v, SEUILS_CO2, NB_SEUILS_CO2)]);
+  // --- valeurs des colonnes et échelle (agrandie si le pic de l'heure dépasse) ---
+  uint16_t vals[COURBE_NB_COL];
+  uint16_t maxi = 0;
+  for (int c = 0; c < COURBE_NB_COL; c++) {
+    vals[c] = valeurColonne(c);
+    if (vals[c] > maxi) maxi = vals[c];
+  }
+  int haut = COURBE_HAUT_MIN_PPM;
+  while (haut < maxi && haut < COURBE_HAUT_MAX_PPM) haut += COURBE_PALIER_PPM;
+
+  // --- règle des niveaux (x 0) : la rangée de hauteur k a la couleur du niveau d'une colonne de hauteur k ---
+  for (int y = yBase - hMax + 1; y <= yBase; y++) {
+    float v = COURBE_MIN_PPM + (yBase - y) * (float)(haut - COURBE_MIN_PPM) / (hMax - 1);
+    display.drawPixel(0, y, colNiv[niveau(v, ECH_CO2)]);
   }
 
-  // --- barres : j = 0 pour la plus récente (x 61..63), puis de 4 px en 4 px vers la gauche ---
-  const int nbBarres = (histN + 1) / 2;               // la courbe grandit depuis la droite
-  for (int j = 0; j < nbBarres && j < COURBE_NB_BARRES; j++) {
-    int fin = histN - 1 - 2 * j;                      // dernière minute de cette barre
-    int debut = (fin >= 1) ? fin - 1 : fin;           // 2 minutes (1 seule pour la plus ancienne si histN est impair)
-    float somme = 0;
-    for (int i = debut; i <= fin; i++) somme += valeurHistorique(i);
-    float v = somme / (fin - debut + 1);
+  // --- pointillés à 1000 ppm (dessinés d'abord : les colonnes passent par-dessus) ---
+  const int yAerer = yBase - hauteurCourbe(SEUIL_AERER_PPM, haut, hMax) + 1;
+  const uint16_t cAerer = atten(colNiv[2], 110);
+  for (int x = COURBE_X0 + 1; x < COURBE_X0 + COURBE_NB_COL; x += 3) display.drawPixel(x, yAerer, cAerer);
 
-    int h = 1 + (int)((v - COURBE_MIN_PPM) * (hMax - 1) / (float)(COURBE_MAX_PPM - COURBE_MIN_PPM) + 0.5f);
-    if (h < 1) h = 1;
-    if (h > hMax) h = hMax;
-    int xr = 63 - 4 * j;                              // dernière colonne de la barre
+  // --- colonnes : corps atténué, sommet vif ---
+  for (int c = 0; c < COURBE_NB_COL; c++) {
+    if (vals[c] == 0) continue;                       // minute sans mesure
+    int h = hauteurCourbe(vals[c], haut, hMax);
+    int x = COURBE_X0 + c;
     int yT = yBase - h + 1;
-    uint16_t c = colNiv[niveau(v, SEUILS_CO2, NB_SEUILS_CO2)];
-    display.fillRect(xr - 2, yT, 3, h, c);
-
-    if (j == 0) {                                     // barre en direct : le sommet clignote en cyan
-      uint16_t cTop = c;
+    uint16_t col = colNiv[niveau(vals[c], ECH_CO2)];
+    if (h > 1) display.drawFastVLine(x, yT + 1, h - 1, atten(col, 100));
+    uint16_t cTop = col;
 #if ANIMATIONS
-      if (phasePoint) cTop = COL_TITRE;
+    if (c == COURBE_NB_COL - 1 && phasePoint) cTop = COL_TITRE;  // minute en cours : sommet qui clignote
 #endif
-      display.drawFastHLine(xr - 2, yT, 3, cTop);
-    }
+    display.drawPixel(x, yT, cTop);
   }
 }
 
@@ -2015,8 +2192,15 @@ void ecrireLigneDefilante(const char* s, int y, uint16_t c) {
   ecrireTexte(s, 1 - dx + cycle, y, 1, c);
 }
 
+// Ligne de titre des écrans Wi-Fi (même style que les autres pages) : "WIFI" à gauche, état à droite
+void dessinerEnteteWifi(const char* droite, uint16_t colDroite) {
+  ecrireP("WIFI", 0, 0, COL_TITRE);
+  if (droite) ecrirePDroite(droite, 63, 0, colDroite);
+}
+
 // Page de la rotation : état du Wi-Fi
-//   0..6 "WIFI" + force en dBm | 8 trait | logo à gauche, état à droite | 24..30 nom du réseau
+//   0..5 "WIFI" + force en dBm | logo 13x11 (y 9..19) | à droite : état en 5x7 (y 9) + détail en petit (y 18)
+//   25..31 nom du réseau (défile s'il est trop long)
 void dessinerPageWifi() {
 #if WIFI_ACTIVE
   if (reseauOK()) {
@@ -2025,36 +2209,34 @@ void dessinerPageWifi() {
     uint16_t c = couleurSignal(nv);
     static const char* QUALITE[4] = {"FAIBLE", "MOYEN", "BON", "FORT"};
     char buf[8];
-    snprintf(buf, sizeof(buf), "%ddB", rssi);
-    dessinerEntete("WIFI", buf, c, -1);
-    display.drawFastHLine(0, 8, 64, c);
-    dessinerLogoWifi(8, 21, nv, c, COL_ETEINT);
-    ecrireTexte(QUALITE[nv], 19, 11, 1, c);
-    ecrireTexte(typeReseau(reseauCourant), 19, 19, 1, COL_UNITE);
-    ecrireLigneDefilante(WiFi.SSID().c_str(), 24, COL_TITRE);
+    snprintf(buf, sizeof(buf), "%d dBm", rssi);
+    dessinerEnteteWifi(buf, c);
+    dessinerLogoWifi(7, 19, nv, c, COL_ETEINT);
+    ecrireTexte(QUALITE[nv], 17, 9, 1, c);
+    ecrireP(typeReseau(reseauCourant), 17, 18, COL_DISCRET);
+    ecrireLigneDefilante(WiFi.SSID().c_str(), 25, COL_TITRE);
     return;
   }
-  dessinerEntete("WIFI", "OFF", COL_ERREUR, -1);
-  display.drawFastHLine(0, 8, 64, COL_ERREUR);
-  dessinerLogoWifi(8, 21, -1, COL_ETEINT, COL_ETEINT);
-  dessinerCroix(11, 17);
+  dessinerEnteteWifi("HORS LIGNE", COL_ERREUR);
+  dessinerLogoWifi(7, 19, -1, COL_ETEINT, COL_ETEINT);
+  dessinerCroix(10, 15);
   if (nbReseaux == 0) {
-    ecrireTexte("AUCUN", 19, 11, 1, COL_ERREUR);
-    ecrireTexte("RESEAU", 19, 19, 1, COL_ERREUR);
-    ecrireLigneDefilante("tape: wifi add <nom> <mdp>", 24, COL_UNITE);
+    ecrireTexte("AUCUN", 17, 9, 1, COL_ERREUR);
+    ecrireP("RESEAU", 17, 18, COL_DISCRET);
+    ecrireLigneDefilante("tape: wifi add <nom> <mdp>", 25, COL_TITRE);
     return;
   }
   const char* etat = (etatWifi == WIFI_SCAN) ? "RECHER" : (etatWifi == WIFI_CONNEXION) ? "CONNEX" : "ABSENT";
-  ecrireTexte(etat, 19, 11, 1, COL_TITRE);
-  char mem[8];
-  snprintf(mem, sizeof(mem), "MEM %u", (unsigned)nbReseaux);
-  ecrireTexte(mem, 19, 19, 1, COL_UNITE);
-  if (etatWifi == WIFI_CONNEXION && reseauCourant >= 0) ecrireLigneDefilante(reseaux[reseauCourant].ssid.c_str(), 24, COL_TITRE);
-  else ecrireLigneDefilante("HORS LIGNE", 24, COL_UNITE);
+  ecrireTexte(etat, 17, 9, 1, COL_TITRE);
+  char mem[16];
+  snprintf(mem, sizeof(mem), "%u CONNUS", (unsigned)nbReseaux);
+  ecrireP(mem, 17, 18, COL_DISCRET);
+  if (etatWifi == WIFI_CONNEXION && reseauCourant >= 0) ecrireLigneDefilante(reseaux[reseauCourant].ssid.c_str(), 25, COL_TITRE);
+  else ecrireLigneDefilante("HORS LIGNE", 25, COL_DISCRET);
 #else
-  dessinerEntete("WIFI", "OFF", COL_UNITE, -1);
-  dessinerLogoWifi(8, 21, -1, COL_ETEINT, COL_ETEINT);
-  ecrireTexte("DESACT.", 19, 13, 1, COL_UNITE);
+  dessinerEnteteWifi("OFF", COL_DISCRET);
+  dessinerLogoWifi(7, 19, -1, COL_ETEINT, COL_ETEINT);
+  ecrireTexte("DESACT.", 17, 9, 1, COL_DISCRET);
 #endif
 }
 
@@ -2075,49 +2257,45 @@ void dessinerEcranConnexion() {
   if (resultatWifiAffiche) {
     if (resultatWifiOK) {                                 // connecté : logo plein, "OK" en grand
       int rssi = WiFi.RSSI();
-      int nv = niveauSignal(rssi);
-      uint16_t c = couleurSignal(nv);
       char buf[8];
-      snprintf(buf, sizeof(buf), "%ddB", rssi);
-      dessinerEntete("WIFI", buf, c, -1);
-      display.drawFastHLine(0, 8, 64, colNiv[0]);
-      dessinerLogoWifi(8, 21, 3, colNiv[0], COL_ETEINT);
-      ecrireCentre("OK", 40, 10, 2, colNiv[0]);
-      ecrireLigneDefilante(WiFi.SSID().c_str(), 24, COL_TITRE);
+      snprintf(buf, sizeof(buf), "%d dBm", rssi);
+      dessinerEnteteWifi(buf, couleurSignal(niveauSignal(rssi)));
+      dessinerLogoWifi(7, 19, 3, colNiv[0], COL_ETEINT);
+      ecrireGrand("OK", 40, 21, colNiv[0], &FreeSansBold9pt7b);
+      ecrireLigneDefilante(WiFi.SSID().c_str(), 25, COL_TITRE);
     } else {                                              // échec : logo éteint + croix, raison
-      dessinerEntete("WIFI", "ECHEC", COL_ERREUR, -1);
-      display.drawFastHLine(0, 8, 64, COL_ERREUR);
-      dessinerLogoWifi(8, 21, -1, COL_ETEINT, COL_ETEINT);
-      dessinerCroix(11, 17);
-      ecrireTexte(nbCandidats ? raisonCourte(raisonDeco) : "ABSENT", 19, 11, 1, COL_ERREUR);
-      ecrireTexte("ESSAI", 19, 19, 1, COL_UNITE);
-      ecrireLigneDefilante("nouvel essai dans 30 s", 24, COL_UNITE);
+      dessinerEnteteWifi("ECHEC", COL_ERREUR);
+      dessinerLogoWifi(7, 19, -1, COL_ETEINT, COL_ETEINT);
+      dessinerCroix(10, 15);
+      ecrireTexte(nbCandidats ? raisonCourte(raisonDeco) : "ABSENT", 17, 9, 1, COL_ERREUR);
+      ecrireP("ESSAI 30 S", 17, 18, COL_DISCRET);
+      ecrireLigneDefilante("wifi list / wifi add", 25, COL_DISCRET);
     }
     return;
   }
   // Connexion en cours : les arcs s'allument l'un après l'autre
   int phase = (int)((now / 300UL) % 4UL) - 1;            // -1 (point seul) .. 2
   if (etatWifi == WIFI_SCAN) {
-    dessinerEntete("WIFI", "SCAN", COL_TITRE, -1);
-    dessinerLogoWifi(8, 21, phase + 1, COL_TITRE, COL_ETEINT);
-    ecrireTexte("RECHER", 19, 11, 1, COL_TITRE);
-    char mem[12];
-    snprintf(mem, sizeof(mem), "%u RESEAUX", (unsigned)nbReseaux);
-    ecrireLigneDefilante(mem, 24, COL_UNITE);
+    dessinerEnteteWifi("RECHERCHE", COL_TITRE);
+    dessinerLogoWifi(7, 19, phase + 1, COL_TITRE, COL_ETEINT);
+    ecrireTexte("RECHER", 17, 9, 1, COL_TITRE);
+    char mem[16];
+    snprintf(mem, sizeof(mem), "%u CONNUS", (unsigned)nbReseaux);
+    ecrireLigneDefilante(mem, 25, COL_DISCRET);
   } else {
-    char buf[8];
-    snprintf(buf, sizeof(buf), "%u/%u", (unsigned)(idxCandidat + 1), (unsigned)nbCandidats);
-    dessinerEntete("WIFI", buf, COL_TITRE, -1);
-    dessinerLogoWifi(8, 21, phase + 1, COL_TITRE, COL_ETEINT);
-    ecrireTexte("CONNEX", 19, 11, 1, COL_TITRE);
-    if (reseauCourant >= 0) ecrireLigneDefilante(reseaux[reseauCourant].ssid.c_str(), 24, COL_TITRE);
+    char buf[12];
+    snprintf(buf, sizeof(buf), "ESSAI %u/%u", (unsigned)(idxCandidat + 1), (unsigned)nbCandidats);
+    dessinerEnteteWifi(buf, COL_TITRE);
+    dessinerLogoWifi(7, 19, phase + 1, COL_TITRE, COL_ETEINT);
+    ecrireTexte("CONNEX", 17, 9, 1, COL_TITRE);
+    if (reseauCourant >= 0) ecrireLigneDefilante(reseaux[reseauCourant].ssid.c_str(), 25, COL_TITRE);
   }
-  // points animés + secondes écoulées
+  // points animés + secondes écoulées (y 18..22)
   int nbPoints = (int)((now / 400UL) % 4UL);
-  for (int i = 0; i < nbPoints; i++) display.fillRect(19 + i * 4, 20, 2, 2, COL_TITRE);
-  char sec[6];
-  snprintf(sec, sizeof(sec), "%lus", (now - tEtatWifi) / 1000UL);
-  ecrireDroite(sec, 62, 19, 1, COL_UNITE);
+  for (int i = 0; i < nbPoints; i++) display.fillRect(17 + i * 4, 20, 2, 2, COL_TITRE);
+  char sec[8];
+  snprintf(sec, sizeof(sec), "%lu s", (now - tEtatWifi) / 1000UL);
+  ecrirePDroite(sec, 63, 18, COL_DISCRET);
 #endif
 }
 
@@ -2130,20 +2308,59 @@ bool pageActive(uint8_t p) {
 }
 
 #if AFFICHER_TEMOINS
-// 4 points de 1 pixel en bas à droite : WiFi | secteur | heure NTP | dernier envoi
+// Zone d'état en bas à droite (x 57..63, y 25..31), que les pages ne recouvrent jamais :
+//
+//   y 25..29   mini logo Wi-Fi 7x5 : point + 2 arcs
+//                connecté   : couleur = force du signal (vert fort, jaune, orange, rouge faible),
+//                             arcs allumés : point seul (très faible) / + petit arc / + grand arc
+//                recherche  : arcs éteints, point cyan
+//                hors ligne : arcs éteints, point rouge
+//   y 31       3 repères :  x 57-58 alimentation (vert secteur | orange batterie)
+//                           x 60    heure NTP    (bleu réglée | gris pas encore)
+//                           x 62-63 envoi        (vert OK | orange mesures en attente ou réessai | rouge refus | gris rien)
+static const char* WIFI_MINI[5] = {   // '1' point, '2' petit arc, '3' grand arc
+  ".33333.",
+  "3.....3",
+  "..222..",
+  ".2...2.",
+  "...1...",
+};
+static const int X_TEMOINS = 57, Y_TEMOINS = 25;
+
+void dessinerMiniWifi() {
+  uint8_t allumes = 0;            // nombre d'éléments allumés : 1 = point, 2 = + petit arc, 3 = + grand arc
+  uint16_t c = COL_ERREUR;
+#if WIFI_ACTIVE
+  if (reseauOK()) {
+    int nv = niveauSignal(WiFi.RSSI());
+    c = couleurSignal(nv);
+    allumes = (nv >= 2) ? 3 : nv + 1;
+  } else {
+    allumes = 1;
+    c = (etatWifi == WIFI_SCAN || etatWifi == WIFI_CONNEXION) ? COL_TITRE : COL_ERREUR;
+  }
+#endif
+  for (int y = 0; y < 5; y++) {
+    for (int x = 0; x < 7; x++) {
+      char e = WIFI_MINI[y][x];
+      if (e == '.') continue;
+      display.drawPixel(X_TEMOINS + x, Y_TEMOINS + y, (e - '0' <= allumes) ? c : COL_ETEINT);
+    }
+  }
+}
+
 void dessinerTemoins() {
-  uint16_t gris = rgb565(50, 50, 50);
-  uint16_t cWifi = !WIFI_ACTIVE ? gris : (reseauOK() ? rgb565(0, 200, 0) : rgb565(230, 0, 0));
-  uint16_t cAlim = estSurSecteur ? rgb565(0, 200, 0) : rgb565(255, 120, 0);
-  uint16_t cNtp  = heureValide() ? rgb565(0, 100, 255) : gris;
-  uint16_t cEnv  = gris;
-  if (etatEnvoi == 1) cEnv = rgb565(0, 200, 0);
-  else if (etatEnvoi == 2) cEnv = rgb565(255, 120, 0);
-  else if (etatEnvoi == 3) cEnv = rgb565(230, 0, 0);
-  display.drawPixel(56, 31, cWifi);
-  display.drawPixel(58, 31, cAlim);
-  display.drawPixel(60, 31, cNtp);
-  display.drawPixel(62, 31, cEnv);
+  static const uint16_t GRIS = rgb565(50, 50, 50), VERT = rgb565(0, 200, 0), ORANGE = rgb565(255, 120, 0);
+  dessinerMiniWifi();
+  uint16_t cAlim = estSurSecteur ? VERT : ORANGE;
+  uint16_t cNtp  = heureValide() ? rgb565(0, 100, 255) : GRIS;
+  uint16_t cEnv  = GRIS;
+  if (etatEnvoi == 3) cEnv = COL_ERREUR;
+  else if (etatEnvoi == 2 || nbLignesAttente > 0) cEnv = ORANGE;
+  else if (etatEnvoi == 1) cEnv = VERT;
+  display.drawFastHLine(X_TEMOINS, 31, 2, cAlim);
+  display.drawPixel(X_TEMOINS + 3, 31, cNtp);
+  display.drawFastHLine(X_TEMOINS + 5, 31, 2, cEnv);
 }
 #endif
 
@@ -2153,27 +2370,22 @@ void dessinerContenu() {
   display.clearDisplay();
   display.setTextWrap(false);
 
-  if (ecranWifiActif()) {
+  if (ecranWifiActif()) {   // écran de connexion : il a déjà son grand logo Wi-Fi, pas de témoins
     dessinerEcranConnexion();
-#if AFFICHER_TEMOINS
-    dessinerTemoins();
-#endif
     return;
   }
 
   switch (pageCourante) {
-    case PAGE_CO2:    dessinerPage("CO2", "PPM", mCO2, SEUILS_CO2, NB_SEUILS_CO2, false); break;
+    case PAGE_CO2:    dessinerPageCO2(); break;
     case PAGE_AERER:  dessinerPageAerer(); break;
-    case PAGE_PM1:    dessinerPage("PM1", UNITE_PM, mPM1, SEUILS_PM25, NB_SEUILS_PM25, true); break;
-    case PAGE_PM25:   dessinerPage("PM2.5", UNITE_PM, mPM25, SEUILS_PM25, NB_SEUILS_PM25, true); break;
-    case PAGE_PM10:   dessinerPage("PM10", UNITE_PM, mPM10, SEUILS_PM10, NB_SEUILS_PM10, true); break;
+    case PAGE_PM:     dessinerPagePM(); break;
     case PAGE_GLOBAL: dessinerPageGlobal(); break;
     case PAGE_COURBE: dessinerPageCourbe(); break;
     case PAGE_WIFI:   dessinerPageWifi(); break;
     default: break;
   }
 #if AFFICHER_TEMOINS
-  dessinerTemoins();
+  if (pageCourante != PAGE_WIFI) dessinerTemoins();   // la page Wi-Fi a déjà son grand logo (et un texte qui défile en bas)
 #endif
 }
 
@@ -2184,56 +2396,52 @@ void presenter() {
 #endif
 }
 
-// Transition : la nouvelle page est révélée de gauche à droite par un trait lumineux (~100 ms)
-void afficherTransition() {
-  uint16_t vif  = rgb565(0, 200, 200);
-  uint16_t doux = rgb565(0, 70, 70);
-  for (int x = 0; x < 64; x += 4) {
-    dessinerContenu();
-    display.fillRect(x + 1, 0, 64 - (x + 1), 32, 0);   // partie pas encore révélée
-    display.drawFastVLine(x, 0, 32, vif);
-    if (x > 0) display.drawFastVLine(x - 1, 0, 32, doux);
-    presenter();
-    delay(6);
+// Transition entre deux pages : fondu au noir puis retour, en jouant sur la LUMINOSITÉ de tout l'écran
+// (aucun trait ni balayage de couleur). 4 paliers de 18 ms dans chaque sens : ~150 ms en tout.
+// sortie = true : la page affichée s'éteint ; false : la nouvelle page s'allume.
+void fondu(bool sortie) {
+#if TRANSITION_FONDU
+  for (int k = 1; k <= 4; k++) {
+    int palier = sortie ? 4 - k : k;                  // sortie : 3, 2, 1, 0 | entrée : 1, 2, 3, 4
+    display.setBrightness((uint16_t)luminositeCourante * palier / 4);
+    delay(18);
   }
+#endif
 }
 
 void afficher() {
   // Écran éteint (mode nuit) : on affiche du noir.
   if (ecranEteint) { display.clearDisplay(); presenter(); return; }
-  // Changement de page : petit effet de balayage avant d'afficher la nouvelle page.
-  if (ecranWifiActif()) aTransition = false;  // pas de balayage sur l'écran de connexion
-  if (aTransition) { afficherTransition(); aTransition = false; }
+  if (ecranWifiActif()) aTransition = false;  // pas de fondu sur l'écran de connexion
+  if (aTransition) {
+    aTransition = false;
+    fondu(true);
+    dessinerContenu();
+    presenter();
+    fondu(false);
+    return;
+  }
   dessinerContenu();
   presenter();
 }
 
 // Passe à la page suivante qui est active (saute AERER et COURBE quand elles n'ont rien à montrer)
-// et prépare l'effet de transition.
+// et prépare le fondu.
 void pageSuivante() {
   for (uint8_t i = 0; i < NB_PAGES; i++) {
     pageCourante = (pageCourante + 1) % NB_PAGES;
     if (pageActive(pageCourante)) break;
   }
-  xBandeau = 64;
   aTransition = true;
   aRedessiner = true;
 }
 
 // ---------- animations ----------
-// Mesure montrée par la page courante (nullptr si la page n'en montre pas une seule)
-Mesure* mesureDePage() {
-  switch (pageCourante) {
-    case PAGE_CO2:  return &mCO2;
-    case PAGE_PM1:  return &mPM1;
-    case PAGE_PM25: return &mPM25;
-    case PAGE_PM10: return &mPM10;
-    default:        return nullptr;
-  }
-}
-
-bool pageAvecVisage() {
-  return pageCourante != PAGE_AERER && pageCourante != PAGE_COURBE && pageCourante != PAGE_WIFI;
+// La page courante affiche-t-elle cette mesure ? (pour ne redessiner que si ce qui bouge est visible)
+bool mesureVisible(const Mesure &m) {
+  if (pageCourante == PAGE_CO2) return &m == &mCO2;
+  if (pageCourante == PAGE_PM)  return &m != &mCO2;
+  return false;
 }
 
 // L'écran de connexion ou la page Wi-Fi bougent-ils ? (logo animé, nom de réseau qui défile)
@@ -2248,14 +2456,14 @@ bool ecranWifiAnime() {
   return false;
 }
 
-// Appelée à chaque tour de loop() : une image d'animation toutes les 40 ms, et on ne
+// Appelée à chaque tour de loop() : une image d'animation toutes les 40 ms au plus, et on ne
 // redessine l'écran que si quelque chose a réellement bougé sur la page affichée.
 void animer(unsigned long now) {
   if (ecranEteint) return;
   if (now - tAnim < ANIM_PAS_MS) return;
   tAnim = now;
   bool maj = false;
-  Mesure* mp = ecranWifiActif() ? nullptr : mesureDePage();
+  bool pageVisible = !ecranWifiActif();
 
   // écran de connexion / page Wi-Fi : logo animé, texte défilant, secondes (une image toutes les 60 ms)
   if (ecranWifiAnime()) {
@@ -2264,13 +2472,11 @@ void animer(unsigned long now) {
     if (ph != phaseWifi) { phaseWifi = ph; maj = true; }
   }
 
-  // page AERER : texte défilant + rubans
-  if (pageCourante == PAGE_AERER) {
-    int largeur = largeurBandeau();
-    xBandeau -= BANDEAU_PX;
-    if (xBandeau <= -largeur) xBandeau += largeur;   // la copie suivante prend la place : aucun saut visible
-    phaseHazard++;
-    maj = true;
+  // page AERER : "AERER" pulse (vif / atténué toutes les 0,6 s), même sans ANIMATIONS : c'est une alerte
+  if (pageVisible && pageCourante == PAGE_AERER) {
+    static uint32_t phaseAerer = 0;
+    uint32_t ph = (uint32_t)(now / 600UL);
+    if (ph != phaseAerer) { phaseAerer = ph; maj = true; }
   }
 
 #if ANIMATIONS
@@ -2282,57 +2488,146 @@ void animer(unsigned long now) {
     if (!m.affInit) {
       m.aff = m.valeur;
       m.affInit = true;
-      if (&m == mp) maj = true;
+      if (pageVisible && mesureVisible(m)) maj = true;
       continue;
     }
     float d = m.valeur - m.aff;
     if (d == 0.0f) continue;
     if (fabsf(d) < 0.05f) m.aff = m.valeur;
     else                  m.aff += d * 0.3f;
-    if (&m == mp) maj = true;
+    if (pageVisible && mesureVisible(m)) maj = true;
   }
 
-  // clignement des yeux
+  // clignement des yeux (seule la page QUALITE AIR a un visage)
   bool cl = yeuxFermes();
   if (cl != etatCligne) {
     etatCligne = cl;
-    if (pageAvecVisage()) maj = true;
+    if (pageVisible && pageCourante == PAGE_GLOBAL) maj = true;
   }
-#endif
 
-#if ANIMATIONS
-  // page courbe : le point de la mesure la plus récente clignote (500 ms)
+  // page courbe : le sommet de la minute en cours clignote (500 ms)
   if (pageCourante == PAGE_COURBE) {
     uint8_t p = (uint8_t)((now / 500UL) % 2UL);
     if (p != phasePoint) { phasePoint = p; maj = true; }
   }
 #endif
 
-  // préchauffage : spinner / scanner (80 ms) ou simple compte à rebours (1 s si ANIMATIONS 0)
-  if (mp && mp->etat == CAPTEUR_CHAUFFE) {
-    const unsigned long pas = ANIMATIONS ? 80UL : 1000UL;
-    uint32_t ph = (uint32_t)(now / pas);
+  // préchauffage du CO2 : le compte à rebours change chaque seconde
+  if (pageVisible && pageCourante == PAGE_CO2 && mCO2.etat == CAPTEUR_CHAUFFE) {
+    uint32_t ph = (uint32_t)(now / 1000UL);
     if (ph != phaseChauffe) { phaseChauffe = ph; maj = true; }
   }
 
   if (maj) aRedessiner = true;
 }
 
-// Écran d'accueil : logo + barre de 5 segments qui s'allument aux couleurs de la jauge
-void afficherSplash() {
-  for (int etape = 0; etape <= 5; etape++) {
-    display.clearDisplay();
-    display.setTextWrap(false);
-    ecrireCentre("AIRCARTO", 32, 5, 1, COL_TITRE);
-    ecrireCentre("MODULEAIR", 32, 14, 1, COL_UNITE);
-    for (int i = 0; i < 5; i++) {                      // mêmes segments que la jauge (x 0..63)
-      int xs = (i * 65) / 5;
-      int xe = ((i + 1) * 65) / 5 - 2;
-      display.fillRect(xs, 25, xe - xs + 1, 3, (i < etape) ? colNiv[i] : colFond[i]);
+// ---------- écran d'accueil : logo "LA BONNE M'AIR" ----------
+// La "Bonne Mère" (Notre-Dame-de-la-Garde) stylisée en pixel art, à gauche (x 0..14, toute la hauteur) :
+// statue dorée au sommet du clocher, pierre rayée gris-bleu / vert comme les façades de la basilique, colline.
+// À droite : "LA BONNE" (y 1..7), "M'AIR" en grand (y 10..23, "AIR" en vert = air sain),
+// et la barre des 6 niveaux de qualité de l'air (y 27..29), aux couleurs des niveaux.
+//   G statue (or) | S pierre | V bande verte | H colline | h colline sombre | . rien (noir)
+static const char* LOGO_BASILIQUE[32] = {
+  ".......G.......",  //  0  tête de la statue
+  "......GGG......",  //  1
+  ".....GGGG......",  //  2  l'enfant dans les bras
+  "......GGG......",  //  3
+  "......GGG......",  //  4
+  ".....GGGGG.....",  //  5  robe
+  "......SSS......",  //  6  socle
+  ".....SSSSS.....",  //  7
+  ".....S.S.S.....",  //  8  petites baies
+  ".....S.S.S.....",  //  9
+  ".....SSSSS.....",  // 10
+  "....SSSSSSS....",  // 11  corniche du clocher
+  "....SVVVVVS....",  // 12
+  "....S..S..S....",  // 13  grandes baies du clocher
+  "....S..S..S....",  // 14
+  "....S..S..S....",  // 15
+  "....SSSSSSS....",  // 16
+  "....SVVVVVS....",  // 17  pierre rayée
+  "....SSSSSSS....",  // 18
+  "....SVVVVVS....",  // 19
+  "..SSSSSSSSSSS..",  // 20  toit de la basilique
+  "..SVVVVVVVVVS..",  // 21
+  "..SS.SSSSS.SS..",  // 22  fenêtres
+  "..SV.VVVVV.VS..",  // 23
+  "..SSSSSSSSSSS..",  // 24
+  ".SSSSSSSSSSSSS.",  // 25  terrasse
+  ".HHHHHHHHHHHHH.",  // 26  colline
+  "HHHHHHHHHHHHHHH",  // 27
+  "hhhhhhhhhhhhhhh",  // 28
+  "hhhhhhhhhhhhhhh",  // 29
+  "hhhhhhhhhhhhhhh",  // 30
+  "hhhhhhhhhhhhhhh",  // 31
+};
+
+// Dessine le logo dans le tampon, partiellement selon l'étape de l'animation :
+//   rangs   : nombre de rangées de la basilique visibles, en partant du bas (0..32)
+//   lettres : "LA BONNE" puis "M'AIR" écrits lettre à lettre (0..13)
+//   niveaux : segments de la barre allumés (0..NB_NIVEAUX)
+//   eclat   : petit scintillement à côté de la statue
+void dessinerLogo(int rangs, int lettres, int niveaux, bool eclat) {
+  static const uint16_t C_OR = rgb565(255, 170, 0), C_PIERRE = rgb565(90, 150, 175), C_VERT = rgb565(0, 150, 90);
+  static const uint16_t C_COLLINE = rgb565(0, 140, 40), C_COLLINE_SOMBRE = rgb565(0, 70, 20);
+  display.clearDisplay();
+  display.setTextWrap(false);
+
+  // basilique, révélée du bas vers le haut
+  for (int y = 32 - rangs; y < 32; y++) {
+    for (int x = 0; x < 15; x++) {
+      uint16_t c;
+      switch (LOGO_BASILIQUE[y][x]) {
+        case 'G': c = C_OR; break;
+        case 'S': c = C_PIERRE; break;
+        case 'V': c = C_VERT; break;
+        case 'H': c = C_COLLINE; break;
+        case 'h': c = C_COLLINE_SOMBRE; break;
+        default: continue;
+      }
+      display.drawPixel(x, y, c);
     }
-    presenter();
-    delay(220);
   }
+  if (eclat) {                                           // étoile à 4 branches à droite de la statue
+    uint16_t ce = rgb565(255, 240, 120);
+    display.drawPixel(11, 1, ce);
+    display.drawPixel(10, 1, C_OR); display.drawPixel(12, 1, C_OR);
+    display.drawPixel(11, 0, C_OR); display.drawPixel(11, 2, C_OR);
+  }
+
+  // "LA BONNE" (8 caractères, x 16..62)
+  char ligne1[9];
+  int n1 = constrain(lettres, 0, 8);
+  memcpy(ligne1, "LA BONNE", n1);
+  ligne1[n1] = '\0';
+  ecrireTexte(ligne1, 16, 1, 1, COL_TITRE);
+
+  // "M'AIR" en taille 2, espacé à la main pour tenir dans x 16..63 (5 caractères normaux feraient 58 px)
+  int n2 = lettres - 8;
+  if (n2 >= 1) ecrireTexte("M", 16, 10, 2, COL_TITRE);             // x 16..25
+  if (n2 >= 2) {                                                   // apostrophe : x 27..28, y 10..13
+    display.fillRect(27, 10, 2, 3, COL_TITRE);
+    display.drawPixel(27, 13, COL_TITRE);
+  }
+  if (n2 >= 3) ecrireTexte("A", 30, 10, 2, colNiv[0]);             // x 30..39
+  if (n2 >= 4) ecrireTexte("I", 42, 10, 2, colNiv[0]);             // x 44..49 (glyphe étroit)
+  if (n2 >= 5) ecrireTexte("R", 54, 10, 2, colNiv[0]);             // x 54..63
+
+  // barre des niveaux (x 16..63, y 27..29)
+  for (int i = 0; i < NB_NIVEAUX; i++) {
+    int xs = 16 + (i * 49) / NB_NIVEAUX;
+    int xe = 16 + ((i + 1) * 49) / NB_NIVEAUX - 2;
+    display.fillRect(xs, 27, xe - xs + 1, 3, (i < niveaux) ? colNiv[i] : colFond[i]);
+  }
+}
+
+// Animation de démarrage (~2,7 s) : la basilique monte, le nom s'écrit, la barre se remplit, la statue scintille.
+void afficherSplash() {
+  for (int r = 2; r <= 32; r += 2) { dessinerLogo(r, 0, 0, false); presenter(); delay(25); }
+  for (int l = 1; l <= 13; l++)    { dessinerLogo(32, l, 0, false); presenter(); delay(l <= 8 ? 45 : 90); }
+  for (int n = 1; n <= NB_NIVEAUX; n++) { dessinerLogo(32, 13, n, false); presenter(); delay(100); }
+  for (int k = 0; k < 4; k++)      { dessinerLogo(32, 13, NB_NIVEAUX, k % 2 == 0); presenter(); delay(130); }
+  delay(500);
 }
 
 // Choisit la luminosité : réduite la nuit et sur batterie ; peut aussi éteindre l'écran (ECRAN_ETEINT_NUIT).
@@ -2342,6 +2637,7 @@ void majLuminosite() {
   if (!estSurSecteur && lum > LUMINOSITE_BATTERIE) lum = LUMINOSITE_BATTERIE;  // économie sur batterie
   bool eteint = (ECRAN_ETEINT_NUIT && nuit);
   if (eteint != ecranEteint) { ecranEteint = eteint; aRedessiner = true; }
+  luminositeCourante = lum;
   display.setBrightness(lum);
 }
 
@@ -2443,8 +2739,17 @@ void afficherStatus() {
   Serial.printf("heure NTP : %s | mode nuit : %s\n", heureValide() ? "valide" : "pas encore", estNuit() ? "oui" : "non");
   Serial.printf("clé du groupe : %s%s\n", cleOK() ? "présente (32 car.)" : "ABSENTE ou mauvaise longueur",
                 cleInvalide ? " | REFUSÉE par le serveur" : "");
-  Serial.printf("dernier envoi : code HTTP %d | état %u | écart mini %lu ms\n", dernierCodeHttp, (unsigned)etatEnvoi, ecartCourantMs());
-  Serial.printf("file d'attente : %u mesures (%u octets de fichier)\n", (unsigned)nbLignesAttente, (unsigned)tailleBacklog);
+  Serial.printf("dernier envoi : code HTTP %d | état %u | écart %lu ms (dont marge %lu ms)\n", dernierCodeHttp,
+                (unsigned)etatEnvoi, ecartCourantMs(), margePushMs);
+  Serial.printf("file d'attente : %u mesures (%u octets de fichier)", (unsigned)nbLignesAttente, (unsigned)tailleBacklog);
+  if (nbLignesAttente > 0 && reseauOK()) {
+    // créneaux libres pour le retard = 1 envoi / écart, moins les mesures fraîches (1 / période)
+    float parS = 1000.0f / ecartCourantMs() - 1000.0f / periodeMesureMs();
+    if (parS > 0) Serial.printf(" | rattrapé dans ~%u min", (unsigned)(nbLignesAttente / parS / 60.0f + 0.99f));
+  }
+  Serial.println();
+  Serial.printf("période de mesure : %lu s%s\n", periodeMesureMs() / 1000UL,
+                (estSurSecteur && periodeMesureMs() == PERIODE_MESURE_RATTRAPAGE_MS) ? " (rattrapage du retard)" : "");
   Serial.printf("alimentation : %s\n", estSurSecteur ? "secteur" : "batterie");
   Serial.printf("affichage détaillé : %s\n", verbose ? "oui" : "non");
 }
@@ -2743,7 +3048,7 @@ void setup() {
   display.setTextWrap(false);
   initialiserCouleurs();
   majLuminosite();
-  afficherSplash();  // écran d'accueil (~1,3 s)
+  afficherSplash();  // écran d'accueil : logo animé LA BONNE M'AIR (~2,7 s)
 
   // NextPM : Modbus, 8E1 (parité paire !), adresse 1
   nextpmSerial.begin(115200, SERIAL_8E1, NEXTPM_RX, NEXTPM_TX);
@@ -2766,7 +3071,8 @@ void setup() {
   esp_task_wdt_add(NULL);
   xTaskCreatePinnedToCore(tacheEnvoi, "envoi", 8192, NULL, 1, NULL, 1);  // réseau + fichier hors ligne, cœur 1 comme loop()
 
-  afficher();  // première page : préchauffage
+  aTransition = true;  // fondu du logo vers la première page
+  afficher();          // première page : CO2 en préchauffage
   Serial.println("Prêt. Tape 'aide' pour la liste des commandes.");
 }
 
@@ -2816,7 +3122,7 @@ void loop() {
     finaliserPeriode();
   }
 
-  // Toutes les 5 s : page suivante de l'écran (en pause pendant l'écran de connexion Wi-Fi).
+  // Toutes les 6 s : page suivante de l'écran (avec un fondu) (en pause pendant l'écran de connexion Wi-Fi).
   if (ecranWifiActif()) tPage = now;
   if (now - tPage >= INTERVALLE_PAGE_MS) {
     tPage = now;
