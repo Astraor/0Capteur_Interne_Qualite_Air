@@ -186,7 +186,9 @@ Le serveur AirCarto date chaque mesure à sa **réception** (champ `time`). Une 
 - À la fin de chaque période de 30 s, la mesure est notée avec trois repères internes, retirés avant l'envoi : `_u` (uptime en s), `_e` (heure Unix si l'heure NTP est connue, sinon 0) et `_b` (numéro aléatoire du démarrage).
 - Au moment de l'envoi, la carte calcule l'âge. Si c'est le même démarrage : uptime actuel − `_u` (marche même sans heure NTP). Sinon : heure actuelle − `_e`. Si `_e` vaut 0, la mesure ne peut pas être datée et elle est abandonnée.
 - L'heure survit à un redémarrage logiciel de l'ESP32 (minuterie RTC), pas à une coupure de courant : après une coupure de courant, la carte attend l'heure NTP (15 min au plus) avant de renvoyer les mesures du démarrage précédent.
-- Le site n'applique la correction qu'aux **mesures brutes** : vues 6 h et 24 h, export CSV jusqu'à 7 jours. Il écarte aussi les mesures reçues deux fois (même heure réelle à ±5 s, mêmes valeurs).
+- Vues 6 h et 24 h, export CSV jusqu'à 7 jours : le site travaille sur les **mesures brutes** et corrige chacune.
+- Vue 7 jours, durées personnalisées de plus de 24 h et export au-delà de 7 jours : le site reçoit des moyennes calculées par le serveur **par heure de réception**, `x_age_s` compris, et datées à la fin de leur tranche. Pendant un rattrapage, une tranche mélange des mesures rejouées et des mesures fraîches. Le site repère ces tranches à leur `x_age_s` moyen (plus de 30 s, alors qu'un envoi en direct a 0 à 12 s), redemande pour elles seules les mesures brutes et remet chacune à son heure. Les autres moyennes sont ramenées au début de leur tranche.
+- Le site écarte aussi les mesures reçues deux fois (même heure réelle à ±5 s, mêmes valeurs).
 - Précision vérifiée en simulation : **±1 s** (voir [`Firmware/simulation`](Firmware/simulation/LISEZMOI.md)).
 
 ---
@@ -289,7 +291,6 @@ GitHub peut retarder les tâches planifiées de quelques minutes, et les met en 
 - Le MH-Z19C a besoin d’environ **3 minutes de chauffe** ; l’auto-calibration suppose que la pièce est aérée régulièrement.
 - Température et humidité proviennent des capteurs internes du NextPM : elles reflètent l’air dans le boîtier, souvent un peu plus chaud que la pièce.
 - Le serveur n’accepte qu’**un envoi toutes les 10 s** : c’est lui qui limite la vitesse de rattrapage après une coupure.
-- Vue **7 jours** et durées personnalisées de plus de 24 h : le site reçoit des moyennes de 5 min calculées par le serveur **par heure de réception**. Pendant le rattrapage après une coupure, une moyenne mélange des mesures rejouées et des mesures fraîches : la période de la coupure y apparaît lissée et décalée (en simulation, un pic de 10 min apparaît ~45 min trop tard et atténué). Les vues 6 h / 24 h et l’export CSV (jusqu’à 7 jours) restent exacts.
 - Carte démarrée **sans Wi-Fi** (donc sans heure) puis coupure de courant avant le retour du Wi-Fi : les mesures de ce démarrage ne peuvent pas être datées et sont abandonnées.
 
 ---
