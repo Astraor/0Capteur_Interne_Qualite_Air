@@ -227,6 +227,12 @@ static const unsigned long WIFI_PAUSE_MS             = 30000UL;   // aucun rése
 static const unsigned long WIFI_RESULTAT_MS          = 3000UL;    // durée d'affichage de "CONNECTE" / "ECHEC" à l'écran
 static const unsigned long WIFI_REBOOT_MS            = 3600000UL; // 1 h sans Wi-Fi : on redémarre la carte
 static const uint32_t HEAP_MIN_OCTETS                = 25000;     // en dessous : redémarrage (fuite mémoire ?)
+static const uint32_t BLOC_MIN_OCTETS                = 10000;     // plus grand bloc libre en dessous : mémoire morcelée, redémarrage
+// Anti-blocage des envois (vus en simulation sur 4 jours : chacun arrêtait les envois sans faire planter la carte)
+static const unsigned long ESSAI_CLE_MS              = 900000UL;  // clé refusée (401) : nouvel essai toutes les 15 min, jamais d'arrêt définitif
+static const uint8_t       ECHECS_AVANT_RECONNEXION  = 5;         // POST sans réponse alors que « connecté » : on refait la connexion Wi-Fi
+static const unsigned long SANS_REPONSE_REBOOT_MS    = 6UL * 3600000UL;  // 6 h connecté sans aucune réponse du serveur : redémarrage
+static const unsigned long ATTENTE_SERVEUR_MAX_MS    = 300000UL;  // délai demandé par le serveur (next_push_in_s) : 5 min au plus
 static const uint32_t WDT_TIMEOUT_S                  = 60;        // watchdog : redémarrage si la carte se fige
 
 // --- Stockage hors ligne ---
@@ -430,6 +436,10 @@ unsigned long margePushMs = MARGE_PUSH_INIT_MS; // marge ajoutée, ajustée selo
 uint8_t succesDeSuite = 0;           // envois réussis consécutifs (pour réduire la marge)
 uint8_t echecsPush = 0;              // échecs réseau / serveur consécutifs (espacement progressif)
 bool cleInvalide = false;  // le serveur a refusé la clé (401)
+unsigned long tCleRefusee = 0;       // dernier refus 401 : nouvel essai toutes les ESSAI_CLE_MS (pas d'arrêt définitif)
+uint8_t echecsReseauConnecte = 0;    // POST sans aucune réponse alors que le Wi-Fi se dit connecté (liaison « fantôme »)
+volatile bool demandeReconnexion = false;  // posée par la tâche d'envoi, traitée par gererWiFi (loop)
+unsigned long tDerniereReponse = 0;  // dernière réponse HTTP reçue du serveur, quelle qu'elle soit
 uint8_t etatEnvoi = 0;     // 0 gris | 1 vert (OK) | 2 orange (réessai) | 3 rouge (refus)
 int dernierCodeHttp = 0;
 unsigned long tDernierWifiOK = 0;
@@ -920,6 +930,13 @@ void gererWiFi(unsigned long now) {
     }
 
     case WIFI_CONNECTE:
+      if (demandeReconnexion) {   // connecté en apparence, mais plus rien ne passe : on refait la connexion
+        demandeReconnexion = false;
+        nbCoupuresWifi++;
+        Serial.println("Wi-Fi connecté mais le serveur ne répond plus : reconnexion...");
+        relancerWifi(false);
+        return;
+      }
       if (WiFi.status() == WL_CONNECTED) { tDernierWifiOK = now; return; }
       nbCoupuresWifi++;
       Serial.printf("Wi-Fi perdu (%s) : reconnexion...\n", raisonLongue(raisonDeco));
@@ -959,7 +976,27 @@ void surveillerWifiLongue(unsigned long now) {
 }
 
 // Une mémoire qui fond en continu (fuite) finit par planter : mieux vaut redémarrer
+// Dernier recours : Wi-Fi « connecté » depuis 6 h sans AUCUNE réponse du serveur alors que la carte essaie d'envoyer
+// (même après les reconnexions) : on redémarre. Les mesures en attente sont en flash, l'heure survit au redémarrage.
+void surveillerEnvois(unsigned long now) {
+#if WIFI_ACTIVE && !MODE_DEMO
+  if (etatWifi != WIFI_CONNECTE || !dejaPoste || !cleOK()) return;
+  unsigned long reference = tDerniereReponse ? tDerniereReponse : 0;
+  if (now - reference > SANS_REPONSE_REBOOT_MS && now - tDernierPush < 600000UL) {
+    Serial.println("Aucune réponse du serveur depuis 6 h malgré le Wi-Fi : redémarrage de la carte.");
+    delay(100);
+    ESP.restart();
+  }
+#endif
+}
+
 void verifierMemoire() {
+  // Mémoire morcelée : assez de mémoire libre au total, mais plus aucun bloc assez grand pour un envoi HTTP
+  if (ESP.getMaxAllocHeap() < BLOC_MIN_OCTETS) {
+    Serial.printf("Mémoire morcelée (plus grand bloc libre : %u octets) : redémarrage.\n", (unsigned)ESP.getMaxAllocHeap());
+    delay(100);
+    ESP.restart();
+  }
   if (ESP.getFreeHeap() < HEAP_MIN_OCTETS) {
     Serial.printf("Mémoire libre trop basse (%u octets) : redémarrage.\n", (unsigned)ESP.getFreeHeap());
     delay(100);
@@ -1426,20 +1463,32 @@ ResultatPush posterAuServeur(const String &payload) {
   if (code <= 0) {  // Pas de réponse : Wi-Fi, URL (http://, pas https) ou serveur injoignable
     LOG("Échec de l'envoi : %s\n", HTTPClient::errorToString(code).c_str());
     echecsPush++; etatEnvoi = 2;
+    // Le Wi-Fi se dit connecté mais rien ne passe (bail DHCP perdu, borne qui a changé de clé…) : gererWiFi ne le
+    // voit pas (WiFi.status() reste « connecté »). Après quelques échecs de suite, on refait la connexion.
+    if (reseauOK() && ++echecsReseauConnecte >= ECHECS_AVANT_RECONNEXION) {
+      echecsReseauConnecte = 0;
+      demandeReconnexion = true;
+    }
     return PUSH_REESSAYER;
   }
+  echecsReseauConnecte = 0;
+  tDerniereReponse = millis();
   LOG("Réponse HTTP %d\n", code);
   LOG("%s\n", corps.c_str());  // le message du serveur dit quoi corriger
 
   // Le serveur répond en JSON ; next_push_in_s = délai à respecter avant le prochain envoi.
   JsonDocument rep;
-  int suivant = 0;
-  if (!deserializeJson(rep, corps)) suivant = rep["next_push_in_s"] | 0;
+  long suivant = 0;
+  if (!deserializeJson(rep, corps)) suivant = rep["next_push_in_s"] | 0L;
+  // une réponse aberrante (2 jours…) suspendait les envois d'autant : on plafonne
+  suivant = constrain(suivant, 0L, (long)(ATTENTE_SERVEUR_MAX_MS / 1000UL));
 
   // Succès : on respecte le délai demandé par le serveur (next_push_in_s). La marge au-dessus diminue
   // doucement tant que le serveur ne refuse rien (10 succès de suite : -100 ms).
   if (code >= 200 && code < 300) {
     echecsPush = 0;
+    if (cleInvalide) Serial.println("Clé acceptée de nouveau : envois repris.");
+    cleInvalide = false;
     unsigned long voulu = (unsigned long)suivant * 1000UL;
     ecartMinMs = (voulu > ECART_PUSH_MIN_MS) ? voulu : ECART_PUSH_MIN_MS;
     if (++succesDeSuite >= 10) {
@@ -1450,10 +1499,13 @@ ResultatPush posterAuServeur(const String &payload) {
     return PUSH_OK;
   }
   succesDeSuite = 0;
-  if (code == 401) {  // clé absente, fausse, révoquée ou expirée : inutile d'insister
+  if (code == 401) {  // clé absente, fausse, révoquée ou expirée… ou refus passager du serveur
+    // Avant : arrêt DÉFINITIF des envois jusqu'au prochain démarrage. Un seul 401 passager (maintenance du serveur)
+    // bloquait donc tout pendant des jours. Maintenant : nouvel essai toutes les 15 min, mesures gardées en mémoire.
+    if (!cleInvalide) Serial.println("Clé refusée : envois suspendus, nouvel essai toutes les 15 min (mesures gardées en mémoire). Vérifie 'set cle ...'.");
     cleInvalide = true;
+    tCleRefusee = millis();
     etatEnvoi = 3;
-    Serial.println("Clé refusée : envois suspendus (mesures gardées en mémoire). Corrige avec 'set cle ...'.");
     return PUSH_CLE_INVALIDE;
   }
   if (code == 429) {  // envoi trop rapproché : on agrandit la marge (ce n'est pas une panne : pas d'espacement progressif)
@@ -1639,7 +1691,8 @@ void gererEnvois(unsigned long now) {
     Serial.println("File d'attente vidée.");
   }
 
-  bool enLigne = reseauOK() && cleOK() && !cleInvalide;
+  bool cleUtilisable = !cleInvalide || now - tCleRefusee >= ESSAI_CLE_MS;   // clé refusée : un essai toutes les 15 min
+  bool enLigne = reseauOK() && cleOK() && cleUtilisable;
 
   // Pas de réseau (ou pas de clé valide) : tout ce qui attend en RAM est mis de côté en flash
   if (!enLigne) {
@@ -2929,7 +2982,8 @@ void afficherStatus() {
   Serial.println("--------- STATUS ---------");
   Serial.printf("device_id : %s\n", deviceId.c_str());
   Serial.printf("redémarrage : cause %d | boot %u\n", (int)esp_reset_reason(), (unsigned)bootId);
-  Serial.printf("uptime / mémoire : %lu s | %u octets libres\n", millis() / 1000UL, (unsigned)ESP.getFreeHeap());
+  Serial.printf("uptime / mémoire : %lu s | %u octets libres (plus grand bloc : %u)\n", millis() / 1000UL,
+                (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
   if (reseauOK()) {
     Serial.printf("WiFi : connecté à %s (%s) | IP %s | %d dBm\n", WiFi.SSID().c_str(), typeReseau(reseauCourant),
                   WiFi.localIP().toString().c_str(), WiFi.RSSI());
@@ -2943,7 +2997,7 @@ void afficherStatus() {
                 (unsigned)nbCoupuresWifi);
   Serial.printf("heure NTP : %s | mode nuit : %s\n", heureValide() ? "valide" : "pas encore", estNuit() ? "oui" : "non");
   Serial.printf("clé du groupe : %s%s\n", cleOK() ? "présente (32 car.)" : "ABSENTE ou mauvaise longueur",
-                cleInvalide ? " | REFUSÉE par le serveur" : "");
+                cleInvalide ? " | REFUSÉE par le serveur (nouvel essai toutes les 15 min)" : "");
   Serial.printf("dernier envoi : code HTTP %d | état %u | écart %lu ms (dont marge %lu ms)\n", dernierCodeHttp,
                 (unsigned)etatEnvoi, ecartCourantMs(), margePushMs);
   Serial.printf("file d'attente : %u mesures (%u octets de fichier)", (unsigned)nbLignesAttente, (unsigned)tailleBacklog);
@@ -3308,6 +3362,7 @@ void loop() {
   if (now - tReseau >= INTERVALLE_RESEAU_MS) {
     tReseau = now;
     surveillerWifiLongue(now);
+    surveillerEnvois(now);
     verifierMemoire();
   }
 
