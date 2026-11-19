@@ -24,7 +24,12 @@
  * ÉCRAN : interrupteurs en haut du fichier
  *   DOUBLE_BUFFER (dessin sans scintillement), TRANSITION_FONDU (fondu entre les pages),
  *   ANIMATIONS (clignement, chiffres qui glissent, sommet de la courbe qui clignote).
- *   Pages : CO2 | AERER (si CO2 élevé) | PARTICULES (PM1, PM2.5, PM10 ensemble) | QUALITE AIR | courbe CO2 | Wi-Fi.
+ *   Pages (UNE information par écran) : CO2 | AERER (si CO2 élevé) | PM1 | PM2.5 | PM10 | INDICE ATMO | courbe CO2 | Wi-Fi.
+ *   ALERTE HORS NORME : dès qu'un polluant franchit son seuil d'alerte (NIVEAU_ALERTE_PM / NIVEAU_ALERTE_CO2),
+ *   l'écran saute AUSSITÔT sur sa page (sans fondu), clignote plein écran à la couleur du niveau, puis la valeur
+ *   pulse ; tant que l'alerte dure, sa page revient une page sur deux (voir verifierAlertes).
+ *   INDICE ATMO : règle officielle de l'indice ATMO = le PIRE des sous-indices (pas de moyenne, pas de
+ *   pondération), calculé ici sur PM2.5 et PM10 seulement (voir niveauIndiceATMO).
  *   Trois polices (petite Picopixel, 5x7, grande FreeSansBold), pas de blanc : titres en cyan.
  *   Ancienne version de l'affichage : sauvegarde/main_avant_refonte.cpp
  *   Démarrage : logo animé "LA BONNE M'AIR" (basilique stylisée, voir afficherSplash).
@@ -192,7 +197,7 @@ static const int HEURE_NUIT_FIN   = 7;
 // --- Intervalles (ms) ---
 // Rythme de chaque travail : loop() lance un travail quand (maintenant - dernier passage) >= son intervalle.
 static const unsigned long INTERVALLE_LECTURE_MS   = 10000;      // lecture des capteurs
-static const unsigned long INTERVALLE_PAGE_MS       = 6000;       // durée d'affichage de chaque page (la page PARTICULES montre 3 valeurs)
+static const unsigned long INTERVALLE_PAGE_MS       = 5000;       // durée d'affichage de chaque page (une seule information par page)
 static const unsigned long PERIODE_MESURE_MS        = 30000;      // une mesure (moyenne + pic) toutes les 30 s
 static const unsigned long PERIODE_MESURE_BATT_MS   = 60000;      // idem sur batterie
 static const unsigned long PERIODE_MESURE_RATTRAPAGE_MS = 60000;  // pendant le renvoi d'un gros retard (voir SEUIL_RATTRAPAGE)
@@ -236,6 +241,17 @@ static const float SEUIL_ALARME_PPM     = 1500;    // buzzer au-dessus
 static const float AERATION_CHUTE_PPM   = 100;     // chute de CO2 en ~2 min = aération
 static const unsigned long BUZZER_PAUSE_MS = 300000UL;  // un bip toutes les 5 min au plus
 
+// --- Alerte « hors norme » (changement brutal de l'écran) ---
+// Niveaux : 0 bon | 1 moyen | 2 dégradé | 3 mauvais | 4 très mauvais | 5 extrêmement mauvais (indice ATMO)
+// PM : alerte à partir de « MAUVAIS » (PM2.5 > 25 ug/m3, PM10 > 50 ug/m3 : 50 = valeur limite journalière UE des PM10).
+// CO2 : alerte à partir du niveau 2 (>= 1000 ppm = SEUIL_AERER_PPM) : la page AERER s'affiche d'un coup.
+static const int NIVEAU_ALERTE_PM  = 3;
+static const int NIVEAU_ALERTE_CO2 = 2;
+static const unsigned long ALERTE_FLASH_MS    = 150;     // durée d'une image du clignotement plein écran
+static const uint8_t       ALERTE_NB_FLASH    = 6;       // 6 images = 3 éclairs (~0,9 s)
+static const unsigned long ALERTE_PULSE_MS    = 500;     // la valeur en alerte pulse (vif / atténué)
+static const unsigned long ALERTE_REARME_MS   = 60000UL; // un même polluant ne refait pas clignoter l'écran plus d'1 fois / min
+
 // --- Seuils d'affichage ---
 // Une échelle = ses seuils + la façon de les comparer :
 //   inclus = false : valeur <  seuil[i] => niveau i   (CO2 : seuils "à partir de")
@@ -266,6 +282,8 @@ static const uint8_t PALETTE[NB_NIVEAUX][3] = {
 // Qualificatifs ATMO. Page "QUALITE AIR" : 7 caractères par ligne au plus ; un libellé plus long est coupé
 // en deux lignes à l'espace ("TRES" / "MAUVAIS").
 static const char* LABELS_NIVEAU[NB_NIVEAUX] = {"BON", "MOYEN", "DEGRADE", "MAUVAIS", "TRES MAUVAIS", "EXTREM. MAUVAIS"};
+// Versions courtes, utilisées quand le libellé complet ne tient pas (bas des pages PM1 / PM2.5 / PM10)
+static const char* LABELS_COURTS[NB_NIVEAUX] = {"BON", "MOYEN", "DEGRADE", "MAUVAIS", "TRES MAUV.", "EXTREME"};
 
 // --- Animations d'écran ---
 static const unsigned long ANIM_PAS_MS = 40;           // une image d'animation toutes les 40 ms (25 i/s)
@@ -445,7 +463,7 @@ volatile uint32_t nbLignesAttente = 0;  // écrit par la tâche d'envoi, lu par 
 // Affichage
 // Pages de l'écran, affichées en rotation (une toutes les INTERVALLE_PAGE_MS). NB_PAGES = nombre de pages.
 // PAGE_AERER n'apparaît que si le CO2 est élevé, PAGE_COURBE qu'après 2 minutes de mesures.
-enum Page { PAGE_CO2, PAGE_AERER, PAGE_PM, PAGE_GLOBAL, PAGE_COURBE, PAGE_WIFI, NB_PAGES };
+enum Page { PAGE_CO2, PAGE_AERER, PAGE_PM1, PAGE_PM25, PAGE_PM10, PAGE_GLOBAL, PAGE_COURBE, PAGE_WIFI, NB_PAGES };
 uint8_t pageCourante = PAGE_CO2;
 bool aRedessiner = false;  // un seul redessin par tour de loop()
 bool aTransition = false;  // fondu à faire au prochain affichage (changement de page)
@@ -455,6 +473,17 @@ unsigned long tAnim = 0;       // dernière image d'animation
 bool etatCligne = false;       // les yeux sont-ils fermés (dernière image) ?
 uint32_t phaseChauffe = 0;     // seconde affichée par le compte à rebours de préchauffage
 uint8_t phasePoint = 0;          // point clignotant de la page courbe (0 / 1, change toutes les 500 ms)
+
+// Alertes hors norme : une entrée par polluant (0 CO2 | 1 PM1 | 2 PM2.5 | 3 PM10)
+struct EtatAlerte {
+  bool active;            // le polluant est au-dessus de son seuil d'alerte
+  int8_t nivMax;          // pire niveau atteint depuis le début de l'alerte (re-clignote s'il empire)
+  unsigned long tFlash;   // dernier clignotement déclenché par ce polluant
+};
+EtatAlerte alertes[4] = {{false, -1, 0}, {false, -1, 0}, {false, -1, 0}, {false, -1, 0}};
+unsigned long tFlashDebut = 0;   // début du clignotement plein écran (0 = aucun en cours)
+uint16_t couleurFlash = 0;       // couleur du niveau qui a déclenché l'alerte
+const char* nomFlash = "";       // nom du polluant écrit en noir pendant l'éclair
 
 // Dates (en ms depuis le démarrage) du dernier passage de chaque travail de loop().
 unsigned long tLecture = 0, tPeriode = 0, tReseau = 0, tLumi = 0, tPage = 0, tHist = 0;
@@ -1673,15 +1702,25 @@ int niveauMesure(const Mesure &m, const Echelle &e) {
   return niveau(m.valeur, e);
 }
 
-// Pire niveau parmi CO2, PM2.5 et PM10 (-1 si aucun capteur prêt) + nom du polluant responsable
-int niveauGlobal(const char** pire) {
-  int n1 = niveauMesure(mCO2, ECH_CO2);
-  int n2 = niveauMesure(mPM25, ECH_PM25);
-  int n3 = niveauMesure(mPM10, ECH_PM10);
-  int pireN = n1;
-  const char* nom = "CO2";
-  if (n2 > pireN) { pireN = n2; nom = "PM2.5"; }
-  if (n3 > pireN) { pireN = n3; nom = "PM10"; }
+// INDICE GLOBAL : comment les polluants sont-ils « pondérés » ?
+// Ils ne le sont PAS, et c'est voulu. On applique la règle officielle de l'indice ATMO (arrêté du 10 juillet 2020,
+// https://www.atmo-france.org/article/lindice-atmo) : chaque polluant reçoit un SOUS-INDICE (1 à 6) sur sa propre
+// échelle, et l'indice est le PIRE de ces sous-indices. Pas de moyenne : les seuils de chaque échelle sont déjà
+// calés sur la nocivité du polluant (25 ug/m3 de PM2.5 et 50 ug/m3 de PM10 donnent tous deux « mauvais ») ;
+// une moyenne, pondérée ou non, laisserait un polluant très élevé être « caché » par un autre resté bas.
+// Ce qui entre dans l'indice :
+//   - PM2.5 et PM10 : oui (seuils ATMO officiels) ;
+//   - PM1  : non, l'indice ATMO ne lui fixe aucun seuil (la page PM1 reste colorée à titre indicatif) ;
+//   - CO2  : non, ce n'est pas un polluant de l'indice ATMO mais un indicateur de CONFINEMENT (aération) :
+//            il garde ses propres pages (CO2, AERER) et ne modifie jamais l'indice.
+// L'ATMO officiel inclut aussi O3, NO2 et SO2, que la carte ne mesure pas : cet indice est donc PARTIEL (particules).
+// Renvoie -1 si le NextPM n'est pas prêt, + le nom du polluant responsable.
+int niveauIndiceATMO(const char** pire) {
+  int n25 = niveauMesure(mPM25, ECH_PM25);
+  int n10 = niveauMesure(mPM10, ECH_PM10);
+  int pireN = n25;
+  const char* nom = "PM2.5";
+  if (n10 > pireN) { pireN = n10; nom = "PM10"; }
   if (pire) *pire = nom;
   return pireN;
 }
@@ -1956,39 +1995,41 @@ void dessinerPageCO2() {
   dessinerThermometre(v, niv);
 }
 
-// ---------- page PARTICULES ----------
-// Les trois tailles de particules sur une seule page, une ligne chacune (y 8, 16, 24) :
-//   nom (petite police) | valeur en 5x7, couleur du niveau ATMO, alignée à droite (x 35) | VU-mètre (x 39..55)
-// PM1 suit l'échelle de PM2.5 (pas de seuils réglementaires).
-void dessinerPagePM() {
-  // titre long + unité quand tout va bien ; sinon titre court + état (sinon ils se chevauchent)
-  if (mPM25.etat == CAPTEUR_OK) {
-    ecrireP("PARTICULES", 0, 0, COL_TITRE);
-    ecrireUniteUgM3(63, 0, COL_DISCRET);
-  } else {
-    ecrireP("PM", 0, 0, COL_TITRE);
-    if (mPM25.etat == CAPTEUR_CHAUFFE) ecrirePDroite("DEMARRAGE", 63, 0, COL_TITRE);
-    else                               ecrirePDroite("PANNE", 63, 0, COL_ERREUR);
+// ---------- pages PM1, PM2.5, PM10 (une grandeur par écran) ----------
+// Même grille que la page CO2 :
+//   0..5   nom (cyan) à gauche | unité ug/m3 à droite
+//   7..23  la valeur en grand (FreeSansBold 12 pt), couleur du niveau ATMO ; elle PULSE si le polluant est en alerte
+//   25..31 qualificatif ATMO (petite police, couleur du niveau) à gauche | VU-mètre des 6 niveaux (x 39..55)
+// PM1 : pas de seuil ATMO, il est coloré avec l'échelle des PM2.5, à titre indicatif.
+bool alertePage(uint8_t p);
+void dessinerPagePM(const Mesure &m, const char* nom, const Echelle &e, uint8_t page) {
+  ecrireP(nom, 0, 0, COL_TITRE);
+  if (m.etat == CAPTEUR_CHAUFFE) {
+    ecrirePDroite("DEMARRAGE", 63, 0, COL_TITRE);
+    ecrireGrand("--", 28, 23, COL_DISCRET);
+    dessinerVU(39, 31, -1);
+    return;
   }
-
-  static const char* NOMS[3] = {"PM1", "PM2.5", "PM10"};
-  const Mesure* mesures[3] = {&mPM1, &mPM25, &mPM10};
-  const Echelle* echelles[3] = {&ECH_PM25, &ECH_PM25, &ECH_PM10};
-  for (int r = 0; r < 3; r++) {
-    int y = 8 + 8 * r;
-    ecrireP(NOMS[r], 0, y + 1, COL_TITRE);
-    if (mesures[r]->etat == CAPTEUR_OK) {
-      float v = valAff(*mesures[r]);
-      int niv = niveau(v, *echelles[r]);
-      char buf[8];
-      formaterPM(buf, sizeof(buf), v);
-      ecrireNombre(buf, 35, y, colNiv[niv]);
-      dessinerVU(39, y + 6, niv);
-    } else {
-      ecrireNombre("--", 35, y, COL_DISCRET);
-      dessinerVU(39, y + 6, -1);
-    }
+  if (m.etat == CAPTEUR_ERREUR) {
+    ecrirePDroite("PANNE", 63, 0, COL_ERREUR);
+    ecrireGrand("ERR", 28, 23, COL_ERREUR);
+    dessinerVU(39, 31, -1);
+    return;
   }
+  ecrireUniteUgM3(63, 0, COL_DISCRET);
+  float v = valAff(m);
+  int niv = niveau(v, e);
+  uint16_t c = colNiv[niv];
+  // En alerte : la valeur pulse (vif / atténué toutes les ALERTE_PULSE_MS)
+  uint16_t cVal = c;
+  if (alertePage(page) && ((millis() / ALERTE_PULSE_MS) % 2UL) == 1) cVal = atten(c, 110);
+  char buf[8];
+  formaterPM(buf, sizeof(buf), v);
+  ecrireGrand(buf, 28, 23, cVal);
+  const char* label = LABELS_NIVEAU[niv];
+  if (largeurP(label) > 37) label = LABELS_COURTS[niv];   // x 0..37 : il reste la place du VU-mètre
+  ecrireP(label, 0, 26, c);
+  dessinerVU(39, 31, niv);
 }
 
 // ---------- page AERER (seulement quand le CO2 dépasse SEUIL_AERER_PPM) ----------
@@ -2011,13 +2052,13 @@ void dessinerPageAerer() {
   ecrireP(consigne, (LARGEUR_BAS - largeurP(consigne)) / 2, 26, COL_TITRE);
 }
 
-// ---------- page QUALITÉ DE L'AIR (synthèse) ----------
-// Visage (couleur du pire niveau) | qualificatif ATMO en 5x7 (1 ou 2 lignes) | VU-mètre du niveau.
-// En haut à droite : le polluant responsable quand l'air n'est pas "bon".
+// ---------- page INDICE ATMO (synthèse des particules, règle du pire sous-indice : voir niveauIndiceATMO) ----------
+// Visage (couleur du niveau) | qualificatif ATMO en 5x7 (1 ou 2 lignes) | VU-mètre du niveau.
+// En haut à droite : le polluant responsable (PM2.5 ou PM10) quand l'air n'est pas "bon". Le CO2 n'y entre pas.
 void dessinerPageGlobal() {
-  ecrireP("QUALITE AIR", 0, 0, COL_TITRE);
+  ecrireP("INDICE ATMO", 0, 0, COL_TITRE);
   const char* cause = "";
-  int niv = niveauGlobal(&cause);
+  int niv = niveauIndiceATMO(&cause);
   if (niv < 0) {                                         // capteurs pas encore prêts
     dessinerVisage(9, 18, -1, COL_PISTE, false);
     ecrireTexte("ATTENTE", 21, 12, 1, COL_TITRE);
@@ -2307,6 +2348,70 @@ bool pageActive(uint8_t p) {
   return true;
 }
 
+// ---------- alertes hors norme ----------
+// Index des alertes : 0 CO2 | 1 PM1 | 2 PM2.5 | 3 PM10. Page affichée pour chacune (le CO2 saute sur AERER).
+static const uint8_t PAGE_ALERTE[4] = {PAGE_AERER, PAGE_PM1, PAGE_PM25, PAGE_PM10};
+uint8_t dernierePageAlerte = PAGE_AERER;   // tourniquet entre plusieurs pages en alerte
+uint8_t curseurRotation = PAGE_CO2;        // dernière page « normale » montrée (la rotation reprend là)
+
+// La page p montre-t-elle un polluant actuellement en alerte ?
+bool alertePage(uint8_t p) {
+  for (uint8_t i = 0; i < 4; i++) if (PAGE_ALERTE[i] == p && alertes[i].active) return true;
+  return false;
+}
+
+bool alerteEnCours() {
+  for (uint8_t i = 0; i < 4; i++) if (alertes[i].active && pageActive(PAGE_ALERTE[i])) return true;
+  return false;
+}
+
+bool flashEnCours() {
+  return tFlashDebut != 0 && millis() - tFlashDebut < ALERTE_FLASH_MS * ALERTE_NB_FLASH;
+}
+
+// Changement BRUTAL : la page du polluant s'affiche tout de suite (pas de fondu), et l'écran clignote plein écran.
+void declencherAlerte(uint8_t i, int niv, const char* nom, unsigned long now) {
+  alertes[i].tFlash = now;
+  pageCourante = PAGE_ALERTE[i];
+  dernierePageAlerte = pageCourante;
+  tPage = now;                  // la page reste affichée une durée complète
+  aTransition = false;          // pas de fondu : le changement doit sauter aux yeux
+  if (!ecranEteint) {
+    tFlashDebut = now;
+    if (tFlashDebut == 0) tFlashDebut = 1;
+    couleurFlash = colNiv[niv];
+    nomFlash = nom;
+  }
+  aRedessiner = true;
+  LOG("ALERTE %s : niveau %d (%s)\n", nom, niv, LABELS_NIVEAU[niv]);
+}
+
+// Appelée après chaque lecture des capteurs (toutes les 10 s).
+// Une alerte se déclenche quand un polluant FRANCHIT son seuil, ou quand il EMPIRE pendant l'alerte.
+// Anti-rebond : une valeur qui oscille autour du seuil ne refait pas clignoter l'écran plus d'une fois par minute.
+// PM1 n'a pas de seuil réglementaire : il ne déclenche pas d'alerte (PM2.5 >= PM1, donc PM2.5 alerte avant lui).
+void verifierAlertes(unsigned long now) {
+  const Mesure* m[4] = {&mCO2, &mPM1, &mPM25, &mPM10};
+  const Echelle* e[4] = {&ECH_CO2, &ECH_PM25, &ECH_PM25, &ECH_PM10};
+  static const char* NOMS[4] = {"CO2", "PM1", "PM2.5", "PM10"};
+  int choix = -1, nivChoix = -1;
+  for (uint8_t i = 0; i < 4; i++) {
+    EtatAlerte &a = alertes[i];
+    int niv = niveauMesure(*m[i], *e[i]);
+    int seuil = (i == 0) ? NIVEAU_ALERTE_CO2 : NIVEAU_ALERTE_PM;
+    if (i == 1 || niv < seuil) { a.active = false; a.nivMax = -1; continue; }
+    bool empire = a.active && niv > a.nivMax;
+    bool entree = !a.active;
+    a.active = true;
+    if (niv > a.nivMax) a.nivMax = niv;
+    bool rearme = (a.tFlash == 0) || (now - a.tFlash >= ALERTE_REARME_MS);
+    if ((entree && rearme) || empire) {
+      if (niv > nivChoix) { choix = i; nivChoix = niv; }   // plusieurs à la fois : le plus grave d'abord
+    }
+  }
+  if (choix >= 0) declencherAlerte(choix, nivChoix, NOMS[choix], now);
+}
+
 #if AFFICHER_TEMOINS
 // Zone d'état en bas à droite (x 57..63, y 25..31), que les pages ne recouvrent jamais :
 //
@@ -2375,10 +2480,19 @@ void dessinerContenu() {
     return;
   }
 
+  // Éclair d'alerte : une image sur deux, tout l'écran à la couleur du niveau, nom du polluant en noir
+  if (flashEnCours() && (((millis() - tFlashDebut) / ALERTE_FLASH_MS) % 2UL) == 0) {
+    display.fillScreen(couleurFlash);
+    ecrireGrand(nomFlash, 32, 22, 0, &FreeSansBold9pt7b);
+    return;
+  }
+
   switch (pageCourante) {
     case PAGE_CO2:    dessinerPageCO2(); break;
     case PAGE_AERER:  dessinerPageAerer(); break;
-    case PAGE_PM:     dessinerPagePM(); break;
+    case PAGE_PM1:    dessinerPagePM(mPM1,  "PM1",   ECH_PM25, PAGE_PM1);  break;   // échelle PM2.5, indicative
+    case PAGE_PM25:   dessinerPagePM(mPM25, "PM2.5", ECH_PM25, PAGE_PM25); break;
+    case PAGE_PM10:   dessinerPagePM(mPM10, "PM10",  ECH_PM10, PAGE_PM10); break;
     case PAGE_GLOBAL: dessinerPageGlobal(); break;
     case PAGE_COURBE: dessinerPageCourbe(); break;
     case PAGE_WIFI:   dessinerPageWifi(); break;
@@ -2427,10 +2541,23 @@ void afficher() {
 
 // Passe à la page suivante qui est active (saute AERER et COURBE quand elles n'ont rien à montrer)
 // et prépare le fondu.
+// Pendant une alerte : une page sur deux est une page EN ALERTE (tourniquet s'il y en a plusieurs) ; entre deux,
+// la rotation normale reprend là où elle s'était arrêtée, pour que les autres mesures restent visibles.
 void pageSuivante() {
-  for (uint8_t i = 0; i < NB_PAGES; i++) {
-    pageCourante = (pageCourante + 1) % NB_PAGES;
-    if (pageActive(pageCourante)) break;
+  bool enAlerte = alerteEnCours();
+  bool trouvee = false;
+  if (enAlerte && !alertePage(pageCourante)) {
+    for (uint8_t i = 1; i <= NB_PAGES && !trouvee; i++) {
+      uint8_t p = (dernierePageAlerte + i) % NB_PAGES;
+      if (alertePage(p) && pageActive(p)) { pageCourante = dernierePageAlerte = p; trouvee = true; }
+    }
+  }
+  for (uint8_t i = 0; i < NB_PAGES && !trouvee; i++) {
+    curseurRotation = (curseurRotation + 1) % NB_PAGES;
+    if (pageActive(curseurRotation) && !(enAlerte && alertePage(curseurRotation))) {
+      pageCourante = curseurRotation;
+      trouvee = true;
+    }
   }
   aTransition = true;
   aRedessiner = true;
@@ -2439,8 +2566,10 @@ void pageSuivante() {
 // ---------- animations ----------
 // La page courante affiche-t-elle cette mesure ? (pour ne redessiner que si ce qui bouge est visible)
 bool mesureVisible(const Mesure &m) {
-  if (pageCourante == PAGE_CO2) return &m == &mCO2;
-  if (pageCourante == PAGE_PM)  return &m != &mCO2;
+  if (pageCourante == PAGE_CO2)  return &m == &mCO2;
+  if (pageCourante == PAGE_PM1)  return &m == &mPM1;
+  if (pageCourante == PAGE_PM25) return &m == &mPM25;
+  if (pageCourante == PAGE_PM10) return &m == &mPM10;
   return false;
 }
 
@@ -2470,6 +2599,26 @@ void animer(unsigned long now) {
     static uint32_t phaseWifi = 0;
     uint32_t ph = (uint32_t)(now / 60UL);
     if (ph != phaseWifi) { phaseWifi = ph; maj = true; }
+  }
+
+  // éclair d'alerte : une image toutes les ALERTE_FLASH_MS, puis retour à la page normale
+  if (tFlashDebut != 0) {
+    static uint32_t imgFlash = 0xFFFFFFFF;
+    if (flashEnCours()) {
+      uint32_t img = (uint32_t)((now - tFlashDebut) / ALERTE_FLASH_MS);
+      if (img != imgFlash) { imgFlash = img; maj = true; }
+    } else {
+      tFlashDebut = 0;
+      imgFlash = 0xFFFFFFFF;
+      maj = true;
+    }
+  }
+
+  // page PM en alerte : la valeur pulse (même sans ANIMATIONS : c'est une alerte)
+  if (pageVisible && pageCourante != PAGE_AERER && alertePage(pageCourante)) {
+    static uint32_t phasePulse = 0;
+    uint32_t ph = (uint32_t)(now / ALERTE_PULSE_MS);
+    if (ph != phasePulse) { phasePulse = ph; maj = true; }
   }
 
   // page AERER : "AERER" pulse (vif / atténué toutes les 0,6 s), même sans ANIMATIONS : c'est une alerte
@@ -3107,6 +3256,7 @@ void loop() {
     tLecture = now;
     lireCapteurs();
     accumulerLectures();
+    verifierAlertes(now);   // polluant hors norme : saut immédiat sur sa page + éclair
     aRedessiner = true;
   }
 
