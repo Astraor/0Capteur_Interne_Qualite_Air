@@ -1691,6 +1691,11 @@ function el(balise, classe, texte) {
 }
 
 const estNombre = v => typeof v === "number" && Number.isFinite(v);
+// Valeurs physiquement impossibles écartées (traitées comme une mesure absente) : le serveur garde des CO2 de 37 ppm
+// envoyés par un capteur qui dérivait (nuit du 13/11/2026) ; l'air ne descend pas sous ~400 ppm, et 5000 ppm est le
+// haut de la gamme du MH-Z19C. La carte applique la même règle depuis (CO2_MIN_PLAUSIBLE dans main.cpp).
+const PLAGES_PLAUSIBLES = { co2: [300, 5000], pm1: [0, 1000], pm25: [0, 1000], pm10: [0, 1000], temp: [-40, 85], hum: [0, 100] };
+const plausible = (k, v) => estNombre(v) && (!PLAGES_PLAUSIBLES[k] || (v >= PLAGES_PLAUSIBLES[k][0] && v <= PLAGES_PLAUSIBLES[k][1]));
 
 // Nom et description d'un champ, dans la langue courante.
 const nomChamp = c => (CHAMPS[c].nomCle ? trad(CHAMPS[c].nomCle) : CHAMPS[c].nom);
@@ -1891,6 +1896,39 @@ async function interrogerApi(params) {
   return json.points || [];
 }
 
+// ---- Rafraîchissement incrémental ----
+// Toutes les 5 min, on ne redemande que ce qui est arrivé depuis la requête précédente (avec 2 min de recouvrement),
+// au lieu de toute la période : quelques Ko au lieu de ~1,5 Mo pour 24 h de mesures brutes (l'API n'est pas compressée).
+// Les mesures rejouées après une coupure sont datées à leur RÉCEPTION : elles sont donc bien dans ce complément.
+// Une moyenne du serveur est datée à la fin de son intervalle : on repart du début de l'avant-dernier intervalle
+// (aligné sur la grille du serveur), et la version complète d'un intervalle remplace sa version partielle.
+let pointsBruts = null;   // { periode, freq, fin, points } : réponse brute du serveur, complétée à chaque passage
+const RECOUVREMENT_MS = 2 * 60000;
+const INCREMENTAL_MAX_MS = 30 * 60000;   // au-delà (onglet en veille longtemps…), on recharge tout
+const clePoint = p => p.time + "|" + (p.device_id || "");
+
+async function chargerPoints(periode) {
+  const reglages = reglagesPeriode(periode);
+  const debutRequete = Date.now();
+  const p = pointsBruts;
+  if (p && p.periode === periode && debutRequete - p.fin < INCREMENTAL_MAX_MS) {
+    const fms = p.freq ? enMs(p.freq) : 0;
+    const depuis = p.freq ? Math.floor((p.fin - 2 * fms) / fms) * fms : p.fin - RECOUVREMENT_MS;
+    const nouveaux = await appelerApiPlage(depuis, debutRequete, p.freq);
+    // on oublie ce qui a été REÇU avant le début de la période (une mesure est toujours prise avant d'être reçue)
+    const limite = debutRequete - reglages.duree - fms;
+    const tous = new Map();
+    for (const x of p.points) if (Date.parse(x.time) >= limite) tous.set(clePoint(x), x);
+    for (const x of nouveaux) tous.set(clePoint(x), x);
+    pointsBruts = { periode, freq: p.freq, fin: debutRequete, points: [...tous.values()] };
+    return pointsBruts.points;
+  }
+  const points = await chargerMesures(periode);
+  const freq = (reglages.freq === "" && brutPossible) ? "" : (reglages.freq || reglages.secours);
+  pointsBruts = { periode, freq, fin: debutRequete, points };
+  return points;
+}
+
 async function chargerMesures(periode) {
   if (!CLE) {
     throw erreurI18n("err.cle");
@@ -1937,7 +1975,7 @@ function lirePoints(points, periode, maintenant) {
     if (t < debut) return;                 // mesurée avant la période affichée
     const v = {};
     let utile = false;
-    noms.forEach(k => { if (estNombre(p[k])) { v[k] = p[k]; utile = true; } });
+    noms.forEach(k => { if (plausible(k, p[k])) { v[k] = p[k]; utile = true; } });
     if (utile) lus.push({ t, v });
   });
   if (lus.length === 0) return null;
@@ -4114,7 +4152,7 @@ async function rafraichir() {
   const numero = ++numeroRequete;
   const periode = periodeActuelle;
   try {
-    const points = await chargerMesures(periode);
+    const points = await chargerPoints(periode);
     if (numero !== numeroRequete) return;   // une demande plus récente a pris le relais
     derniereMaj = Date.now();
     majPiedMaj();
@@ -4323,7 +4361,7 @@ function versMesures(points, freq, debut, fin, maintenant) {
     if (t < debut || t > fin) return;
     const v = {};
     let utile = false;
-    noms.forEach(k => { if (estNombre(p[k])) { v[k] = p[k]; utile = true; } });
+    noms.forEach(k => { if (plausible(k, p[k])) { v[k] = p[k]; utile = true; } });
     if (utile) lus.push({ t, v });
   });
   lus.sort((a, b) => a.t - b.t);
