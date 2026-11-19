@@ -46,7 +46,7 @@ window.I18N_DICT.en = {
   "verdict.ancienne": "reading too old",
   "verdict.inconnue": "unknown",
   "verdict.aucune": "no data",
-  "verdict.titre_page": "Air is {mot} · La Bonne M’air",
+  "verdict.titre_page": "La Bonne M’air · Air is {mot}",
   "niveau.0.nom": "Good",
   "niveau.1.nom": "Fair",
   "niveau.2.nom": "Degraded",

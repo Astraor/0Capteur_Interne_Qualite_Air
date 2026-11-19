@@ -7,7 +7,7 @@
 window.I18N_DICT = window.I18N_DICT || {};
 window.I18N_DICT.fr = {
   /* ---------- Page ---------- */
-  "meta.titre": "La Bonne M’air · Qualité de l'air en direct",
+  "meta.titre": "La Bonne M’air · Qualité de l’air en direct",
   "meta.description": "Mesures en direct de notre capteur de qualité de l'air : particules fines, température, humidité et CO2.",
   "lang.groupe": "Langue",
 
@@ -51,7 +51,7 @@ window.I18N_DICT.fr = {
   "verdict.ancienne": "mesure trop ancienne",
   "verdict.inconnue": "inconnue",
   "verdict.aucune": "aucune donnée",
-  "verdict.titre_page": "Air {mot} · La Bonne M’air",
+  "verdict.titre_page": "La Bonne M’air · Air {mot}",
   "niveau.0.nom": "Bon",
   "niveau.1.nom": "Moyen",
   "niveau.2.nom": "Dégradé",
