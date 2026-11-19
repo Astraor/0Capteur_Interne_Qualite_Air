@@ -1985,11 +1985,31 @@ function lirePoints(points, periode, maintenant) {
     const v = {};
     let utile = false;
     noms.forEach(k => { if (plausible(k, p[k])) { v[k] = p[k]; utile = true; } });
-    if (utile) lus.push({ t, v });
+    if (utile) lus.push({ t, v, d: p.device_id || "" });
   });
   if (lus.length === 0) return null;
   lus.sort((a, b) => a.t - b.t);
-  return { lus, rejouees, sansAge };
+  return { lus: sansDoublons(lus), rejouees, sansAge };
+}
+
+// Une mesure peut arriver DEUX fois au serveur : il l'a enregistrée mais sa réponse s'est perdue en route, la carte
+// la renvoie donc plus tard. Les deux copies ont deux heures de réception différentes, mais une fois remises à leur
+// heure réelle (x_age_s), elles tombent à la même seconde (± 1 s) avec exactement les mêmes valeurs : on en garde une.
+// (Deux vraies mesures d'une même carte sont espacées d'au moins 30 s.) lus doit être trié dans le temps.
+function sansDoublons(lus) {
+  const garde = [];
+  for (const l of lus) {
+    let doublon = false;
+    for (let k = garde.length - 1; k >= 0 && l.t - garde[k].t <= 5000; k--) {
+      if (garde[k].d === l.d && memesValeurs(garde[k].v, l.v)) { doublon = true; break; }
+    }
+    if (!doublon) garde.push(l);
+  }
+  return garde;
+}
+function memesValeurs(a, b) {
+  const ka = Object.keys(a);
+  return ka.length === Object.keys(b).length && ka.every(k => a[k] === b[k]);
 }
 
 // Place les mesures sur une grille de temps régulière (pasMs) en faisant la moyenne de chaque case.
@@ -2984,6 +3004,9 @@ function initPleinEcran() {
   document.addEventListener("webkitfullscreenchange", maj);
   if (bascule) bascule.addEventListener("click", () => { if (elementPlein()) sortirPleinEcran(); else entrerPleinEcran(); });
 
+  // Introduction déjà vue (visite précédente) : pas d'écran d'entrée, on arrive directement sur les mesures.
+  // Le bouton en bas à droite permet toujours de passer en plein écran.
+  if (porte && racine.classList.contains("intro-masquee")) { porte.remove(); return; }
   if (!porte || elementPlein()) return;
   const fermer = () => {
     if (porte.hidden) return;
@@ -4389,10 +4412,10 @@ function versMesures(points, freq, debut, fin, maintenant) {
     const v = {};
     let utile = false;
     noms.forEach(k => { if (plausible(k, p[k])) { v[k] = p[k]; utile = true; } });
-    if (utile) lus.push({ t, v });
+    if (utile) lus.push({ t, v, d: p.device_id || "" });
   });
   lus.sort((a, b) => a.t - b.t);
-  return lus;
+  return freq ? lus : sansDoublons(lus);
 }
 
 // Mesures de [debut, fin] pour l'export, au pas demandé ("" = mesures brutes).
