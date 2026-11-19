@@ -55,7 +55,7 @@ Sans réseau, la mesure est rangée en flash puis renvoyée plus tard avec son �
 | **NextPM** (Tera Sensor) | Particules PM1 / PM2.5 / PM10 par diffusion laser, + T° et humidité internes | Modbus RTU sur UART1 |
 | **MH-Z19C** (Winsen) | CO₂ par absorption infrarouge (NDIR) | UART2 |
 | Panneau LED RGB **64 × 32** (HUB75, 1/16) | Affichage local | PxMatrix |
-| Pont diviseur (optionnel) | Détection secteur / batterie | Entrée analogique |
+| Pont diviseur (optionnel) | Détection secteur / batterie (désactivée par défaut : `DETECTION_SECTEUR_ACTIVE`) | Entrée analogique |
 
 ### Brochage
 
@@ -90,7 +90,8 @@ Sans réseau, la mesure est rangée en flash puis renvoyée plus tard avec son �
 ├── Firmware/
 │   ├── platformio.ini          # Configuration PlatformIO
 │   ├── src/main.cpp            # Programme de la carte
-│   └── simulation/             # Simulation des coupures Wi-Fi sur PC (vrai code d'envoi, voir LISEZMOI.md)
+│   └── simulation/             # Simulation sur PC : coupures Wi-Fi (code d'envoi, LISEZMOI.md)
+│       └── carte/              #   et carte complète : écran, capteurs, pannes de plusieurs jours (LISEZMOI.md)
 └── .github/
     ├── workflows/surveillance-capteur.yml   # Tâche planifiée toutes les 5 min
     └── scripts/surveiller-capteur.mjs       # Vérifie que le capteur envoie encore
@@ -104,12 +105,8 @@ Sans réseau, la mesure est rangée en flash puis renvoyée plus tard avec son �
 
 1. Installer **VS Code** et l’extension **PlatformIO IDE**.
 2. Ouvrir le dossier `Firmware/` comme projet PlatformIO.
-3. Enregistrer le fichier `Firmware/PlatformIO` sous le nom **`platformio.ini`** (PlatformIO ne reconnaît que ce nom).
-4. Le programme est écrit pour **ESP32 Arduino 2.x** (il refuse de compiler en 3.x). Fixer la plateforme dans `platformio.ini` :
-   ```ini
-   platform = espressif32@^6.0.0
-   ```
-5. Compiler et téléverser (`PlatformIO: Upload`), puis ouvrir le moniteur série à **115 200 bauds**.
+3. `Firmware/platformio.ini` fixe déjà la plateforme (`espressif32@^6.0.0`) : le programme est écrit pour **ESP32 Arduino 2.x** et refuse de compiler en 3.x.
+4. Compiler et téléverser (`PlatformIO: Upload`), puis ouvrir le moniteur série à **115 200 bauds**.
 
 Bibliothèques (installées automatiquement par `lib_deps`) :
 `ModbusMaster 2.0.1`, `MH-Z19 ^1.5.4`, `PxMatrix 1.8.2`, `Adafruit GFX 1.11.11`, `ArduinoJson ^7.4.3`.
@@ -155,6 +152,8 @@ La carte se connecte seule au meilleur réseau connu visible, sans redémarrage.
 - **Couleurs :** chaque valeur prend la couleur de son niveau ATMO.
 - **Alerte hors norme :** dès qu’un polluant atteint son seuil d’alerte (PM : « Mauvais », CO₂ : ≥ 1 000 ppm), l’écran saute aussitôt sur sa page, clignote à la couleur du niveau, puis la valeur pulse ; la page revient une fois sur deux tant que l’alerte dure.
 - **Luminosité adaptée :** jour, nuit et batterie.
+- **Préchauffage du CO₂ :** compte à rebours en minutes:secondes (« 2:18 ») les 3 premières minutes après une mise sous tension (pas après un redémarrage logiciel : le capteur est resté alimenté).
+- **CO₂ impossible :** une lecture sous 300 ppm est écartée (un capteur qui dérive a envoyé jusqu'à 37 ppm) ; si ça dure, la page CO₂ affiche « A CALIBRER » (commande `calib oui`, à l'air libre).
 
 ### Données envoyées
 
@@ -169,7 +168,7 @@ Envoi JSON toutes les **30 s** (60 s sur batterie) à `http://api.aircarto.fr/iu
 | `x_aeration` | 1 = chute rapide du CO₂ (fenêtre ouverte ?) |
 | `x_pct_co2_1000` | % du temps au-dessus de 1 000 ppm |
 | `x_reset` | Cause du dernier redémarrage |
-| `x_alim` | 1 = secteur, 0 = batterie |
+| `x_alim` | 1 = secteur, 0 = batterie (toujours 1 tant que la détection secteur est désactivée) |
 | `x_pm_statut` | Octet d’état du NextPM |
 | `x_temp_pm`, `x_hum_pm` | Température / humidité internes du NextPM |
 
@@ -177,7 +176,12 @@ Envoi JSON toutes les **30 s** (60 s sur batterie) à `http://api.aircarto.fr/iu
 
 - **Mode hors ligne :** jusqu’à ~500 Ko (~12 h) de mesures stockées en flash, renvoyées automatiquement (le serveur impose 10 s entre deux envois : ~100 mesures en retard se rattrapent en ~20 min).
 - **Tâches séparées :** l’envoi réseau tourne dans sa propre tâche, l’écran est rafraîchi sur le cœur 0 : l’affichage ne se fige jamais pendant un envoi.
-- **Sécurités :** watchdog (60 s), redémarrage si la mémoire libre passe sous 25 Ko ou après 1 h sans Wi-Fi, heure NTP avec passage heure d’été / d’hiver.
+- **Sécurités :** watchdog (60 s), redémarrage si la mémoire libre passe sous 25 Ko ou si elle est trop morcelée (plus grand bloc sous 10 Ko), heure NTP avec passage heure d’été / d’hiver.
+- **Wi-Fi :** la carte ne redémarre que si un réseau connu est **visible** depuis 1 h sans que la connexion réussisse (pile Wi-Fi bloquée) ; une borne éteinte la nuit ne provoque plus de redémarrage toutes les heures.
+- **Anti-blocage des envois** (pannes trouvées en simulation sur plusieurs jours) :
+  - clé refusée (401) : nouvel essai toutes les 15 min, au lieu d'un arrêt définitif jusqu'au débranchement ;
+  - Wi-Fi « connecté » mais plus rien ne passe : reconnexion après 5 envois sans réponse, redémarrage après 6 h sans aucune réponse du serveur ;
+  - délai d'attente demandé par le serveur (`next_push_in_s`) plafonné à 5 min.
 
 ### Horodatage des mesures (coupures Wi-Fi)
 
@@ -209,6 +213,8 @@ Page unique, sans framework, hébergée sur **GitHub Pages** (branche `main`, ra
 - **Mémoire du navigateur** (`localStorage`, rien n’est envoyé) : dernière période choisie (6 h, 24 h, 7 j ou durée personnalisée), pas des graphes, courbes cochées, langue. Une fois l’introduction vue (barre des mesures atteinte), les visites suivantes s’ouvrent directement sur les mesures ; on la revoit avec **00** dans le sommaire (ordinateur) ou **Introduction** (téléphone).
 - **Barre des réglages** collée en haut ; sur téléphone, elle se range quand on descend et revient dès qu’on remonte.
 - **Confort :** écran d’entrée plein écran, bouton flottant « Aller aux mesures » pour sauter l’introduction, animations réductibles, mise à jour automatique toutes les 5 min.
+- **Mise à jour légère :** toutes les 5 min, le site ne redemande que les mesures arrivées depuis la requête précédente (quelques Ko au lieu de ~800 Ko pour 24 h : l'API n'est pas compressée) ; le résultat est identique à un rechargement complet.
+- **Valeurs impossibles écartées :** CO₂ hors 300-5 000 ppm, etc. (le serveur garde d'anciennes valeurs fausses d'un capteur qui dérivait).
 
 ### Réglages (`index.html`, section « 1) RÉGLAGES »)
 
@@ -291,7 +297,7 @@ GitHub peut retarder les tâches planifiées de quelques minutes, et les met en 
 - Le MH-Z19C a besoin d’environ **3 minutes de chauffe** ; l’auto-calibration suppose que la pièce est aérée régulièrement.
 - Température et humidité proviennent des capteurs internes du NextPM : elles reflètent l’air dans le boîtier, souvent un peu plus chaud que la pièce.
 - Le serveur n’accepte qu’**un envoi toutes les 10 s** : c’est lui qui limite la vitesse de rattrapage après une coupure.
-- Carte démarrée **sans Wi-Fi** (donc sans heure) puis coupure de courant avant le retour du Wi-Fi : les mesures de ce démarrage ne peuvent pas être datées et sont abandonnées.
+- Carte démarrée **sans Wi-Fi** (donc sans heure) puis coupure de courant avant le retour du Wi-Fi : les mesures de ce démarrage ne peuvent pas être datées et sont abandonnées (la commande `status` les compte). Une horloge à pile (module RTC DS3231) l'éviterait.
 
 ---
 
