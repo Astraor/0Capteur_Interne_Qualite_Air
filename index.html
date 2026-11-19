@@ -1923,19 +1923,61 @@ async function chargerPoints(periode) {
   if (p && p.periode === periode && debutRequete - p.fin < INCREMENTAL_MAX_MS) {
     const fms = p.freq ? enMs(p.freq) : 0;
     const depuis = p.freq ? Math.floor((p.fin - 2 * fms) / fms) * fms : p.fin - RECOUVREMENT_MS;
-    const nouveaux = await appelerApiPlage(depuis, debutRequete, p.freq);
+    const { points: nouveaux, fenetres } = await remplacerRejeus(await appelerApiPlage(depuis, debutRequete, p.freq), p.freq);
     // on oublie ce qui a été REÇU avant le début de la période (une mesure est toujours prise avant d'être reçue)
     const limite = debutRequete - reglages.duree - fms;
     const tous = new Map();
-    for (const x of p.points) if (Date.parse(x.time) >= limite) tous.set(clePoint(x), x);
+    for (const x of p.points) {
+      if (Date.parse(x.time) < limite) continue;
+      if (!x._brut && dansFenetres(x, fenetres)) continue;   // moyenne remplacée par les mesures brutes de sa tranche
+      tous.set(clePoint(x), x);
+    }
     for (const x of nouveaux) tous.set(clePoint(x), x);
     pointsBruts = { periode, freq: p.freq, fin: debutRequete, points: [...tous.values()] };
     return pointsBruts.points;
   }
-  const points = await chargerMesures(periode);
-  const freq = (reglages.freq === "" && brutPossible) ? "" : (reglages.freq || reglages.secours);
+  const recus = await chargerMesures(periode);
+  const freq = (reglages.freq === "" && brutPossible) ? "" : (reglages.freq || reglages.secours);   // après : brutPossible a pu changer
+  const { points } = await remplacerRejeus(recus, freq);
   pointsBruts = { periode, freq, fin: debutRequete, points };
   return points;
+}
+
+// ---- Moyennes du serveur pendant un rattrapage ----
+// Le serveur fait ses moyennes (freq) par heure de RÉCEPTION, x_age_s compris. Pendant le rattrapage d'une coupure,
+// une tranche mélange donc des mesures rejouées (prises des heures plus tôt) et des mesures fraîches : impossible de
+// les remettre à leur heure. On repère ces tranches à leur x_age_s moyen (une mesure envoyée en direct a 0 à 12 s
+// d'âge) et on redemande, pour elles seules, les mesures brutes, que heureReelle remet chacune à sa place.
+// Les mesures brutes portent _brut: true ; les fenêtres remplacées sont renvoyées pour écarter les anciennes moyennes.
+const AGE_MOYEN_REJEU_S = 30;
+const dansFenetres = (x, fenetres) => {
+  const t = Date.parse(x.time);
+  return fenetres.some(f => t > f.debut && t <= f.fin);
+};
+async function remplacerRejeus(points, freq) {
+  if (!freq) return { points, fenetres: [] };
+  const pas = enMs(freq);
+  const fenetres = [];
+  points
+    .filter(x => !x._brut && Number(x[CHAMP_AGE]) > AGE_MOYEN_REJEU_S)
+    .map(x => Date.parse(x.time))
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b)
+    .forEach(fin => {   // une moyenne est datée à la FIN de sa tranche
+      const der = fenetres[fenetres.length - 1];
+      if (der && fin - pas <= der.fin) der.fin = fin;
+      else fenetres.push({ debut: fin - pas, fin });
+    });
+  if (!fenetres.length) return { points, fenetres };
+  const bruts = [];
+  for (const f of fenetres) {
+    // tranche > 7 jours (rattrapage interminable) : on s'en tient aux moyennes (limite du serveur en brut)
+    if (f.fin - f.debut > TRANCHE_BRUTE_MS) continue;
+    const recus = await appelerApiPlage(f.debut, Math.min(f.fin, Date.now()), "");
+    recus.forEach(x => { if (dansFenetres(x, [f])) { x._brut = true; bruts.push(x); } });
+  }
+  const remplacees = fenetres.filter(f => f.fin - f.debut <= TRANCHE_BRUTE_MS);
+  return { points: points.filter(x => x._brut || !dansFenetres(x, remplacees)).concat(bruts), fenetres: remplacees };
 }
 
 async function chargerMesures(periode) {
@@ -1970,14 +2012,17 @@ function heureReelle(p) {
 // Corrige l'heure de chaque point et ne garde que les mesures de la période, triées dans le temps.
 // Renvoie { lus: [{ t, v: { pm25: 12.3… } }], rejouees, sansAge } ou null s'il ne reste rien.
 // Ce travail n'est fait qu'une fois par requête : changer de pas ne fait ensuite que regrouper « lus ».
-function lirePoints(points, periode, maintenant) {
+function lirePoints(points, periode, maintenant, freq) {
   const debut = maintenant - reglagesPeriode(periode).duree;
   const noms = Object.keys(CHAMPS);
+  const decalage = freq ? enMs(freq) : 0;
   const lus = [];
   let rejouees = 0, sansAge = 0;
   points.forEach(p => {
-    const h = heureReelle(p);
-    if (!h) return;
+    // Moyenne du serveur : datée à la FIN de sa tranche, ramenée à son début (comme l'export CSV).
+    // Mesure brute : heure de réception - x_age_s.
+    const h = (decalage && !p._brut) ? { t: new Date(p.time).getTime() - decalage, age: 0 } : heureReelle(p);
+    if (!h || !Number.isFinite(h.t)) return;
     if (h.age === null) sansAge++;
     else if (h.age > SEUIL_REJOUE_S) rejouees++;
     const t = Math.min(h.t, maintenant);   // une horloge en avance ne crée pas de mesure « dans le futur »
@@ -4192,7 +4237,7 @@ async function rafraichir() {
     derniereMaj = Date.now();
     majPiedMaj();
 
-    const resultat = points.length === 0 ? null : lirePoints(points, periode, Date.now());
+    const resultat = points.length === 0 ? null : lirePoints(points, periode, Date.now(), pointsBruts ? pointsBruts.freq : "");
     if (!resultat) {
       viderTout();
       document.getElementById("squelette").hidden = true;
@@ -4399,7 +4444,7 @@ function versMesures(points, freq, debut, fin, maintenant) {
   const lus = [];
   points.forEach(p => {
     let t;
-    if (freq) {
+    if (freq && !p._brut) {
       t = new Date(p.time).getTime() - decalage;
       if (!Number.isFinite(t)) return;
     } else {
@@ -4415,7 +4460,7 @@ function versMesures(points, freq, debut, fin, maintenant) {
     if (utile) lus.push({ t, v, d: p.device_id || "" });
   });
   lus.sort((a, b) => a.t - b.t);
-  return freq ? lus : sansDoublons(lus);
+  return sansDoublons(lus);
 }
 
 // Mesures de [debut, fin] pour l'export, au pas demandé ("" = mesures brutes).
@@ -4438,7 +4483,7 @@ async function mesuresExport(debut, fin, pas, maintenant, progres) {
   } else {
     // Longue période avec un pas : moyennes du serveur (1 h au plus large, regroupées ensuite à minuit local pour 1 j)
     const freq = enMs(pas) >= 3600000 ? "1h" : pas;
-    const points = await chargerPlage(debut, fin, freq, progres);
+    const { points } = await remplacerRejeus(await chargerPlage(debut, fin, freq, progres), freq);
     lus = versMesures(points, freq, debut, fin, maintenant);
   }
   return pas ? regrouper(lus, enMs(pas)).filter(c => c.p).map(c => ({ t: c.t, v: c.p })) : lus;
