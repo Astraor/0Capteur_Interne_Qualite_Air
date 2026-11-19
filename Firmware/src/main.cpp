@@ -23,17 +23,20 @@
  *
  * ÉCRAN : interrupteurs en haut du fichier
  *   DOUBLE_BUFFER (dessin sans scintillement), TRANSITION_FONDU (fondu entre les pages),
- *   ANIMATIONS (clignement, chiffres qui glissent, sommet de la courbe qui clignote).
- *   Pages (UNE information par écran) : CO2 | AERER (si CO2 élevé) | PM1 | PM2.5 | PM10 | INDICE ATMO | courbe CO2 | Wi-Fi.
+ *   ANIMATIONS (clignement des yeux, chiffres qui glissent, sommet de la courbe qui clignote),
+ *   AFFICHER_ETAT (page d'icônes intercalée).
+ *   Pages (UNE mesure par écran) : CO2 | AERER (si CO2 élevé) | PM1 | PM2.5 | PM10 | INDICE ATMO | courbe CO2
+ *   | Wi-Fi (seulement hors ligne). Chaque page de mesure : nom + unité, filet à la couleur du niveau, valeur en
+ *   grand, visage, et la jauge des niveaux ATMO avec un CURSEUR sous la position exacte de la valeur.
+ *   Page ÉTAT (toutes les PERIODE_ETAT_MS, pendant DUREE_ETAT_MS) : heure, grandes icônes Wi-Fi (signal),
+ *   serveur (envoi / mesures en attente) et capteurs, chacune colorée selon son état.
  *   ALERTE HORS NORME : dès qu'un polluant franchit son seuil d'alerte (NIVEAU_ALERTE_PM / NIVEAU_ALERTE_CO2),
  *   l'écran saute AUSSITÔT sur sa page (sans fondu), clignote plein écran à la couleur du niveau, puis la valeur
  *   pulse ; tant que l'alerte dure, sa page revient une page sur deux (voir verifierAlertes).
  *   INDICE ATMO : règle officielle de l'indice ATMO = le PIRE des sous-indices (pas de moyenne, pas de
  *   pondération), calculé ici sur PM2.5, PM10 et PM1 (PM1 avec les seuils des PM2.5, voir niveauIndiceATMO).
- *   Trois polices (petite Picopixel, 5x7, grande FreeSansBold), pas de blanc : titres en cyan.
- *   Ancienne version de l'affichage : sauvegarde/main_avant_refonte.cpp
+ *   Une seule police (standard 5x7, zéro sans barre), pas de blanc : titres en cyan.
  *   Démarrage : logo animé "LA BONNE M'AIR" (basilique stylisée, voir afficherSplash).
- *   En bas à droite : mini logo Wi-Fi coloré selon le signal + repères secteur / heure / envoi (dessinerTemoins).
  *
  * CHAMPS ENVOYÉS (JSON plat, nombres uniquement) :
  *   standard : device_id, uptime, rssi, heap, co2, pm1, pm25, pm10
@@ -97,8 +100,8 @@
 #define MHZ_ABC                   1  // 1 = auto-calibration ; 0 si la pièce n'est jamais aérée
 #define NEXTPM_MOYENNE_60S        0  // 0 = moyennes 10 s | 1 = moyennes 60 s
 #define ECRAN_ETEINT_NUIT         0  // 1 = écran éteint entre HEURE_NUIT_DEBUT et HEURE_NUIT_FIN
-#define AFFICHER_TEMOINS          1  // 1 = zone d'état en bas à droite (7x7 px) : logo Wi-Fi coloré selon le signal,
-                                     //     et dessous 3 repères : secteur | heure NTP | envoi (voir dessinerTemoins)
+#define AFFICHER_ETAT             1  // 1 = page ÉTAT (heure + grandes icônes Wi-Fi / serveur / capteurs) intercalée
+                                     //     toutes les PERIODE_ETAT_MS pendant DUREE_ETAT_MS (voir dessinerPageEtat)
 #define MASQUER_SECRETS           0  // 1 = les mots de passe saisis s'affichent en ****
 #define DOUBLE_BUFFER             1  // 1 = dessin sans scintillement | 0 si l'écran reste noir ou s'affiche mal
 #define ANIMATIONS                0  // 1 = clignement, chiffres qui glissent, sommet de courbe qui clignote | 0 = calme
@@ -126,10 +129,7 @@
 #define double_buffer  // à définir AVANT l'include de PxMatrix : active showBuffer()
 #endif
 #include <PxMatrix.h>
-// Polices fournies avec Adafruit GFX (dossier Fonts de la bibliothèque)
-#include <Fonts/Picopixel.h>           // petite : 5 px de haut, libellés et unités
-#include <Fonts/FreeSansBold9pt7b.h>   // moyenne-grande : "AERER", "OK"
-#include <Fonts/FreeSansBold12pt7b.h>  // grande : chiffres de 17 px (valeur du CO2)
+// Police : la 5x7 intégrée à Adafruit GFX, en taille 1 (textes) et 2 (valeurs)
 
 #if WIFI_ACTIVE
 #include "esp_wpa2.h"
@@ -247,9 +247,10 @@ static const size_t TAILLE_MAX_BACKLOG = 500000;   // ~500 Ko (~12 h hors ligne)
 static const unsigned long ATTENTE_HEURE_MAX_MS = 900000UL;  // 15 min : au-delà sans heure NTP, une mesure d'un démarrage précédent est abandonnée
 
 // --- Initiatives : paramètres ---
-// Zone des témoins : x 57..63, y 25..31. Le bas des pages (thermomètre, VU-mètres, courbe) s'arrête donc à x 55 (x 56 = séparation).
-#define LARGEUR_BAS (AFFICHER_TEMOINS ? 56 : 64)
-#define HIST_N (LARGEUR_BAS - 3)  // points de la courbe CO2 : minutes terminées (53) + la minute en cours = 54 colonnes
+// Page courbe CO2 : COURBE_NB_BARRES barres de COURBE_MIN_PAR_BARRE minutes = la dernière heure.
+#define COURBE_NB_BARRES     15
+#define COURBE_MIN_PAR_BARRE 4
+#define HIST_N (COURBE_NB_BARRES * COURBE_MIN_PAR_BARRE - 1)  // minutes terminées gardées (59) + la minute en cours = 1 h
 static const float SEUIL_AERER_PPM      = 1000;    // page "AERER" au-dessus (et x_pct_co2_1000)
 static const float SEUIL_ALARME_PPM     = 1500;    // buzzer au-dessus
 static const float AERATION_CHUTE_PPM   = 100;     // chute de CO2 en ~2 min = aération
@@ -293,13 +294,15 @@ static const Echelle ECH_PM10 = {SEUILS_PM10, 5, true};
 static const uint8_t PALETTE[NB_NIVEAUX][3] = {
   {0, 200, 0}, {255, 220, 0}, {255, 100, 0}, {255, 0, 0}, {255, 0, 120}, {170, 0, 255}
 };
-// Qualificatifs ATMO. Page "QUALITE AIR" : 7 caractères par ligne au plus ; un libellé plus long est coupé
+// Qualificatifs ATMO. Page "ATMO" : 7 caractères par ligne au plus ; un libellé plus long est coupé
 // en deux lignes à l'espace ("TRES" / "MAUVAIS").
 static const char* LABELS_NIVEAU[NB_NIVEAUX] = {"BON", "MOYEN", "DEGRADE", "MAUVAIS", "TRES MAUVAIS", "EXTREM. MAUVAIS"};
-// Versions courtes, utilisées quand le libellé complet ne tient pas (bas des pages PM1 / PM2.5 / PM10)
-static const char* LABELS_COURTS[NB_NIVEAUX] = {"BON", "MOYEN", "DEGRADE", "MAUVAIS", "TRES MAUV.", "EXTREME"};
 
-// --- Animations d'écran ---
+// --- Écran : page ÉTAT et animations ---
+// Page ÉTAT (icônes) : revient après PERIODE_ETAT_MS passées sur les autres pages (3 pages de 5 s), reste DUREE_ETAT_MS.
+// Les mesures gardent ainsi 5 secondes sur 6 ; l'état (Wi-Fi, envoi, capteurs) change rarement : un coup d'oeil suffit.
+static const unsigned long PERIODE_ETAT_MS = 15000;
+static const unsigned long DUREE_ETAT_MS   = 3000;
 static const unsigned long ANIM_PAS_MS = 40;           // une image d'animation toutes les 40 ms (25 i/s)
 
 // =====================================================================
@@ -482,8 +485,9 @@ volatile uint32_t nbLignesAttente = 0;  // écrit par la tâche d'envoi, lu par 
 
 // Affichage
 // Pages de l'écran, affichées en rotation (une toutes les INTERVALLE_PAGE_MS). NB_PAGES = nombre de pages.
-// PAGE_AERER n'apparaît que si le CO2 est élevé, PAGE_COURBE qu'après 2 minutes de mesures.
-enum Page { PAGE_CO2, PAGE_AERER, PAGE_PM1, PAGE_PM25, PAGE_PM10, PAGE_GLOBAL, PAGE_COURBE, PAGE_WIFI, NB_PAGES };
+// PAGE_AERER n'apparaît que si le CO2 est élevé, PAGE_COURBE qu'après 2 minutes de mesures, PAGE_WIFI que hors ligne.
+// PAGE_ETAT n'est pas dans la rotation : elle s'intercale toutes les PERIODE_ETAT_MS (voir pageSuivante).
+enum Page { PAGE_CO2, PAGE_AERER, PAGE_PM1, PAGE_PM25, PAGE_PM10, PAGE_GLOBAL, PAGE_COURBE, PAGE_WIFI, PAGE_ETAT, NB_PAGES };
 uint8_t pageCourante = PAGE_CO2;
 bool aRedessiner = false;  // un seul redessin par tour de loop()
 bool aTransition = false;  // fondu à faire au prochain affichage (changement de page)
@@ -1738,19 +1742,18 @@ void tacheEnvoi(void* param) {
 // =====================================================================
 // AFFICHAGE (écran 64 x 32)
 // =====================================================================
-// Trois polices :
-//   PETITE  Picopixel (5 px de haut)          : libellés, unités, qualificatifs     -> ecrireP / ecrirePDroite
-//   MOYENNE police standard 5x7 (taille 1)    : valeurs des particules, textes      -> ecrireTexte / ecrireNombre
-//   GRANDE  FreeSansBold 12 pt (chiffres 17 px) : valeur du CO2 ; 9 pt pour "AERER" -> ecrireGrand
-// Avec Picopixel et FreeSans (polices "GFX"), le curseur est la LIGNE DE BASE du texte : les fonctions
-// ci-dessous prennent toujours le HAUT du texte (ou la ligne de base pour ecrireGrand), et remettent
-// la police standard après usage.
+// Une seule police : la standard 5x7 (6 px par caractère en taille 1, 12 px en taille 2), nette sur un panneau LED.
+// Le zéro est écrit sans barre (glyphe du "O") et le point décimal ne prend que 2 px : "12.5" et non "12 .5".
 //
-// Grille commune (y en pixels) :
-//   0..5     ligne de titre en petite police : nom à gauche, unité / qualificatif / état à droite
-//   7..23    contenu principal (grand chiffre, lignes de particules, visage...)
-//   26..31   bas de page (barre, VU-mètre), sur x 0..LARGEUR_BAS-1
-//   x 57..63, y 25..31 : zone des témoins (Wi-Fi, secteur, heure, envoi), jamais recouverte
+// Grille des pages de mesure (CO2, PM1, PM2.5, PM10), y en pixels :
+//   0..6     en-tête : nom de la mesure (cyan) à gauche, unité à droite (CO2 : flèche de tendance au milieu)
+//   8        filet sur toute la largeur, à la couleur du niveau
+//   10..23   valeur en grand (taille 2), centrée dans x 0..47 | visage 13x13 à droite (x 50..62)
+//   25..27   jauge : un segment par niveau ATMO (6 pour les PM, 4 pour le CO2), le niveau atteint allumé,
+//            les autres en sourdine (on voit toute l'échelle et où l'on se trouve)
+//   28..30   curseur (triangle) sous la jauge : position exacte de la valeur dans son niveau
+// Plus de témoins de 1 pixel dans les coins : Wi-Fi, envoi au serveur, capteurs et heure ont leur page à eux,
+// PAGE_ETAT (grandes icônes), intercalée toutes les PERIODE_ETAT_MS pendant DUREE_ETAT_MS.
 
 // ---------- couleurs ----------
 // Convertit une couleur (rouge, vert, bleu de 0 à 255) en 16 bits (5-6-5), le format des pixels de l'écran.
@@ -1767,21 +1770,26 @@ uint16_t atten(uint16_t c, uint8_t k) {
 
 // Couleurs des niveaux, calculées une seule fois depuis PALETTE
 uint16_t colNiv[NB_NIVEAUX];     // pleine
-uint16_t colFond[NB_NIVEAUX];    // niveau non atteint (barre éteinte du VU-mètre, fond du thermomètre)
+uint16_t colFond[NB_NIVEAUX];    // niveau non atteint : segment en sourdine de la jauge
+// (PxMatrix code chaque couleur sur 4 bits par canal : en dessous de ~30 %, un vert ou un violet s'éteignent presque)
+static const uint8_t SOURDINE_JAUGE = 85;   // ~33 % de la couleur pleine
 
 // Calcule une seule fois les couleurs pleines et atténuées de chaque niveau, à partir de PALETTE.
 void initialiserCouleurs() {
   for (uint8_t i = 0; i < NB_NIVEAUX; i++) {
     colNiv[i]  = rgb565(PALETTE[i][0], PALETTE[i][1], PALETTE[i][2]);
-    colFond[i] = atten(colNiv[i], 70);
+    colFond[i] = atten(colNiv[i], SOURDINE_JAUGE);
   }
 }
 
 // Couleurs neutres (jamais utilisées pour un niveau de qualité). Pas de blanc : il rend mal sur un panneau LED.
 static const uint16_t COL_TITRE   = rgb565(0, 255, 230);   // cyan vif : titres (les LED bleues sont faibles : on mise sur le vert)
-static const uint16_t COL_DISCRET = rgb565(0, 140, 130);   // cyan sombre : unités, textes secondaires
-static const uint16_t COL_PISTE   = rgb565(40, 45, 60);    // fond d'une barre de progression, visage en attente
+static const uint16_t COL_DISCRET = rgb565(0, 150, 140);   // cyan sombre : unités, textes secondaires
+static const uint16_t COL_FILET   = rgb565(0, 110, 150);   // filet quand il n'y a pas de niveau (attente, page ÉTAT)
+static const uint16_t COL_PISTE   = rgb565(40, 45, 60);    // fond d'une barre de progression
+static const uint16_t COL_ETEINT  = rgb565(60, 70, 90);    // arcs éteints du logo Wi-Fi (restent visibles sur 4 bits)
 static const uint16_t COL_ERREUR  = rgb565(230, 0, 0);
+static const uint16_t COL_OR      = rgb565(255, 170, 0);   // sable du sablier, statue du logo
 
 // ---------- niveaux ----------
 // Valeur telle qu'affichée : 1 décimale sous 10, entier au-dessus (les seuils ATMO sont des entiers).
@@ -1807,6 +1815,17 @@ int niveauMesure(const Mesure &m, const Echelle &e) {
   return niveau(m.valeur, e);
 }
 
+// Curseur de la jauge : où se situe la valeur DANS son niveau (0.0 = début du segment, 1.0 = fin).
+// Un niveau va du seuil précédent au seuil suivant. Premier niveau : à partir de "bas" (0 ug/m3 pour les PM,
+// 400 ppm pour le CO2 = air extérieur). Dernier niveau, ouvert : jusqu'à 1,5 x le dernier seuil (curseur en butée au-delà).
+float fractionDansNiveau(float v, int niv, const Echelle &e, float bas) {
+  if (e.inclus) v = arrondiAffiche(v);
+  float b = (niv <= 0) ? bas : e.seuils[niv - 1];
+  float h = (niv < e.n) ? e.seuils[niv] : e.seuils[e.n - 1] * 1.5f;
+  if (h <= b) return 0.5f;
+  return constrain((v - b) / (h - b), 0.0f, 1.0f);
+}
+
 // INDICE GLOBAL : comment les polluants sont-ils « pondérés » ?
 // Ils ne le sont PAS, et c'est voulu. On applique la règle officielle de l'indice ATMO (arrêté du 10 juillet 2020,
 // https://www.atmo-france.org/article/lindice-atmo) : chaque polluant reçoit un SOUS-INDICE (1 à 6) sur sa propre
@@ -1821,16 +1840,20 @@ int niveauMesure(const Mesure &m, const Echelle &e) {
 //   - CO2  : non, ce n'est pas un polluant de l'indice ATMO mais un indicateur de CONFINEMENT (aération) :
 //            il garde ses propres pages (CO2, AERER) et ne modifie jamais l'indice.
 // L'ATMO officiel inclut aussi O3, NO2 et SO2, que la carte ne mesure pas : cet indice est donc PARTIEL (particules).
-// Renvoie -1 si le NextPM n'est pas prêt, + le nom du polluant responsable.
-int niveauIndiceATMO(const char** pire) {
+// Renvoie -1 si le NextPM n'est pas prêt, + le nom du polluant responsable (et sa Mesure / son échelle pour le curseur).
+int niveauIndiceATMO(const char** pire, const Mesure** mPire = nullptr, const Echelle** ePire = nullptr) {
   int n25 = niveauMesure(mPM25, ECH_PM25);
   int n10 = niveauMesure(mPM10, ECH_PM10);
   int n1  = niveauMesure(mPM1,  ECH_PM25);   // PM1 : seuils des PM2.5
   int pireN = n25;
   const char* nom = "PM2.5";
-  if (n10 > pireN) { pireN = n10; nom = "PM10"; }
-  if (n1  > pireN) { pireN = n1;  nom = "PM1"; }   // strictement pire seulement : à égalité, PM2.5 / PM10 restent affichés
+  const Mesure* m = &mPM25;
+  const Echelle* e = &ECH_PM25;
+  if (n10 > pireN) { pireN = n10; nom = "PM10"; m = &mPM10; e = &ECH_PM10; }
+  if (n1  > pireN) { pireN = n1;  nom = "PM1";  m = &mPM1;  e = &ECH_PM25; }  // strictement pire seulement : à égalité, PM2.5 / PM10 restent affichés
   if (pire) *pire = nom;
+  if (mPire) *mPire = m;
+  if (ePire) *ePire = e;
   return pireN;
 }
 
@@ -1862,115 +1885,83 @@ uint16_t couleurTendance(int dir) {
   return (dir > 0) ? colNiv[3] : ((dir < 0) ? colNiv[0] : COL_DISCRET);
 }
 
-// ---------- texte : police standard 5x7 ----------
+// ---------- texte (police standard 5x7) ----------
 // Largeur réelle d'un texte (sans l'espace final)
 int largeurTexte(const char* s, uint8_t taille) {
   return (int)strlen(s) * 6 * taille - taille;
 }
 
-// (x, y) = coin haut-gauche ; un caractère de taille 1 fait 5 px de large et 7 de haut
+// (x, y) = coin haut-gauche ; un caractère de taille 1 fait 5 px de large et 7 de haut.
+// Le "0" de cette police est barré : on dessine le "O", identique sans la barre (plus lisible en grand).
 void ecrireTexte(const char* s, int x, int y, uint8_t taille, uint16_t couleur) {
   display.setFont(nullptr);
   display.setTextSize(taille);
   display.setTextColor(couleur);
   display.setCursor(x, y);
-  display.print(s);
+  for (const char* p = s; *p; p++) display.write((uint8_t)(*p == '0' ? 'O' : *p));
 }
 
 void ecrireCentre(const char* s, int cx, int y, uint8_t taille, uint16_t couleur) {
   ecrireTexte(s, cx - largeurTexte(s, taille) / 2, y, taille, couleur);
 }
 
-// Nombre en 5x7 avec un point décimal ÉTROIT (1 px au lieu d'un caractère entier : "4.2" et non "4 .2").
-int largeurNombre(const char* s) {
-  int w = 0;
-  for (const char* p = s; *p; p++) w += (*p == '.') ? 2 : 6;
-  return w - 1;
+// xFin = dernière colonne occupée par le texte
+void ecrireDroite(const char* s, int xFin, int y, uint8_t taille, uint16_t couleur) {
+  ecrireTexte(s, xFin - largeurTexte(s, taille) + 1, y, taille, couleur);
 }
 
-// xFin = dernière colonne occupée ; y = haut des chiffres
-void ecrireNombre(const char* s, int xFin, int y, uint16_t c) {
-  int x = xFin - largeurNombre(s) + 1;
+// Nombre avec un point décimal ÉTROIT (taille x taille pixels, au lieu d'un caractère entier)
+int largeurNombre(const char* s, uint8_t t) {
+  int w = 0;
+  for (const char* p = s; *p; p++) w += (*p == '.') ? 2 * t : 6 * t;
+  return w - t;
+}
+
+// (x, y) = coin haut-gauche des chiffres
+void ecrireNombre(const char* s, int x, int y, uint8_t t, uint16_t c) {
   char ch[2] = {0, 0};
   for (const char* p = s; *p; p++) {
-    if (*p == '.') { display.drawPixel(x, y + 6, c); x += 2; continue; }
+    if (*p == '.') { display.fillRect(x, y + 6 * t, t, t, c); x += 2 * t; continue; }
     ch[0] = *p;
-    ecrireTexte(ch, x, y, 1, c);
-    x += 6;
+    ecrireTexte(ch, x, y, t, c);
+    x += 6 * t;
   }
 }
 
-// Valeur de particules : 1 décimale sous 10, entier au-dessus, 999 au plus (3 caractères)
+void ecrireNombreCentre(const char* s, int cx, int y, uint8_t t, uint16_t c) {
+  ecrireNombre(s, cx - largeurNombre(s, t) / 2, y, t, c);
+}
+
+// Valeur de particules : 1 décimale sous 10, entier au-dessus, 999 au plus (comme arrondiAffiche)
 void formaterPM(char* buf, size_t n, float v) {
   v = constrain(arrondiAffiche(v), 0.0f, 999.0f);
   if (v < 9.95f) snprintf(buf, n, "%d.%d", (int)v, (int)roundf(v * 10.0f) % 10);
   else snprintf(buf, n, "%d", (int)v);
 }
 
-// ---------- texte : polices GFX (petite et grande) ----------
-// Encre d'un texte : décalage x1 du premier pixel allumé et largeur w (comme getTextBounds)
-void bornesTexte(const GFXfont* f, const char* s, int16_t &x1, uint16_t &w) {
-  int16_t y1; uint16_t h;
-  display.setFont(f);
-  display.setTextSize(1);
-  display.getTextBounds(s, 0, 0, &x1, &y1, &w, &h);
-  display.setFont(nullptr);
+// Unité des particules fines : µg/m³ (masse par volume d'air ; le ppm ne s'applique qu'aux gaz comme le CO2).
+// La police 5x7 n'a ni "µ" ni "³" : on les dessine pixel par pixel, "g/m" vient de la police.
+// Largeur 27 px : de xFin - 26 à xFin ; y = haut du texte.
+void ecrireUnitePM(int xFin, int y, uint16_t c) {
+  const int x = xFin - 26;
+  for (int r = 2; r <= 7; r++) display.drawPixel(x, y + r, c);       // µ : jambage gauche (descend sous la ligne)
+  for (int r = 2; r <= 6; r++) display.drawPixel(x + 4, y + r, c);   // µ : jambage droit
+  display.drawFastHLine(x + 1, y + 6, 3, c);                         // µ : fond arrondi
+  ecrireTexte("g/m", x + 6, y, 1, c);                                // x + 6 .. x + 22
+  display.drawFastHLine(x + 24, y, 3, c);                            // ³ : petit 3 en exposant (3 x 5 px)
+  display.drawPixel(x + 26, y + 1, c);
+  display.drawFastHLine(x + 25, y + 2, 2, c);
+  display.drawPixel(x + 26, y + 3, c);
+  display.drawFastHLine(x + 24, y + 4, 3, c);
 }
 
-int largeurP(const char* s) {
-  int16_t x1; uint16_t w;
-  bornesTexte(&Picopixel, s, x1, w);
-  return w;
+// ---------- éléments communs ----------
+// En-tête : titre cyan à gauche (x 1), filet dessous (y 8) à la couleur du niveau (niv < 0 : filet neutre).
+void dessinerEntete(const char* titre, int niv) {
+  ecrireTexte(titre, 1, 0, 1, COL_TITRE);
+  display.drawFastHLine(0, 8, 64, (niv >= 0) ? colNiv[niv] : COL_FILET);
 }
 
-// Petite police, yHaut = haut des majuscules (5 px). Renvoie le x juste après le texte (pour enchaîner).
-int ecrireP(const char* s, int x, int yHaut, uint16_t c) {
-  display.setFont(&Picopixel);
-  display.setTextSize(1);
-  display.setTextColor(c);
-  display.setCursor(x, yHaut + 4);   // Picopixel : la ligne de base est la dernière rangée des majuscules
-  display.print(s);
-  int xFin = display.getCursorX();
-  display.setFont(nullptr);
-  return xFin;
-}
-
-// xFin = dernière colonne occupée par le texte. Renvoie le x de début.
-int ecrirePDroite(const char* s, int xFin, int yHaut, uint16_t c) {
-  int16_t x1; uint16_t w;
-  bornesTexte(&Picopixel, s, x1, w);
-  int x = xFin - (int)w + 1 - x1;
-  ecrireP(s, x, yHaut, c);
-  return x + x1;
-}
-
-// Grande police, centrée sur la colonne cx ; base = ligne de base (bas des chiffres)
-void ecrireGrand(const char* s, int cx, int base, uint16_t c, const GFXfont* f = &FreeSansBold12pt7b) {
-  int16_t x1; uint16_t w;
-  bornesTexte(f, s, x1, w);
-  display.setFont(f);
-  display.setTextSize(1);
-  display.setTextColor(c);
-  display.setCursor(cx - (int)w / 2 - x1, base);
-  display.print(s);
-  display.setFont(nullptr);
-}
-
-// Unité des particules en petite police : µg/m³ (masse par volume d'air). Picopixel n'a ni "µ" ni "³" :
-// µ = "u" + un jambage d'1 px, ³ = petit 3 de 3x3 en exposant. xFin = dernière colonne occupée.
-void ecrireUniteUgM3(int xFin, int yHaut, uint16_t c) {
-  int16_t x1; uint16_t w;
-  bornesTexte(&Picopixel, "ug/m", x1, w);
-  int x = xFin - ((int)w + 4) + 1;
-  ecrireP("ug/m", x, yHaut, c);
-  display.drawPixel(x, yHaut + 5, c);                      // jambage du µ
-  int xe = x + w + 1;                                      // ³ : 3 x 3 en haut
-  display.drawFastHLine(xe, yHaut, 3, c);
-  display.drawFastHLine(xe + 1, yHaut + 1, 2, c);
-  display.drawFastHLine(xe, yHaut + 2, 3, c);
-}
-
-// ---------- éléments graphiques ----------
 // Flèche de tendance 5x5 (cx = centre, y = haut) : dir > 0 monte | dir < 0 descend | 0 stable
 void dessinerFleche(int cx, int y, int dir, uint16_t c) {
   if (dir > 0) {
@@ -1987,310 +1978,315 @@ void dessinerFleche(int cx, int y, int dir, uint16_t c) {
   }
 }
 
-// VU-mètre : 6 barres de 2 px, de hauteurs croissantes (2 à 7 px), une par niveau ATMO.
-// Les barres jusqu'au niveau atteint sont allumées, chacune à SA couleur (vert, jaune, orange...) ;
-// les suivantes restent sombres. niv = -1 : tout éteint. x = gauche, yBas = bas des barres. Largeur 17 px.
-void dessinerVU(int x, int yBas, int niv) {
-  for (int i = 0; i < NB_NIVEAUX; i++) {
-    int h = 2 + i;
-    display.fillRect(x + 3 * i, yBas - h + 1, 2, h, (i <= niv) ? colNiv[i] : colFond[i]);
+// Jauge (y 25..27) : un segment par niveau, 1 px d'écart, sur toute la largeur (x 0..63).
+// Le niveau atteint est allumé à fond, les autres en sourdine : on voit toute l'échelle ATMO d'un coup d'oeil.
+// Curseur (y 28..30) : triangle à la couleur du niveau, pointé sur la position EXACTE de la valeur dans son niveau
+// (frac : 0.0 = début du segment, 1.0 = fin), plus une encoche noire dans le segment allumé, juste au-dessus.
+// niv < 0 : toute la jauge en sourdine, sans curseur.
+void dessinerJauge(int nbNiveaux, int niv, float frac) {
+  int xCurseur = -1;
+  for (int i = 0; i < nbNiveaux; i++) {
+    int xs = (i * 65) / nbNiveaux;
+    int xe = ((i + 1) * 65) / nbNiveaux - 2;     // 1 px de séparation ; le dernier segment finit à x 63
+    display.fillRect(xs, 25, xe - xs + 1, 3, (i == niv) ? colNiv[i] : colFond[i]);
+    if (i == niv) xCurseur = xs + (int)(frac * (xe - xs) + 0.5f);
   }
+  if (xCurseur < 0) return;
+  uint16_t c = colNiv[niv];
+  display.drawFastVLine(xCurseur, 25, 2, 0);                   // encoche dans le segment
+  int xt = constrain(xCurseur, 2, 61);                         // le triangle (5 px de large) reste dans l'écran
+  display.drawPixel(xt, 28, c);
+  display.drawFastHLine(xt - 1, 29, 3, c);
+  display.drawFastHLine(xt - 2, 30, 5, c);
 }
 
-// Visage rond de rayon 8 (17 x 17), centré en (cx, cy). Traits en noir, un par niveau :
-//   0 grand sourire | 1 sourire | 2 bouche droite | 3 bouche triste | 4 bouche ouverte + sourcils |
-//   5 bouche grande ouverte + yeux en croix | -1 (capteurs pas prêts) : visage gris, bouche droite
-void dessinerVisage(int cx, int cy, int niv, uint16_t c, bool clin) {
-  display.fillCircle(cx, cy, 8, c);
+// Visage 13 x 13 (x, y = coin haut-gauche), traits en noir, une expression par niveau ATMO :
+//   0 grand sourire | 1 sourire | 2 bouche droite | 3 bouche triste | 4 bouche ouverte + sourcils froncés |
+//   5 yeux en croix + grande bouche ouverte | -1 (capteurs pas prêts) : bouche droite
+void dessinerVisage(int x, int y, int niv, uint16_t c, bool clin) {
+  int cx = x + 6, cy = y + 6;
+  display.fillCircle(cx, cy, 6, c);
   // yeux
   if (niv >= 5) {                                          // yeux en croix (3 x 3)
     for (int k = -1; k <= 1; k += 2) {
-      int ex = cx + 4 * k, ey = cy - 3;
+      int ex = cx + 3 * k, ey = cy - 2;
       display.drawPixel(ex - 1, ey - 1, 0); display.drawPixel(ex + 1, ey - 1, 0);
       display.drawPixel(ex, ey, 0);
       display.drawPixel(ex - 1, ey + 1, 0); display.drawPixel(ex + 1, ey + 1, 0);
     }
   } else if (clin) {                                       // clignement
-    display.drawFastHLine(cx - 4, cy - 2, 2, 0);
-    display.drawFastHLine(cx + 3, cy - 2, 2, 0);
+    display.drawFastHLine(cx - 3, cy - 2, 2, 0);
+    display.drawFastHLine(cx + 2, cy - 2, 2, 0);
   } else {
-    display.fillRect(cx - 4, cy - 3, 2, 2, 0);
-    display.fillRect(cx + 3, cy - 3, 2, 2, 0);
+    display.fillRect(cx - 3, cy - 3, 2, 2, 0);
+    display.fillRect(cx + 2, cy - 3, 2, 2, 0);
+  }
+  if (niv == 4) {                                          // sourcils froncés, pointes vers le nez
+    display.drawPixel(cx - 4, cy - 5, 0); display.drawPixel(cx - 3, cy - 4, 0);
+    display.drawPixel(cx + 4, cy - 5, 0); display.drawPixel(cx + 3, cy - 4, 0);
   }
   // bouche
   switch (niv) {
     case 0:                                                // grand sourire
-      display.drawPixel(cx - 4, cy + 1, 0); display.drawPixel(cx + 4, cy + 1, 0);
-      display.drawPixel(cx - 3, cy + 2, 0); display.drawPixel(cx + 3, cy + 2, 0);
-      display.drawFastHLine(cx - 2, cy + 3, 5, 0);
+      display.drawPixel(cx - 3, cy + 1, 0); display.drawPixel(cx + 3, cy + 1, 0);
+      display.drawPixel(cx - 2, cy + 2, 0); display.drawPixel(cx + 2, cy + 2, 0);
+      display.drawFastHLine(cx - 1, cy + 3, 3, 0);
       break;
     case 1:                                                // sourire
-      display.drawPixel(cx - 3, cy + 2, 0); display.drawPixel(cx + 3, cy + 2, 0);
-      display.drawFastHLine(cx - 2, cy + 3, 5, 0);
+      display.drawPixel(cx - 2, cy + 2, 0); display.drawPixel(cx + 2, cy + 2, 0);
+      display.drawFastHLine(cx - 1, cy + 3, 3, 0);
       break;
     case 3:                                                // triste
-      display.drawFastHLine(cx - 2, cy + 2, 5, 0);
-      display.drawPixel(cx - 3, cy + 3, 0); display.drawPixel(cx + 3, cy + 3, 0);
+      display.drawFastHLine(cx - 1, cy + 2, 3, 0);
+      display.drawPixel(cx - 2, cy + 3, 0); display.drawPixel(cx + 2, cy + 3, 0);
       break;
-    case 4:                                                // bouche ouverte + sourcils froncés
-      display.fillRect(cx - 2, cy + 1, 5, 3, 0);
-      display.drawFastHLine(cx - 5, cy - 5, 2, 0); display.drawFastHLine(cx + 4, cy - 5, 2, 0);
+    case 4:                                                // bouche ouverte
+      display.fillRect(cx - 1, cy + 2, 3, 3, 0);
       break;
     case 5:                                                // grande bouche ouverte
       display.fillRect(cx - 2, cy + 1, 5, 4, 0);
       break;
     default:                                               // 2 et -1 : bouche droite
-      display.drawFastHLine(cx - 3, cy + 3, 7, 0);
+      display.drawFastHLine(cx - 2, cy + 3, 5, 0);
       break;
   }
 }
 
-// ---------- page CO2 ----------
-// Ligne de titre : CO2 ppm | flèche de tendance | qualificatif (couleur du niveau)
-// Centre : la valeur en grand (FreeSansBold 12 pt), couleur du niveau
-// Bas : thermomètre PROPORTIONNEL de 400 à 2000 ppm (x 0..LARGEUR_BAS-1) : chaque zone (vert < 800,
-//       jaune < 1000, orange < 1500, rouge) est allumée jusqu'à la valeur, sombre au-delà ; un curseur marque la valeur.
-static const float THERMO_MIN_PPM = 400, THERMO_MAX_PPM = 2000;
-
-int xThermometre(float ppm) {
-  int x = (int)lroundf((ppm - THERMO_MIN_PPM) * (LARGEUR_BAS - 1) / (THERMO_MAX_PPM - THERMO_MIN_PPM));
-  return constrain(x, 0, LARGEUR_BAS - 1);
+// Sablier 9 x 13 (x, y = coin haut-gauche) : capteur qui chauffe / démarre.
+//   C cadre (cyan) | S sable (or)
+static const char* SABLIER[13] = {
+  "CCCCCCCCC",
+  ".C.....C.",
+  ".CSSSSSC.",
+  "..CSSSC..",
+  "...CSC...",
+  "....C....",
+  "....S....",
+  "....C....",
+  "...C.C...",
+  "..C.S.C..",
+  ".C.SSS.C.",
+  ".CSSSSSC.",
+  "CCCCCCCCC",
+};
+void dessinerSablier(int x, int y) {
+  for (int r = 0; r < 13; r++) {
+    for (int k = 0; k < 9; k++) {
+      char e = SABLIER[r][k];
+      if (e == 'C') display.drawPixel(x + k, y + r, COL_TITRE);
+      else if (e == 'S') display.drawPixel(x + k, y + r, COL_OR);
+    }
+  }
 }
 
-void dessinerThermometre(float v, int niv) {
-  const float bornes[5] = {THERMO_MIN_PPM, SEUILS_CO2[0], SEUILS_CO2[1], SEUILS_CO2[2], THERMO_MAX_PPM};
-  int xv = xThermometre(v);
-  for (int i = 0; i < 4; i++) {
-    int x0 = xThermometre(bornes[i]);
-    int x1 = xThermometre(bornes[i + 1]) - ((i < 3) ? 1 : 0);   // 1 px noir entre deux zones
-    for (int x = x0; x <= x1; x++) display.drawFastVLine(x, 28, 2, (x <= xv) ? colNiv[i] : colFond[i]);
-  }
-  display.drawFastVLine(xv, 26, 6, colNiv[niv]);                  // curseur
+// Icône d'erreur : cercle rouge barré d'une croix (13 x 13)
+void dessinerIconeErreur(int x, int y, uint16_t c) {
+  int cx = x + 6, cy = y + 6;
+  display.drawCircle(cx, cy, 6, c);
+  display.drawLine(cx - 3, cy - 3, cx + 3, cy + 3, c);
+  display.drawLine(cx + 3, cy - 3, cx - 3, cy + 3, c);
 }
 
-void dessinerPageCO2() {
-  const Mesure &m = mCO2;
-  ecrireP("CO2", 0, 0, COL_TITRE);
-
-  if (m.etat == CAPTEUR_CHAUFFE) {                     // préchauffage : compte à rebours + barre de progression
-    unsigned long t = millis();
-    unsigned long reste = (t < CHAUFFE_MHZ_MS) ? (CHAUFFE_MHZ_MS - t + 999UL) / 1000UL : 0;
-    char buf[12];
-    // minutes:secondes ("2:18") : un nombre seul ("138") se lisait comme une valeur de CO2 en ppm
-    snprintf(buf, sizeof(buf), "%lu:%02lu", reste / 60UL, reste % 60UL);
-    ecrirePDroite("PRECHAUFFAGE", 63, 0, COL_TITRE);
-    ecrireGrand(buf, 32, 23, COL_TITRE);
-    display.fillRect(0, 28, LARGEUR_BAS, 2, COL_PISTE);
-    int w = (t < CHAUFFE_MHZ_MS) ? (int)((unsigned long)LARGEUR_BAS * t / CHAUFFE_MHZ_MS) : LARGEUR_BAS;
-    display.fillRect(0, 28, w, 2, COL_TITRE);
-    return;
-  }
-  if (m.etat == CAPTEUR_ERREUR) {                      // panne, ou valeurs impossibles (capteur à recalibrer)
-    ecrirePDroite(co2HorsPlage ? "A CALIBRER" : "PANNE", 63, 0, COL_ERREUR);
-    ecrireGrand(co2HorsPlage ? "CAL" : "ERR", 32, 23, COL_ERREUR);
-    for (int x = 0; x < LARGEUR_BAS; x += 4) display.drawFastHLine(x, 28, 2, atten(COL_ERREUR, 140));
-    return;
-  }
-
-  float v = valAff(m);
-  int niv = niveau(v, ECH_CO2);
-  uint16_t c = colNiv[niv];
-  ecrireP("ppm", 13, 0, COL_DISCRET);
-  ecrirePDroite(LABELS_NIVEAU[niv], 63, 0, c);
-  int dir;
-  if (tendanceCO2(dir)) dessinerFleche(31, 0, dir, couleurTendance(dir));
-  char buf[8];
-  snprintf(buf, sizeof(buf), "%d", (int)lroundf(constrain(v, 0.0f, 9999.0f)));
-  ecrireGrand(buf, 32, 23, c);
-  dessinerThermometre(v, niv);
-}
-
-// ---------- pages PM1, PM2.5, PM10 (une grandeur par écran) ----------
-// Même grille que la page CO2 :
-//   0..5   nom (cyan) à gauche | unité ug/m3 à droite
-//   7..23  la valeur en grand (FreeSansBold 12 pt), couleur du niveau ATMO ; elle PULSE si le polluant est en alerte
-//   25..31 qualificatif ATMO (petite police, couleur du niveau) à gauche | VU-mètre des 6 niveaux (x 39..55)
-// PM1 : l'indice ATMO ne lui fixe pas de seuil, il suit les MÊMES seuils que les PM2.5 (couleur, alerte, indice).
+// ---------- pages CO2, PM1, PM2.5, PM10 : UNE mesure par page ----------
+// CO2 : unité "PPM" + flèche de tendance (3 dernières minutes) ; jauge à 4 niveaux (800 / 1000 / 1500 ppm).
+// PM  : unité µg/m³ ; jauge à 6 niveaux ATMO ; PM1 suit les MÊMES seuils que les PM2.5 (couleur, alerte, indice).
+// Polluant en alerte : la valeur pulse (vif / atténué toutes les ALERTE_PULSE_MS).
+static const float BAS_JAUGE_CO2 = 400;   // le curseur part de l'air extérieur (~400 ppm)
 bool alertePage(uint8_t p);
-void dessinerPagePM(const Mesure &m, const char* nom, const Echelle &e, uint8_t page) {
-  ecrireP(nom, 0, 0, COL_TITRE);
-  if (m.etat == CAPTEUR_CHAUFFE) {
-    ecrirePDroite("DEMARRAGE", 63, 0, COL_TITRE);
-    ecrireGrand("--", 28, 23, COL_DISCRET);
-    dessinerVU(39, 31, -1);
+
+void dessinerPageMesure(const Mesure &m, const char* titre, const Echelle &e, uint8_t page) {
+  const bool co2 = (&m == &mCO2);
+  const int nbNiv = e.n + 1;
+
+  if (m.etat == CAPTEUR_CHAUFFE) {                    // préchauffage / démarrage : sablier
+    dessinerEntete(titre, -1);
+    dessinerSablier(52, 10);
+    if (co2) {                                        // MH-Z19C : compte à rebours m:ss + barre de progression
+      unsigned long t = millis();
+      unsigned long reste = (t < CHAUFFE_MHZ_MS) ? (CHAUFFE_MHZ_MS - t + 999UL) / 1000UL : 0;
+      char buf[12];
+      // minutes:secondes ("2:18") : un nombre seul ("138") se lisait comme une valeur de CO2 en ppm
+      snprintf(buf, sizeof(buf), "%lu:%02lu", reste / 60UL, reste % 60UL);
+      ecrireDroite("CHAUFFE", 62, 0, 1, COL_DISCRET);
+      ecrireCentre(buf, 24, 10, 2, COL_TITRE);
+      display.fillRect(0, 25, 64, 3, COL_PISTE);
+      int w = (t < CHAUFFE_MHZ_MS) ? (int)(64UL * t / CHAUFFE_MHZ_MS) : 64;
+      if (w > 0) display.fillRect(0, 25, w, 3, COL_TITRE);
+    } else {                                          // NextPM : durée inconnue
+      ecrireCentre("--", 24, 10, 2, COL_DISCRET);
+      ecrireCentre("DEMARRAGE", 32, 25, 1, COL_DISCRET);
+    }
     return;
   }
-  if (m.etat == CAPTEUR_ERREUR) {
-    ecrirePDroite("PANNE", 63, 0, COL_ERREUR);
-    ecrireGrand("ERR", 28, 23, COL_ERREUR);
-    dessinerVU(39, 31, -1);
+  if (m.etat == CAPTEUR_ERREUR) {                     // panne, ou CO2 impossible (capteur à recalibrer)
+    bool calib = co2 && co2HorsPlage;
+    dessinerEntete(titre, -1);
+    display.drawFastHLine(0, 8, 64, COL_ERREUR);
+    if (!calib) ecrireDroite("PANNE", 62, 0, 1, COL_ERREUR);
+    ecrireCentre(calib ? "CAL" : "ERR", 24, 10, 2, COL_ERREUR);
+    dessinerIconeErreur(50, 10, COL_ERREUR);
+    if (calib) ecrireCentre("A CALIBRER", 32, 25, 1, COL_ERREUR);
+    else for (int x = 0; x < 64; x += 4) display.drawFastHLine(x, 26, 2, atten(COL_ERREUR, 140));
     return;
   }
-  ecrireUniteUgM3(63, 0, COL_DISCRET);
+
   float v = valAff(m);
   int niv = niveau(v, e);
   uint16_t c = colNiv[niv];
-  // En alerte : la valeur pulse (vif / atténué toutes les ALERTE_PULSE_MS)
+  dessinerEntete(titre, niv);
+  char buf[8];
+  if (co2) {
+    ecrireDroite("PPM", 62, 0, 1, COL_DISCRET);
+    int dir;
+    if (tendanceCO2(dir)) dessinerFleche(31, 1, dir, couleurTendance(dir));
+    snprintf(buf, sizeof(buf), "%d", (int)lroundf(constrain(v, 0.0f, 9999.0f)));
+  } else {
+    ecrireUnitePM(62, 0, COL_DISCRET);
+    formaterPM(buf, sizeof(buf), v);
+  }
   uint16_t cVal = c;
   if (alertePage(page) && ((millis() / ALERTE_PULSE_MS) % 2UL) == 1) cVal = atten(c, 110);
-  char buf[8];
-  formaterPM(buf, sizeof(buf), v);
-  ecrireGrand(buf, 28, 23, cVal);
-  const char* label = LABELS_NIVEAU[niv];
-  if (largeurP(label) > 37) label = LABELS_COURTS[niv];   // x 0..37 : il reste la place du VU-mètre
-  ecrireP(label, 0, 26, c);
-  dessinerVU(39, 31, niv);
+  ecrireNombreCentre(buf, 24, 10, 2, cVal);
+  dessinerVisage(50, 10, niv, c, yeuxFermes());
+  dessinerJauge(nbNiv, niv, fractionDansNiveau(v, niv, e, co2 ? BAS_JAUGE_CO2 : 0.0f));
 }
 
 // ---------- page AERER (seulement quand le CO2 dépasse SEUIL_AERER_PPM) ----------
-// Ligne de titre : CO2 <valeur> ppm + tendance | "AERER" en grand qui pulse doucement | consigne en bas.
+// Deux rubans de signalisation (rayures en diagonale qui défilent en sens inverse), "AERER" en grand qui pulse,
+// et en bas : CO2 <valeur> + flèche de tendance.
+uint16_t phaseRuban = 0;    // décalage des rayures (avance toutes les 120 ms, voir animer)
+
+void dessinerRuban(int y, int h, int sens, uint16_t c) {
+  for (int yy = 0; yy < h; yy++) {
+    for (int x = 0; x < 64; x++) {
+      int v = x + sens * yy - sens * (int)phaseRuban;
+      if ((v & 7) < 4) display.drawPixel(x, y + yy, c);
+    }
+  }
+}
+
 void dessinerPageAerer() {
   int niv = niveauMesure(mCO2, ECH_CO2);
   if (niv < 0) niv = 3;
   uint16_t c = colNiv[niv];
+  uint16_t cr = atten(c, 150);
+  dessinerRuban(0, 3, 1, cr);                                       // y 0..2
+  bool fort = ((millis() / 600UL) % 2UL) == 0;                      // pulsation : vif / atténué toutes les 0,6 s
+  ecrireCentre("AERER", 32, 5, 2, fort ? c : atten(c, 120));        // y 5..18
+  dessinerRuban(20, 3, -1, cr);                                     // y 20..22
+
   char buf[8];
   snprintf(buf, sizeof(buf), "%d", (int)lroundf(mCO2.valeur));
-  ecrireP("CO2", 0, 0, COL_TITRE);
-  int x = ecrireP(buf, 14, 0, c);
-  ecrireP("ppm", x + 2, 0, COL_DISCRET);
+  ecrireTexte("CO2", 1, 25, 1, COL_TITRE);                          // x 1..17
+  ecrireTexte(buf, 22, 25, 1, c);                                   // 4 chiffres max : x 22..44
   int dir;
-  if (tendanceCO2(dir)) dessinerFleche(61, 0, dir, couleurTendance(dir));
-
-  bool fort = ((millis() / 600UL) % 2UL) == 0;        // pulsation : vif / atténué toutes les 0,6 s
-  ecrireGrand("AERER", 32, 21, fort ? c : atten(c, 110), &FreeSansBold9pt7b);
-  const char* consigne = "OUVRIR FENETRE";
-  ecrireP(consigne, (LARGEUR_BAS - largeurP(consigne)) / 2, 26, COL_TITRE);
+  if (tendanceCO2(dir)) dessinerFleche(58, 26, dir, couleurTendance(dir));
+  else ecrireDroite("PPM", 62, 25, 1, COL_DISCRET);
 }
 
 // ---------- page INDICE ATMO (synthèse des particules, règle du pire sous-indice : voir niveauIndiceATMO) ----------
-// Visage (couleur du niveau) | qualificatif ATMO en 5x7 (1 ou 2 lignes) | VU-mètre du niveau.
-// En haut à droite : le polluant responsable (PM2.5 ou PM10) quand l'air n'est pas "bon". Le CO2 n'y entre pas.
+// En-tête : ATMO + polluant responsable (quand l'air n'est pas "bon") | visage + qualificatif ATMO (1 ou 2 lignes)
+// | jauge des 6 niveaux, curseur placé d'après le polluant responsable. Le CO2 n'y entre pas.
 void dessinerPageGlobal() {
-  ecrireP("INDICE ATMO", 0, 0, COL_TITRE);
   const char* cause = "";
-  int niv = niveauIndiceATMO(&cause);
+  const Mesure* mp = nullptr;
+  const Echelle* ep = nullptr;
+  int niv = niveauIndiceATMO(&cause, &mp, &ep);
   if (niv < 0) {                                         // capteurs pas encore prêts
-    dessinerVisage(9, 18, -1, COL_PISTE, false);
-    ecrireTexte("ATTENTE", 21, 12, 1, COL_TITRE);
-    dessinerVU(21, 31, -1);
+    dessinerEntete("ATMO", -1);
+    dessinerSablier(3, 10);
+    ecrireCentre("ATTENTE", 38, 13, 1, COL_TITRE);
+    dessinerJauge(NB_NIVEAUX, -1, 0);
     return;
   }
   uint16_t c = colNiv[niv];
-  if (niv > 0) ecrirePDroite(cause, 63, 0, c);
-  dessinerVisage(9, 18, niv, c, yeuxFermes());
-  // qualificatif : 7 caractères par ligne (x 21..61) ; plus long : coupé en 2 lignes à l'espace
+  dessinerEntete("ATMO", niv);
+  if (niv > 0) ecrireDroite(cause, 62, 0, 1, c);
+  dessinerVisage(1, 10, niv, c, yeuxFermes());
+  // qualificatif : 7 caractères par ligne (x 16..62) ; plus long : coupé en 2 lignes à l'espace
   const char* label = LABELS_NIVEAU[niv];
   const char* espace = strchr(label, ' ');
   if (!espace) {
-    ecrireTexte(label, 21, 12, 1, c);
+    ecrireCentre(label, 39, 13, 1, c);
   } else {
     char l1[12];
     size_t n = min((size_t)(espace - label), sizeof(l1) - 1);
     memcpy(l1, label, n);
     l1[n] = '\0';
-    ecrireTexte(l1, 21, 8, 1, c);
-    ecrireTexte(espace + 1, 21, 16, 1, c);
+    ecrireCentre(l1, 39, 10, 1, c);
+    ecrireCentre(espace + 1, 39, 18, 1, c);
   }
-  dessinerVU(21, 31, niv);
+  dessinerJauge(NB_NIVEAUX, niv, fractionDansNiveau(mp->valeur, niv, *ep, 0.0f));
 }
 
 // ---------- page courbe CO2 ----------
-// Courbe "aire" de la dernière heure, pensée pour un panneau LED :
-//  - 1 colonne de 1 px = 1 minute (moyenne) : 53 minutes terminées + la minute en cours, à droite (x 55)
-//  - chaque colonne prend la couleur du niveau de sa valeur : corps atténué, sommet à pleine intensité
-//    -> le sommet dessine la courbe (trait vif), l'aire colorée montre d'un coup d'oeil les périodes à risque
-//  - échelle automatique : de 400 ppm (air extérieur) à 1200 ppm au moins, agrandie par paliers de 200 ppm si
-//    le pic de l'heure dépasse. La règle à gauche (x 0) donne la couleur des niveaux à chaque hauteur.
-//  - pointillés à 1000 ppm (seuil AERER), visibles seulement là où la courbe est en dessous
-//  - minute sans mesure (capteur indisponible) : colonne vide, l'axe du temps reste juste
-//  - ligne de titre : CO2, durée couverte | flèche de tendance + valeur actuelle ;
-//    le sommet de la minute en cours clignote en cyan (ANIMATIONS)
-//   0..5 ligne de titre | 7..31 courbe, x 0..LARGEUR_BAS-1 (la zone des témoins est à droite)
-static const int COURBE_MIN_PPM      = 400;    // bas de l'échelle
-static const int COURBE_HAUT_MIN_PPM = 1200;   // haut de l'échelle, au minimum
-static const int COURBE_PALIER_PPM   = 200;    // l'échelle s'agrandit par paliers
-static const int COURBE_HAUT_MAX_PPM = 5000;
-static const int COURBE_X0           = 2;                       // x 0 : règle | x 1 : vide | x 2.. : colonnes
-static const int COURBE_NB_COL       = LARGEUR_BAS - COURBE_X0; // 54 colonnes (62 sans témoins)
-static_assert(COURBE_NB_COL == HIST_N + 1, "la courbe affiche HIST_N minutes + la minute en cours");
+// Histogramme pensé pour un panneau LED : formes pleines, couleurs vives, rien de fin.
+//  - COURBE_NB_BARRES barres de 3 px (1 px d'écart), chacune = moyenne de COURBE_MIN_PAR_BARRE minutes ;
+//    la plus récente à droite (elle inclut la minute en cours) : 15 x 4 min = la dernière heure
+//  - échelle FIXE 400..2000 ppm : une hauteur veut toujours dire la même chose (au-delà : pleine hauteur)
+//  - à gauche, une règle de 2 px aux couleurs des niveaux : on lit d'un coup d'oeil où se situe chaque barre
+//  - minute sans mesure (capteur indisponible) : ignorée ; barre sans aucune mesure : vide (l'axe du temps reste juste)
+//  - en-tête : CO2, "1H", flèche de tendance et valeur actuelle ; le sommet de la barre en cours clignote (ANIMATIONS)
+//   0..6 en-tête | 8 filet | 10..31 barres
+static const int COURBE_MIN_PPM = 400;
+static const int COURBE_MAX_PPM = 2000;
+static_assert(COURBE_NB_BARRES * COURBE_MIN_PAR_BARRE == HIST_N + 1, "HIST_N minutes terminées + la minute en cours");
 
-// Valeur de la colonne col (0 = la plus à gauche, la dernière = minute en cours) ; 0 = pas de mesure
-uint16_t valeurColonne(int col) {
-  int depuisDroite = COURBE_NB_COL - 1 - col;
-  if (depuisDroite == 0) return minuteEnCours();
-  int i = (int)histN - depuisDroite;      // index dans l'historique (0 = le plus ancien)
-  return (i >= 0) ? valeurHistorique(i) : 0;
-}
-
-// Hauteur (1..hMax pixels) d'une valeur sur l'échelle COURBE_MIN_PPM..haut
-int hauteurCourbe(float v, int haut, int hMax) {
-  int h = 1 + (int)((v - COURBE_MIN_PPM) * (hMax - 1) / (float)(haut - COURBE_MIN_PPM) + 0.5f);
-  return constrain(h, 1, hMax);
+// Moyenne d'une barre (j = 0 : la plus récente) ; 0 = aucune mesure dans ces minutes
+float valeurBarre(int j) {
+  float somme = 0;
+  int n = 0;
+  for (int k = 0; k < COURBE_MIN_PAR_BARRE; k++) {
+    int depuisFin = j * COURBE_MIN_PAR_BARRE + k;  // 0 = minute en cours, 1 = dernière minute terminée...
+    uint16_t v = 0;
+    if (depuisFin == 0) v = minuteEnCours();
+    else if (depuisFin <= (int)histN) v = valeurHistorique(histN - depuisFin);
+    if (v > 0) { somme += v; n++; }
+  }
+  return n ? somme / n : 0.0f;
 }
 
 void dessinerPageCourbe() {
-  // --- valeur actuelle : la mesure en direct, sinon la dernière minute connue ---
+  // valeur actuelle : la mesure en direct, sinon la dernière minute connue
   float actuel = (mCO2.etat == CAPTEUR_OK) ? mCO2.valeur : 0.0f;
   for (int i = (int)histN - 1; i >= 0 && actuel <= 0; i--) actuel = valeurHistorique(i);
-  ecrireP("CO2", 0, 0, COL_TITRE);
   if (actuel <= 0) {
-    ecrireCentre("ATTENTE", 28, 15, 1, COL_TITRE);
+    dessinerEntete("CO2", -1);
+    ecrireCentre("ATTENTE", 32, 16, 1, COL_DISCRET);
     return;
   }
-
-  // --- ligne de titre : durée couverte, flèche de tendance, valeur actuelle ---
-  char buf[12];
-  snprintf(buf, sizeof(buf), "%d min", COURBE_NB_COL);
-  ecrireP(buf, 14, 0, COL_DISCRET);
   int nvAct = niveau(actuel, ECH_CO2);
+  dessinerEntete("CO2", nvAct);
+  ecrireTexte("1H", 22, 0, 1, COL_DISCRET);
+  char buf[8];
   snprintf(buf, sizeof(buf), "%d", (int)roundf(actuel));
-  int xVal = ecrirePDroite(buf, 63, 0, colNiv[nvAct]);
+  ecrireDroite(buf, 62, 0, 1, colNiv[nvAct]);
   int dir;
-  if (tendanceCO2(dir)) dessinerFleche(xVal - 4, 0, dir, couleurTendance(dir));   // juste à gauche de la valeur
+  if (tendanceCO2(dir)) dessinerFleche(59 - largeurTexte(buf, 1), 1, dir, couleurTendance(dir));
 
-  const int yBase = 31;
-  const int hMax = yBase - 6;                         // zone de dessin : y 7..yBase (25 px)
-
-  // --- valeurs des colonnes et échelle (agrandie si le pic de l'heure dépasse) ---
-  uint16_t vals[COURBE_NB_COL];
-  uint16_t maxi = 0;
-  for (int c = 0; c < COURBE_NB_COL; c++) {
-    vals[c] = valeurColonne(c);
-    if (vals[c] > maxi) maxi = vals[c];
+  const int yBase = 31, hMax = yBase - 9;             // zone de dessin : y 10..31 (22 px)
+  // règle des niveaux (x 0..1)
+  for (int y = 10; y <= yBase; y++) {
+    float v = COURBE_MIN_PPM + (yBase - y) * (float)(COURBE_MAX_PPM - COURBE_MIN_PPM) / (hMax - 1);
+    display.drawFastHLine(0, y, 2, colNiv[niveau(v, ECH_CO2)]);
   }
-  int haut = COURBE_HAUT_MIN_PPM;
-  while (haut < maxi && haut < COURBE_HAUT_MAX_PPM) haut += COURBE_PALIER_PPM;
-
-  // --- règle des niveaux (x 0) : la rangée de hauteur k a la couleur du niveau d'une colonne de hauteur k ---
-  for (int y = yBase - hMax + 1; y <= yBase; y++) {
-    float v = COURBE_MIN_PPM + (yBase - y) * (float)(haut - COURBE_MIN_PPM) / (hMax - 1);
-    display.drawPixel(0, y, colNiv[niveau(v, ECH_CO2)]);
-  }
-
-  // --- pointillés à 1000 ppm (dessinés d'abord : les colonnes passent par-dessus) ---
-  const int yAerer = yBase - hauteurCourbe(SEUIL_AERER_PPM, haut, hMax) + 1;
-  const uint16_t cAerer = atten(colNiv[2], 110);
-  for (int x = COURBE_X0 + 1; x < COURBE_X0 + COURBE_NB_COL; x += 3) display.drawPixel(x, yAerer, cAerer);
-
-  // --- colonnes : corps atténué, sommet vif ---
-  for (int c = 0; c < COURBE_NB_COL; c++) {
-    if (vals[c] == 0) continue;                       // minute sans mesure
-    int h = hauteurCourbe(vals[c], haut, hMax);
-    int x = COURBE_X0 + c;
+  // barres : j = 0 pour la plus récente (x 61..63), puis de 4 px en 4 px vers la gauche
+  for (int j = 0; j < COURBE_NB_BARRES; j++) {
+    float v = valeurBarre(j);
+    if (v <= 0) continue;
+    int h = 1 + (int)((v - COURBE_MIN_PPM) * (hMax - 1) / (float)(COURBE_MAX_PPM - COURBE_MIN_PPM) + 0.5f);
+    h = constrain(h, 1, hMax);
+    int xr = 63 - 4 * j;
     int yT = yBase - h + 1;
-    uint16_t col = colNiv[niveau(vals[c], ECH_CO2)];
-    if (h > 1) display.drawFastVLine(x, yT + 1, h - 1, atten(col, 100));
-    uint16_t cTop = col;
+    uint16_t c = colNiv[niveau(v, ECH_CO2)];
+    display.fillRect(xr - 2, yT, 3, h, c);
 #if ANIMATIONS
-    if (c == COURBE_NB_COL - 1 && phasePoint) cTop = COL_TITRE;  // minute en cours : sommet qui clignote
+    if (j == 0 && phasePoint) display.drawFastHLine(xr - 2, yT, 3, COL_TITRE);  // barre en cours : sommet qui clignote
 #endif
-    display.drawPixel(x, yT, cTop);
   }
 }
 
 // ---------- Wi-Fi : logo, page, écran de connexion ----------
-static const uint16_t COL_ETEINT = rgb565(40, 45, 60);   // arcs éteints du logo
-
 // Logo Wi-Fi 13 x 11 : un point + 3 arcs. (cx, yBas) = centre du point, en bas du logo (arcs vers le haut).
 // allumes = nombre d'arcs allumés (0..3), les autres restent sombres.
 void dessinerLogoWifi(int cx, int yBas, int allumes, uint16_t cOn, uint16_t cOff) {
@@ -2343,51 +2339,34 @@ void ecrireLigneDefilante(const char* s, int y, uint16_t c) {
   ecrireTexte(s, 1 - dx + cycle, y, 1, c);
 }
 
-// Ligne de titre des écrans Wi-Fi (même style que les autres pages) : "WIFI" à gauche, état à droite
-void dessinerEnteteWifi(const char* droite, uint16_t colDroite) {
-  ecrireP("WIFI", 0, 0, COL_TITRE);
-  if (droite) ecrirePDroite(droite, 63, 0, colDroite);
+// En-tête des écrans Wi-Fi : "WIFI" à gauche, état à droite, filet de la couleur de l'état
+void dessinerEnteteWifi(const char* droite, uint16_t colDroite, uint16_t colFilet) {
+  ecrireTexte("WIFI", 1, 0, 1, COL_TITRE);
+  if (droite) ecrireDroite(droite, 62, 0, 1, colDroite);
+  display.drawFastHLine(0, 8, 64, colFilet);
 }
 
-// Page de la rotation : état du Wi-Fi
-//   0..5 "WIFI" + force en dBm | logo 13x11 (y 9..19) | à droite : état en 5x7 (y 9) + détail en petit (y 18)
-//   25..31 nom du réseau (défile s'il est trop long)
+// Page Wi-Fi de la rotation : seulement quand la carte N'EST PAS connectée (connectée, le Wi-Fi est sur la page ÉTAT).
+//   0..6 "WIFI" + état | 8 filet | logo 13x11 (y 10..20) + état en clair (y 10) + détail (y 18) | 25..31 réseau / aide
 void dessinerPageWifi() {
 #if WIFI_ACTIVE
-  if (reseauOK()) {
-    int rssi = WiFi.RSSI();
-    int nv = niveauSignal(rssi);
-    uint16_t c = couleurSignal(nv);
-    static const char* QUALITE[4] = {"FAIBLE", "MOYEN", "BON", "FORT"};
-    char buf[8];
-    snprintf(buf, sizeof(buf), "%d dBm", rssi);
-    dessinerEnteteWifi(buf, c);
-    dessinerLogoWifi(7, 19, nv, c, COL_ETEINT);
-    ecrireTexte(QUALITE[nv], 17, 9, 1, c);
-    ecrireP(typeReseau(reseauCourant), 17, 18, COL_DISCRET);
-    ecrireLigneDefilante(WiFi.SSID().c_str(), 25, COL_TITRE);
-    return;
-  }
-  dessinerEnteteWifi("HORS LIGNE", COL_ERREUR);
-  dessinerLogoWifi(7, 19, -1, COL_ETEINT, COL_ETEINT);
-  dessinerCroix(10, 15);
+  dessinerEnteteWifi("OFF", COL_ERREUR, COL_ERREUR);
+  dessinerLogoWifi(8, 20, -1, COL_ETEINT, COL_ETEINT);
+  dessinerCroix(11, 16);
   if (nbReseaux == 0) {
-    ecrireTexte("AUCUN", 17, 9, 1, COL_ERREUR);
-    ecrireP("RESEAU", 17, 18, COL_DISCRET);
-    ecrireLigneDefilante("tape: wifi add <nom> <mdp>", 25, COL_TITRE);
+    ecrireTexte("AUCUN", 19, 10, 1, COL_ERREUR);
+    ecrireTexte("RESEAU", 19, 18, 1, COL_ERREUR);
+    ecrireLigneDefilante("tape: wifi add <nom> <mdp>", 25, COL_DISCRET);
     return;
   }
   const char* etat = (etatWifi == WIFI_SCAN) ? "RECHER" : (etatWifi == WIFI_CONNEXION) ? "CONNEX" : "ABSENT";
-  ecrireTexte(etat, 17, 9, 1, COL_TITRE);
+  ecrireTexte(etat, 19, 10, 1, COL_TITRE);
   char mem[16];
   snprintf(mem, sizeof(mem), "%u CONNU%s", (unsigned)nbReseaux, nbReseaux > 1 ? "S" : "");
-  ecrireP(mem, 17, 18, COL_DISCRET);
+  ecrireTexte(mem, 19, 18, 1, COL_DISCRET);
+  // (19 + 8 x 6 = 67 : "5 CONNUS" déborde de 3 px à droite, sans gêne)
   if (etatWifi == WIFI_CONNEXION && reseauCourant >= 0) ecrireLigneDefilante(reseaux[reseauCourant].ssid.c_str(), 25, COL_TITRE);
   else ecrireLigneDefilante("HORS LIGNE", 25, COL_DISCRET);
-#else
-  dessinerEnteteWifi("OFF", COL_DISCRET);
-  dessinerLogoWifi(7, 19, -1, COL_ETEINT, COL_ETEINT);
-  ecrireTexte("DESACT.", 17, 9, 1, COL_DISCRET);
 #endif
 }
 
@@ -2409,52 +2388,175 @@ void dessinerEcranConnexion() {
     if (resultatWifiOK) {                                 // connecté : logo plein, "OK" en grand
       int rssi = WiFi.RSSI();
       char buf[8];
-      snprintf(buf, sizeof(buf), "%d dBm", rssi);
-      dessinerEnteteWifi(buf, couleurSignal(niveauSignal(rssi)));
-      dessinerLogoWifi(7, 19, 3, colNiv[0], COL_ETEINT);
-      ecrireGrand("OK", 40, 21, colNiv[0], &FreeSansBold9pt7b);
+      snprintf(buf, sizeof(buf), "%ddB", rssi);
+      dessinerEnteteWifi(buf, couleurSignal(niveauSignal(rssi)), colNiv[0]);
+      dessinerLogoWifi(8, 20, 3, colNiv[0], COL_ETEINT);
+      ecrireCentre("OK", 40, 10, 2, colNiv[0]);
       ecrireLigneDefilante(WiFi.SSID().c_str(), 25, COL_TITRE);
     } else {                                              // échec : logo éteint + croix, raison
-      dessinerEnteteWifi("ECHEC", COL_ERREUR);
-      dessinerLogoWifi(7, 19, -1, COL_ETEINT, COL_ETEINT);
-      dessinerCroix(10, 15);
-      ecrireTexte(nbCandidats ? raisonCourte(raisonDeco) : "ABSENT", 17, 9, 1, COL_ERREUR);
-      ecrireP("ESSAI 30 S", 17, 18, COL_DISCRET);
-      ecrireLigneDefilante("wifi list / wifi add", 25, COL_DISCRET);
+      dessinerEnteteWifi("ECHEC", COL_ERREUR, COL_ERREUR);
+      dessinerLogoWifi(8, 20, -1, COL_ETEINT, COL_ETEINT);
+      dessinerCroix(11, 16);
+      ecrireTexte(nbCandidats ? raisonCourte(raisonDeco) : "ABSENT", 19, 10, 1, COL_ERREUR);
+      ecrireTexte("ESSAI", 19, 18, 1, COL_DISCRET);
+      ecrireCentre("DANS 30 S", 32, 25, 1, COL_DISCRET);
     }
     return;
   }
   // Connexion en cours : les arcs s'allument l'un après l'autre
   int phase = (int)((now / 300UL) % 4UL) - 1;            // -1 (point seul) .. 2
   if (etatWifi == WIFI_SCAN) {
-    dessinerEnteteWifi("RECHERCHE", COL_TITRE);
-    dessinerLogoWifi(7, 19, phase + 1, COL_TITRE, COL_ETEINT);
-    ecrireTexte("RECHER", 17, 9, 1, COL_TITRE);
+    dessinerEnteteWifi("SCAN", COL_TITRE, COL_FILET);
+    dessinerLogoWifi(8, 20, phase + 1, COL_TITRE, COL_ETEINT);
+    ecrireTexte("RECHER", 19, 10, 1, COL_TITRE);
     char mem[16];
     snprintf(mem, sizeof(mem), "%u CONNU%s", (unsigned)nbReseaux, nbReseaux > 1 ? "S" : "");
     ecrireLigneDefilante(mem, 25, COL_DISCRET);
   } else {
     char buf[16];
-    snprintf(buf, sizeof(buf), "ESSAI %u/%u", (unsigned)(idxCandidat + 1), (unsigned)nbCandidats);
-    dessinerEnteteWifi(buf, COL_TITRE);
-    dessinerLogoWifi(7, 19, phase + 1, COL_TITRE, COL_ETEINT);
-    ecrireTexte("CONNEX", 17, 9, 1, COL_TITRE);
+    snprintf(buf, sizeof(buf), "%u/%u", (unsigned)(idxCandidat + 1), (unsigned)nbCandidats);
+    dessinerEnteteWifi(buf, COL_TITRE, COL_FILET);
+    dessinerLogoWifi(8, 20, phase + 1, COL_TITRE, COL_ETEINT);
+    ecrireTexte("CONNEX", 19, 10, 1, COL_TITRE);
     if (reseauCourant >= 0) ecrireLigneDefilante(reseaux[reseauCourant].ssid.c_str(), 25, COL_TITRE);
   }
-  // points animés + secondes écoulées (y 18..22)
+  // points animés (y 20..21) + secondes écoulées (y 18..24)
   int nbPoints = (int)((now / 400UL) % 4UL);
-  for (int i = 0; i < nbPoints; i++) display.fillRect(17 + i * 4, 20, 2, 2, COL_TITRE);
+  for (int i = 0; i < nbPoints; i++) display.fillRect(19 + i * 4, 20, 2, 2, COL_TITRE);
   char sec[12];
-  snprintf(sec, sizeof(sec), "%lu s", (now - tEtatWifi) / 1000UL);
-  ecrirePDroite(sec, 63, 18, COL_DISCRET);
+  snprintf(sec, sizeof(sec), "%lus", (now - tEtatWifi) / 1000UL);
+  ecrireDroite(sec, 62, 18, 1, COL_DISCRET);
 #endif
+}
+
+// ---------- page ÉTAT : toutes les icônes sur une page ----------
+// Intercalée dans la rotation toutes les PERIODE_ETAT_MS, pendant DUREE_ETAT_MS (voir pageSuivante).
+//   0..6    heure (cyan) à gauche | date à droite (ou "BATT" en orange sur batterie) ; "--:--" sans heure NTP
+//   8       filet
+//   10..21  3 grandes icônes, une par tuile de 21 px : Wi-Fi | serveur (nuage) | capteurs (ventilateur)
+//   24..30  sous chaque icône, un mot de 3 caractères au plus, de la couleur de l'icône
+// Couleurs : vert = OK | jaune / orange = à surveiller | rouge = problème | cyan = en cours | gris = rien encore
+static const int X_TUILE[3] = {10, 32, 53};            // centre de chaque tuile
+
+// Nuage 15 x 10 creusé d'une flèche vers le haut (envoi au serveur), (cx, y) = centre / haut
+static const char* NUAGE[10] = {
+  ".....#####.....",
+  "...####.####...",
+  "..####...####..",
+  ".####.....####.",
+  "#######.#######",
+  "#######.#######",
+  "#######.#######",
+  "#######.#######",
+  ".#############.",
+  "..###########..",
+};
+void dessinerNuage(int cx, int y, uint16_t c) {
+  for (int r = 0; r < 10; r++)
+    for (int k = 0; k < 15; k++)
+      if (NUAGE[r][k] == '#') display.drawPixel(cx - 7 + k, y + r, c);
+}
+
+// Ventilateur 11 x 11, 4 pales (capteurs : le NextPM aspire l'air avec un ventilateur), (cx, cy) = centre
+static const char* VENTILO[11] = {
+  "....###....",
+  "...####....",
+  "...###.....",
+  "....##..##.",
+  "##..#######",
+  "#####.#####",
+  "#######..##",
+  ".##..##....",
+  ".....###...",
+  "....####...",
+  "....###....",
+};
+void dessinerVentilo(int cx, int cy, uint16_t c) {
+  for (int r = 0; r < 11; r++)
+    for (int k = 0; k < 11; k++)
+      if (VENTILO[r][k] == '#') display.drawPixel(cx - 5 + k, cy - 5 + r, c);
+}
+
+void dessinerTuile(int i, const char* mot, uint16_t c) {
+  ecrireCentre(mot, X_TUILE[i], 24, 1, c);
+}
+
+void dessinerPageEtat() {
+  static const uint16_t GRIS = rgb565(110, 110, 125), ORANGE = rgb565(255, 120, 0);
+  // --- en-tête : heure et date (heure NTP) ---
+  char buf[12];
+  if (heureValide()) {
+    time_t t = time(nullptr);
+    struct tm lt;
+    localtime_r(&t, &lt);
+    snprintf(buf, sizeof(buf), "%02d:%02d", lt.tm_hour, lt.tm_min);
+    ecrireTexte(buf, 1, 0, 1, COL_TITRE);
+    snprintf(buf, sizeof(buf), "%02d/%02d", lt.tm_mday, lt.tm_mon + 1);
+    if (estSurSecteur) ecrireDroite(buf, 62, 0, 1, COL_DISCRET);
+  } else {
+    ecrireTexte("--:--", 1, 0, 1, GRIS);
+  }
+  if (!estSurSecteur) ecrireDroite("BATT", 62, 0, 1, ORANGE);
+  display.drawFastHLine(0, 8, 64, COL_FILET);
+
+  // --- tuile 1 : Wi-Fi (arcs allumés = force du signal, mot = signal en dBm) ---
+  uint16_t c = GRIS;
+  const char* mot = "OFF";
+#if WIFI_ACTIVE
+  if (reseauOK()) {
+    int rssi = WiFi.RSSI();
+    rssi = constrain(rssi, -99, 0);           // 3 caractères au plus
+    int nv = niveauSignal(rssi);
+    c = couleurSignal(nv);
+    dessinerLogoWifi(X_TUILE[0], 20, nv, c, COL_ETEINT);
+    snprintf(buf, sizeof(buf), "%d", rssi);
+    mot = buf;
+  } else if (etatWifi == WIFI_SCAN || etatWifi == WIFI_CONNEXION) {
+    c = COL_TITRE;
+    dessinerLogoWifi(X_TUILE[0], 20, 0, c, COL_ETEINT);
+    mot = "...";
+  } else {
+    c = COL_ERREUR;
+    dessinerLogoWifi(X_TUILE[0], 20, -1, COL_ETEINT, COL_ETEINT);
+    dessinerCroix(X_TUILE[0] + 2, 16);
+  }
+#else
+  dessinerLogoWifi(X_TUILE[0], 20, -1, COL_ETEINT, COL_ETEINT);
+#endif
+  dessinerTuile(0, mot, c);
+
+  // --- tuile 2 : envoi au serveur (mot = mesures en attente d'envoi, s'il y en a) ---
+  char att[8];
+  if (!cleOK() || cleInvalide)  { c = COL_ERREUR; mot = "CLE"; }  // clé absente ou refusée (401)
+  else if (etatEnvoi == 3)      { c = COL_ERREUR; mot = "ERR"; }  // mesure refusée / adresse du serveur
+  else if (nbLignesAttente > 0) {                                  // mesures gardées en flash, renvoi en cours
+    c = ORANGE;
+    snprintf(att, sizeof(att), "%u", (unsigned)min((uint32_t)nbLignesAttente, (uint32_t)999));
+    mot = att;
+  }
+  else if (etatEnvoi == 2)      { c = ORANGE; mot = "..."; }      // réessai
+  else if (etatEnvoi == 1)      { c = colNiv[0]; mot = "OK"; }
+  else                          { c = GRIS; mot = "--"; }         // rien envoyé depuis le démarrage
+  dessinerNuage(X_TUILE[1], 10, c);
+  dessinerTuile(1, mot, c);
+
+  // --- tuile 3 : capteurs (NextPM et MH-Z19C) ---
+  bool errCO2 = (mCO2.etat == CAPTEUR_ERREUR), errPM = (mPM25.etat == CAPTEUR_ERREUR);
+  if (errCO2 && errPM)        { c = COL_ERREUR; mot = "ERR"; }
+  else if (errCO2)            { c = COL_ERREUR; mot = co2HorsPlage ? "CAL" : "CO2"; }
+  else if (errPM)             { c = COL_ERREUR; mot = "PM"; }
+  else if (mCO2.etat == CAPTEUR_CHAUFFE || mPM25.etat == CAPTEUR_CHAUFFE) { c = COL_TITRE; mot = "..."; }
+  else                        { c = colNiv[0]; mot = "OK"; }
+  dessinerVentilo(X_TUILE[2], 15, c);
+  dessinerTuile(2, mot, c);
 }
 
 // ---------- pages : sélection ----------
 bool pageActive(uint8_t p) {
   if (p == PAGE_AERER) return alerteAerer();   // seulement quand le CO2 est élevé
   if (p == PAGE_COURBE) return histN >= 2;     // dès 2 minutes de mesures
-  if (p == PAGE_WIFI) return WIFI_ACTIVE;
+  if (p == PAGE_WIFI) return WIFI_ACTIVE && !reseauOK();   // connecté : le Wi-Fi est sur la page ÉTAT
+  if (p == PAGE_ETAT) return false;            // pas dans la rotation : intercalée par pageSuivante
   return true;
 }
 
@@ -2528,95 +2630,37 @@ void verifierAlertes(unsigned long now) {
   if (choix >= 0) declencherAlerte(choix, nivChoix, NOMS[choix], now);
 }
 
-#if AFFICHER_TEMOINS
-// Zone d'état en bas à droite (x 57..63, y 25..31), que les pages ne recouvrent jamais :
-//
-//   y 25..29   mini logo Wi-Fi 7x5 : point + 2 arcs
-//                connecté   : couleur = force du signal (vert fort, jaune, orange, rouge faible),
-//                             arcs allumés : point seul (très faible) / + petit arc / + grand arc
-//                recherche  : arcs éteints, point cyan
-//                hors ligne : arcs éteints, point rouge
-//   y 31       3 repères :  x 57-58 alimentation (vert secteur | orange batterie)
-//                           x 60    heure NTP    (bleu réglée | gris pas encore)
-//                           x 62-63 envoi        (vert OK | orange mesures en attente ou réessai | rouge refus | gris rien)
-static const char* WIFI_MINI[5] = {   // '1' point, '2' petit arc, '3' grand arc
-  ".33333.",
-  "3.....3",
-  "..222..",
-  ".2...2.",
-  "...1...",
-};
-static const int X_TEMOINS = 57, Y_TEMOINS = 25;
-
-void dessinerMiniWifi() {
-  uint8_t allumes = 0;            // nombre d'éléments allumés : 1 = point, 2 = + petit arc, 3 = + grand arc
-  uint16_t c = COL_ERREUR;
-#if WIFI_ACTIVE
-  if (reseauOK()) {
-    int nv = niveauSignal(WiFi.RSSI());
-    c = couleurSignal(nv);
-    allumes = (nv >= 2) ? 3 : nv + 1;
-  } else {
-    allumes = 1;
-    c = (etatWifi == WIFI_SCAN || etatWifi == WIFI_CONNEXION) ? COL_TITRE : COL_ERREUR;
-  }
-#endif
-  for (int y = 0; y < 5; y++) {
-    for (int x = 0; x < 7; x++) {
-      char e = WIFI_MINI[y][x];
-      if (e == '.') continue;
-      display.drawPixel(X_TEMOINS + x, Y_TEMOINS + y, (e - '0' <= allumes) ? c : COL_ETEINT);
-    }
-  }
-}
-
-void dessinerTemoins() {
-  static const uint16_t GRIS = rgb565(50, 50, 50), VERT = rgb565(0, 200, 0), ORANGE = rgb565(255, 120, 0);
-  dessinerMiniWifi();
-  uint16_t cAlim = estSurSecteur ? VERT : ORANGE;
-  uint16_t cNtp  = heureValide() ? rgb565(0, 100, 255) : GRIS;
-  uint16_t cEnv  = GRIS;
-  if (etatEnvoi == 3) cEnv = COL_ERREUR;
-  else if (etatEnvoi == 2 || nbLignesAttente > 0) cEnv = ORANGE;
-  else if (etatEnvoi == 1) cEnv = VERT;
-  display.drawFastHLine(X_TEMOINS, 31, 2, cAlim);
-  display.drawPixel(X_TEMOINS + 3, 31, cNtp);
-  display.drawFastHLine(X_TEMOINS + 5, 31, 2, cEnv);
-}
-#endif
-
 // ---------- rendu ----------
 // Dessine la page courante dans le tampon (sans l'envoyer à l'écran)
 void dessinerContenu() {
   display.clearDisplay();
   display.setTextWrap(false);
 
-  if (ecranWifiActif()) {   // écran de connexion : il a déjà son grand logo Wi-Fi, pas de témoins
+  if (ecranWifiActif()) {   // écran de connexion Wi-Fi (démarrage, commande wifi)
     dessinerEcranConnexion();
     return;
   }
 
-  // Éclair d'alerte : une image sur deux, tout l'écran à la couleur du niveau, nom du polluant en noir
+  // Éclair d'alerte : une image sur deux, tout l'écran à la couleur du niveau, "ALERTE" + polluant en noir
   if (flashEnCours() && (((millis() - tFlashDebut) / ALERTE_FLASH_MS) % 2UL) == 0) {
     display.fillScreen(couleurFlash);
-    ecrireGrand(nomFlash, 32, 22, 0, &FreeSansBold9pt7b);
+    ecrireCentre("ALERTE", 32, 3, 1, 0);
+    ecrireNombreCentre(nomFlash, 32, 14, 2, 0);
     return;
   }
 
   switch (pageCourante) {
-    case PAGE_CO2:    dessinerPageCO2(); break;
+    case PAGE_CO2:    dessinerPageMesure(mCO2,  "CO2",   ECH_CO2,  PAGE_CO2);  break;
     case PAGE_AERER:  dessinerPageAerer(); break;
-    case PAGE_PM1:    dessinerPagePM(mPM1,  "PM1",   ECH_PM25, PAGE_PM1);  break;   // mêmes seuils que PM2.5
-    case PAGE_PM25:   dessinerPagePM(mPM25, "PM2.5", ECH_PM25, PAGE_PM25); break;
-    case PAGE_PM10:   dessinerPagePM(mPM10, "PM10",  ECH_PM10, PAGE_PM10); break;
+    case PAGE_PM1:    dessinerPageMesure(mPM1,  "PM1",   ECH_PM25, PAGE_PM1);  break;   // mêmes seuils que PM2.5
+    case PAGE_PM25:   dessinerPageMesure(mPM25, "PM2.5", ECH_PM25, PAGE_PM25); break;
+    case PAGE_PM10:   dessinerPageMesure(mPM10, "PM10",  ECH_PM10, PAGE_PM10); break;
     case PAGE_GLOBAL: dessinerPageGlobal(); break;
     case PAGE_COURBE: dessinerPageCourbe(); break;
     case PAGE_WIFI:   dessinerPageWifi(); break;
+    case PAGE_ETAT:   dessinerPageEtat(); break;
     default: break;
   }
-#if AFFICHER_TEMOINS
-  if (pageCourante != PAGE_WIFI) dessinerTemoins();   // la page Wi-Fi a déjà son grand logo (et un texte qui défile en bas)
-#endif
 }
 
 // Envoie le tampon dessiné à l'écran (double tampon : bascule instantanée, sans scintillement)
@@ -2655,11 +2699,28 @@ void afficher() {
   presenter();
 }
 
-// Passe à la page suivante qui est active (saute AERER et COURBE quand elles n'ont rien à montrer)
+// Durée d'affichage de la page courante : la page ÉTAT est courte, les autres durent INTERVALLE_PAGE_MS.
+unsigned long dureePage() {
+  return (pageCourante == PAGE_ETAT) ? DUREE_ETAT_MS : INTERVALLE_PAGE_MS;
+}
+
+// Passe à la page suivante qui est active (saute AERER, COURBE et WIFI quand elles n'ont rien à montrer)
 // et prépare le fondu.
+// Toutes les PERIODE_ETAT_MS passées sur les autres pages, la page ÉTAT (icônes) s'intercale, puis la rotation
+// reprend là où elle s'était arrêtée.
 // Pendant une alerte : une page sur deux est une page EN ALERTE (tourniquet s'il y en a plusieurs) ; entre deux,
 // la rotation normale reprend là où elle s'était arrêtée, pour que les autres mesures restent visibles.
+unsigned long tFinEtat = 0;     // fin du dernier passage de la page ÉTAT
 void pageSuivante() {
+  unsigned long now = millis();
+  aTransition = true;
+  aRedessiner = true;
+  if (pageCourante == PAGE_ETAT) {
+    tFinEtat = now;
+  } else if (AFFICHER_ETAT && now - tFinEtat >= PERIODE_ETAT_MS) {
+    pageCourante = PAGE_ETAT;
+    return;
+  }
   bool enAlerte = alerteEnCours();
   bool trouvee = false;
   if (enAlerte && !alertePage(pageCourante)) {
@@ -2675,8 +2736,6 @@ void pageSuivante() {
       trouvee = true;
     }
   }
-  aTransition = true;
-  aRedessiner = true;
 }
 
 // ---------- animations ----------
@@ -2694,7 +2753,6 @@ bool ecranWifiAnime() {
   if (ecranWifiActif()) return true;
   if (pageCourante != PAGE_WIFI) return false;
 #if WIFI_ACTIVE
-  if (reseauOK()) return texteDefile(WiFi.SSID().c_str());
   if (nbReseaux == 0) return true;
   if (etatWifi == WIFI_CONNEXION && reseauCourant >= 0) return texteDefile(reseaux[reseauCourant].ssid.c_str());
 #endif
@@ -2737,11 +2795,18 @@ void animer(unsigned long now) {
     if (ph != phasePulse) { phasePulse = ph; maj = true; }
   }
 
-  // page AERER : "AERER" pulse (vif / atténué toutes les 0,6 s), même sans ANIMATIONS : c'est une alerte
+  // page AERER : rubans qui défilent (120 ms) et "AERER" qui pulse (0,6 s), même sans ANIMATIONS : c'est une alerte
   if (pageVisible && pageCourante == PAGE_AERER) {
     static uint32_t phaseAerer = 0;
-    uint32_t ph = (uint32_t)(now / 600UL);
-    if (ph != phaseAerer) { phaseAerer = ph; maj = true; }
+    uint32_t ph = (uint32_t)(now / 120UL);
+    if (ph != phaseAerer) { phaseAerer = ph; phaseRuban = (uint16_t)(phaseRuban + 1); maj = true; }
+  }
+
+  // page ÉTAT : l'heure (redessinée à chaque seconde, au cas où la minute change pendant les 3 s)
+  if (pageVisible && pageCourante == PAGE_ETAT) {
+    static uint32_t phaseEtat = 0;
+    uint32_t ph = (uint32_t)(now / 1000UL);
+    if (ph != phaseEtat) { phaseEtat = ph; maj = true; }
   }
 
 #if ANIMATIONS
@@ -2763,14 +2828,15 @@ void animer(unsigned long now) {
     if (pageVisible && mesureVisible(m)) maj = true;
   }
 
-  // clignement des yeux (seule la page QUALITE AIR a un visage)
+  // clignement des yeux (pages de mesure et page ATMO : elles ont un visage)
   bool cl = yeuxFermes();
   if (cl != etatCligne) {
     etatCligne = cl;
-    if (pageVisible && pageCourante == PAGE_GLOBAL) maj = true;
+    if (pageVisible && (pageCourante == PAGE_GLOBAL || mesureVisible(mCO2) || mesureVisible(mPM1) ||
+                        mesureVisible(mPM25) || mesureVisible(mPM10))) maj = true;
   }
 
-  // page courbe : le sommet de la minute en cours clignote (500 ms)
+  // page courbe : le sommet de la barre en cours clignote (500 ms)
   if (pageCourante == PAGE_COURBE) {
     uint8_t p = (uint8_t)((now / 500UL) % 2UL);
     if (p != phasePoint) { phasePoint = p; maj = true; }
@@ -3394,9 +3460,10 @@ void loop() {
     finaliserPeriode();
   }
 
-  // Toutes les 6 s : page suivante de l'écran (avec un fondu) (en pause pendant l'écran de connexion Wi-Fi).
+  // Toutes les 5 s (3 s pour la page ÉTAT) : page suivante de l'écran, avec un fondu
+  // (en pause pendant l'écran de connexion Wi-Fi).
   if (ecranWifiActif()) tPage = now;
-  if (now - tPage >= INTERVALLE_PAGE_MS) {
+  if (now - tPage >= dureePage()) {
     tPage = now;
     pageSuivante();
   }
