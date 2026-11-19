@@ -139,12 +139,14 @@ La carte se connecte seule au meilleur réseau connu visible, sans redémarrage.
 | `DOUBLE_BUFFER` | 1 | Dessin sans scintillement |
 | `TRANSITION_FONDU` | 1 | Fondu entre les pages |
 | `ANIMATIONS` | 0 | Clignements, chiffres qui glissent |
-| `AFFICHER_TEMOINS` | 1 | Témoins Wi-Fi / secteur / heure / envoi en bas à droite |
+| `AFFICHER_ETAT` | 1 | Page ÉTAT (heure + icônes Wi-Fi / serveur / capteurs) toutes les 15 s, pendant 3 s |
 
 ### Écran LED
 
 - **Démarrage :** logo animé « LA BONNE M’AIR ».
-- **Pages (une information par écran, 5 s chacune) :** CO₂ · AÉRER (si CO₂ ≥ 1 000 ppm) · PM1 · PM2.5 · PM10 · indice ATMO · courbe du CO₂ · Wi-Fi.
+- **Pages (une mesure par écran, 5 s chacune) :** CO₂ · AÉRER (si CO₂ ≥ 1 000 ppm) · PM1 · PM2.5 · PM10 · indice ATMO · courbe du CO₂ (dernière heure) · Wi-Fi (seulement hors ligne).
+- **Page de mesure :** nom et unité en haut, filet à la couleur du niveau, valeur en grand avec un visage qui change d’expression, puis la **jauge des niveaux ATMO** (6 segments pour les PM, 4 pour le CO₂) : le niveau atteint est allumé, les autres restent en sourdine, et un **curseur** ▲ indique la position exacte de la valeur dans son niveau.
+- **Page ÉTAT (toutes les 15 s, pendant 3 s) :** heure et date, puis trois grandes icônes colorées (vert = OK, orange = à surveiller, rouge = problème) : **Wi-Fi** (arcs selon le signal, en dBm), **serveur** (nuage : envoi OK, nombre de mesures en attente, clé refusée) et **capteurs** (ventilateur : OK, préchauffage, panne, à calibrer). Réglable avec `PERIODE_ETAT_MS` et `DUREE_ETAT_MS`.
 - **Couleurs :** chaque valeur prend la couleur de son niveau ATMO.
 - **Alerte hors norme :** dès qu’un polluant atteint son seuil d’alerte (PM : « Mauvais », CO₂ : ≥ 1 000 ppm), l’écran saute aussitôt sur sa page, clignote à la couleur du niveau, puis la valeur pulse ; la page revient une fois sur deux tant que l’alerte dure.
 - **Luminosité adaptée :** jour, nuit et batterie.
