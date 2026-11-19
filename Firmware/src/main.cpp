@@ -1426,7 +1426,14 @@ long calculerAge(JsonDocument &doc) {
   uint32_t u = doc["_u"] | 0UL;
   uint32_t e = doc["_e"] | 0UL;
   uint32_t b = doc["_b"] | 0UL;
-  if (b == bootId) return (long)((millis() / 1000UL) - u);  // même démarrage : l'uptime suffit
+  if (b == bootId) {  // même démarrage : l'uptime suffit
+    // millis() repasse à 0 au bout de ~49,7 jours : millis()/1000 repart alors de 0 après 4 294 967 s.
+    // Sans ce cas, une mesure prise juste avant ce passage donnait un âge négatif et était abandonnée
+    // (toutes celles d'une coupure Wi-Fi qui le chevauche, vu en simulation).
+    uint32_t maintenantS = millis() / 1000UL;
+    if (maintenantS >= u) return (long)(maintenantS - u);
+    return (long)(maintenantS + (0xFFFFFFFFUL / 1000UL - u));
+  }
   if (e == 0) return -1;
   if (!heureValide()) return -2;
   uint32_t maintenant = (uint32_t)time(nullptr);
