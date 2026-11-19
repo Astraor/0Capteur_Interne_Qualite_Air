@@ -186,12 +186,12 @@ Page unique, sans framework, hébergée sur **GitHub Pages** (branche `main`, ra
 
 - **Verdict en direct** « L’air est… » avec bandeau qui prend la couleur du niveau ATMO.
 - **Cartes de mesure** PM1, PM2.5, PM10, CO₂, température, humidité : dernière valeur, jauge colorée, min / max de la période.
-- **Graphiques interactifs :** périodes 6 h / 24 h / 7 j ou **durée personnalisée** (5 min à 7 jours), choix du **pas de moyenne**, séries à cocher, **seuils en pointillés**, lecture au survol ou au doigt.
+- **Graphiques interactifs :** périodes 6 h / 24 h / 7 j ou **durée personnalisée** (5 min à 31 jours), choix du **pas de moyenne**, séries à cocher, **seuils en pointillés**, lecture au survol ou au doigt.
 - **Heure réelle des mesures :** les mesures renvoyées après une coupure sont replacées à leur heure grâce à `x_age_s`.
-- **Export CSV :** période affichée, dernière heure… ou dates précises ; mesures brutes ou moyennées ; format Excel France (`;`) ou standard (`,`).
+- **Export CSV** (dans la barre et au-dessus des courbes) : période affichée, dernière heure, 6 h, 24 h, 7 j, 30 j, **tout l'historique** ou **dates choisies dans un calendrier** (jours blancs = mesures disponibles, jours noirs = aucune mesure) ; mesures brutes (31 jours au plus par fichier) ou moyennées (5 min, 15 min, 1 h, 1 j) ; format Excel France (`;`) ou standard (`,`). Les longues périodes sont téléchargées par tranches (le serveur limite chaque requête à 7 jours en brut et 31 jours en moyennes).
 - **Section « Comprendre les mesures »** : tableau des seuils et explication du calcul de l’indice.
 - **3 langues** : français, anglais, japonais (choix mémorisé).
-- **Confort :** écran d’entrée plein écran, animations réductibles, mise à jour automatique toutes les 5 min.
+- **Confort :** écran d’entrée plein écran, bouton flottant « Aller aux mesures » pour sauter l’introduction, animations réductibles, mise à jour automatique toutes les 5 min.
 
 ### Réglages (`index.html`, section « 1) RÉGLAGES »)
 
