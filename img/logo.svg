@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- La Bonne M’air : le clocher de Notre-Dame de la Garde et sa statue dorée, sous les étoiles, enveloppés d’un souffle d’air.
+       La couleur du souffle (#4fa8e0) est remplacée par celle du niveau ATMO dans l’onglet (voir majFavicon dans index.html). -->
+  <defs>
+    <radialGradient id="ciel" cx="50%" cy="18%" r="85%">
+      <stop offset="0" stop-color="#1b3550"/>
+      <stop offset=".55" stop-color="#0a1522"/>
+      <stop offset="1" stop-color="#03070b"/>
+    </radialGradient>
+    <linearGradient id="or" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffe7a3"/>
+      <stop offset=".55" stop-color="#e9b949"/>
+      <stop offset="1" stop-color="#a8761f"/>
+    </linearGradient>
+    <linearGradient id="pierre" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset=".7" stop-color="#eef2f6"/>
+      <stop offset="1" stop-color="#c3cfdc"/>
+    </linearGradient>
+    <clipPath id="cadre"><rect width="64" height="64" rx="14"/></clipPath>
+  </defs>
+  <g clip-path="url(#cadre)">
+    <rect width="64" height="64" fill="url(#ciel)"/>
+    <!-- étoiles -->
+    <g fill="#fff">
+      <circle cx="11" cy="12" r="1.3"/>
+      <circle cx="52" cy="9" r="1"/>
+      <circle cx="50" cy="22" r=".8" opacity=".75"/>
+      <circle cx="16" cy="25" r=".7" opacity=".6"/>
+    </g>
+    <!-- statue dorée -->
+    <g fill="url(#or)">
+      <path d="M32 3.6l1.3 1.6h-2.6z"/>
+      <circle cx="32" cy="7" r="1.7"/>
+      <path d="M29.3 18.2c.2-4 .8-7.4 2.7-8.6 1.9 1.2 2.5 4.6 2.7 8.6z"/>
+      <rect x="28.6" y="18" width="6.8" height="2.2" rx=".6"/>
+    </g>
+    <!-- lanterne, corniche et tour rayée -->
+    <g fill="url(#pierre)">
+      <rect x="28.4" y="20.2" width="7.2" height="6.6"/>
+      <rect x="22.6" y="26.6" width="18.8" height="3.2" rx=".6"/>
+      <rect x="24.2" y="29.6" width="15.6" height="40"/>
+    </g>
+    <g fill="#7f93aa">
+      <rect x="30.2" y="21.6" width="1.2" height="4"/>
+      <rect x="32.6" y="21.6" width="1.2" height="4"/>
+      <rect x="24.2" y="40.6" width="15.6" height="1.1"/>
+      <rect x="24.2" y="44" width="15.6" height="1.1"/>
+      <rect x="24.2" y="47.4" width="15.6" height="1.1"/>
+    </g>
+    <!-- baies du clocher : trois arcades étroites, comme sur l’affiche -->
+    <g fill="#0a1522">
+      <path d="M26.3 38.6v-4.4a1.25 1.25 0 0 1 2.5 0v4.4z"/>
+      <path d="M30.75 38.6v-4.4a1.25 1.25 0 0 1 2.5 0v4.4z"/>
+      <path d="M35.2 38.6v-4.4a1.25 1.25 0 0 1 2.5 0v4.4z"/>
+    </g>
+    <!-- souffle d’air -->
+    <path d="M-2 55.5c9-7 17-7.5 26-3.2s17 4.2 27-2.8c4-2.8 8.5-3.6 13-2.2" fill="none" stroke="#4fa8e0" stroke-width="5" stroke-linecap="round"/>
+  </g>
+</svg>

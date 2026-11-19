@@ -47,7 +47,7 @@ window.I18N_DICT.ja = {
   "verdict.ancienne": "測定が古すぎます",
   "verdict.inconnue": "不明",
   "verdict.aucune": "データなし",
-  "verdict.titre_page": "空気は{mot} · La Bonne M’air",
+  "verdict.titre_page": "La Bonne M’air · 空気は{mot}",
   "niveau.0.nom": "良好",
   "niveau.1.nom": "普通",
   "niveau.2.nom": "やや悪い",

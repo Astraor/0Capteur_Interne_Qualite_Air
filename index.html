@@ -3,10 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>La Bonne M’air · Qualité de l'air en direct</title>
+<title>La Bonne M’air · Qualité de l’air en direct</title>
 <meta name="description" content="Mesures en direct de notre capteur de qualité de l'air : particules fines, température, humidité et CO2.">
 <meta name="theme-color" content="#0e1b24">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e1b24'/%3E%3Ccircle cx='10' cy='11' r='2.4' fill='%23f2f4f0'/%3E%3Ccircle cx='22.5' cy='8.5' r='1.5' fill='%23f2f4f0'/%3E%3Ccircle cx='17.5' cy='21' r='5.5' fill='%23f26a1b'/%3E%3C/svg%3E">
+<!-- Logo : le clocher de Notre-Dame de la Garde et sa statue dorée, enveloppés d'un souffle d'air.
+     Dans l'onglet, le souffle prend la couleur du niveau ATMO de la dernière mesure (voir majFavicon). -->
+<link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32.png">
+<link rel="icon" type="image/svg+xml" sizes="any" href="img/logo.svg" id="favicon">
+<link rel="apple-touch-icon" href="img/apple-touch-icon.png">
 
 <script>
   /* Les animations d'apparition ne s'activent que si le script principal démarre bien.
@@ -166,6 +170,7 @@
     background: var(--encre); color: var(--fond); text-align: center; cursor: pointer;
   }
   .ep-int { max-width: 36ch; display: grid; justify-items: center; gap: 16px; }
+  .ep-logo { width: clamp(56px, 9vh, 76px); height: auto; border-radius: 22%; box-shadow: 0 10px 30px rgba(0, 0, 0, .35), 0 0 0 1px rgba(242, 244, 240, .12); }
   .ep-sur { margin: 0; font: 600 .78rem/1.3 var(--mono); letter-spacing: .08em; text-transform: uppercase; opacity: .7; }
   .ep-titre { margin: 0; font-family: var(--titre); font-weight: 800; font-stretch: 78%; font-size: clamp(2.2rem, 9vw, 4rem); line-height: 1.02; text-transform: uppercase; text-wrap: balance; }
   .ep-texte { margin: 0; font-size: 1rem; line-height: 1.5; opacity: .85; }
@@ -435,10 +440,12 @@
   .reel-avance span { position: absolute; inset: 0; background: #8cc8f5; transform: scaleX(0); transform-origin: 0 50%; }
 
   /* Nom du projet dans le pied de page */
-  .pied-marque {
+  .pied .pied-marque {   /* .pied : passe devant la règle générale « .pied p » (taille et marge) */
     margin: 0 0 22px; font-family: "Cinzel Decorative", "Cinzel", Georgia, serif; font-weight: 700;
     font-size: clamp(1.9rem, 5vw, 3.2rem); line-height: 1; color: #efe9dc !important; text-transform: uppercase; max-width: none !important;
+    display: flex; align-items: center; gap: .32em;
   }
+  .pied-logo { flex: none; width: 1.25em; height: 1.25em; border-radius: 22%; box-shadow: 0 0 0 1px rgba(242, 244, 240, .14); }
 
   @media print {
     .js .ouverture, .js .reel { height: auto !important; }
@@ -1022,6 +1029,7 @@
 
 <div class="entree-plein" id="entree-plein" role="dialog" aria-modal="true" aria-labelledby="ep-titre" hidden>
   <div class="ep-int">
+    <img class="ep-logo" src="img/logo.svg" alt="La Bonne M’air" width="64" height="64" decoding="async">
     <p class="ep-sur" data-i18n="ep.sur">Qualité de l'air · mesures en direct</p>
     <h2 id="ep-titre" class="ep-titre" data-i18n="ep.titre">Pour une meilleure visibilité</h2>
     <p class="ep-texte" data-i18n-html="ep.texte">Touchez ou cliquez n'importe où pour passer en plein écran. <kbd>Échap</kbd> ou le bouton en bas à droite permet d'en sortir.</p>
@@ -1440,7 +1448,7 @@
 <footer class="pied">
   <div class="conteneur pied-int">
     <div class="pied-texte">
-      <p class="pied-marque">La Bonne M’air</p>
+      <p class="pied-marque"><img class="pied-logo" src="img/logo.svg" alt="" width="64" height="64" loading="lazy" decoding="async">La Bonne M’air</p>
       <dl class="pied-donnees">
         <dt data-i18n="pied.source.dt">Source</dt>
         <dd data-i18n="pied.source.dd">Capteur de qualité de l'air, qui envoie ses mesures au serveur AirCarto (api.aircarto.fr), environ toutes les 30&nbsp;secondes.</dd>
@@ -2611,10 +2619,34 @@ function ecrireTextesBandeau() {
   ajusterHero();
 }
 
+// Logo de l'onglet : le souffle d'air du logo prend la couleur ATMO du verdict (bleu de l'affiche sinon).
+// img/logo.svg est lu une seule fois, puis recoloré en mémoire.
+const FAVICON_SOUFFLE = "#4fa8e0";
+let faviconModele = null, faviconCouleur = null;
+function majFavicon(couleur) {
+  faviconCouleur = couleur || null;
+  const lien = document.getElementById("favicon");
+  if (!lien) return;
+  const poser = () => {
+    lien.href = faviconCouleur && typeof faviconModele === "string" && faviconModele
+      ? "data:image/svg+xml," + encodeURIComponent(faviconModele.split(FAVICON_SOUFFLE).join(faviconCouleur))
+      : "img/logo.svg";
+  };
+  if (faviconCouleur && faviconModele === null) {
+    faviconModele = fetch("img/logo.svg")
+      .then(r => (r.ok ? r.text() : ""), () => "")
+      .then(t => { faviconModele = t; poser(); });
+    return;
+  }
+  if (faviconModele instanceof Promise) return;   // poser() sera appelé à l'arrivée du fichier
+  poser();
+}
+
 function majBandeau(cle, fabrique, couleurs, indiceGrains) {
   bandeauCourant = { fabrique };
   if (cle === verdictAffiche) { document.title = fabrique().titre; return; }
   verdictAffiche = cle;
+  majFavicon(couleurs === NEUTRE ? null : couleurs.ciel);
 
   const hero = document.getElementById("hero");
   hero.style.setProperty("--ciel", couleurs.ciel);
