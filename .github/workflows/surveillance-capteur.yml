@@ -1,0 +1,50 @@
+# Alerte par MAIL si le capteur n'envoie plus aucune mesure pendant plus de 10 min.
+#
+# Fonctionnement : toutes les 5 min, GitHub lance .github/scripts/surveiller-capteur.mjs, qui interroge le serveur
+# AirCarto. Plus de SEUIL_MIN minutes sans mesure -> une issue « Capteur muet » est ouverte et t'est assignée :
+# GitHub t'envoie un mail. Quand les mesures reviennent, l'issue est fermée toute seule (second mail).
+#
+# Réglages, dans GitHub : Settings > Secrets and variables > Actions
+#   - secret  AIRCARTO_CLE : clé du groupe (facultatif : sinon elle est lue dans index.html)
+#   - variable SEUIL_MIN   : minutes sans mesure avant l'alerte (défaut 10 ; 5 possible, mais voir la note ci-dessous)
+#   - variable DEVICE_ID   : adresse MAC d'une carte précise (défaut : toutes les cartes du groupe)
+# Mail : GitHub > Settings > Notifications > « Issues » coché pour l'e-mail (c'est le réglage par défaut).
+#
+# NOTE : GitHub ne garantit pas l'heure des tâches planifiées (souvent quelques minutes de retard aux heures
+# chargées). Avec un seuil de 10 min, compte donc 10 à 20 min entre la coupure et le mail.
+# Sur un dépôt public sans aucun commit pendant 60 jours, GitHub met ces tâches en pause : un commit les relance.
+name: Surveillance du capteur
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:        # bouton « Run workflow » (onglet Actions) pour tester à la main
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: surveillance-capteur
+  cancel-in-progress: false
+
+jobs:
+  verifier:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            index.html
+            .github/scripts
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Le capteur envoie-t-il encore ?
+        run: node .github/scripts/surveiller-capteur.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AIRCARTO_CLE: ${{ secrets.AIRCARTO_CLE }}
+          SEUIL_MIN: ${{ vars.SEUIL_MIN || '10' }}
+          DEVICE_ID: ${{ vars.DEVICE_ID }}
