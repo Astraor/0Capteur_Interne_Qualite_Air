@@ -495,6 +495,22 @@
   .perso-aide.erreur { color: #9c1f17; font-weight: 600; }
   @media (pointer: coarse) { .perso input, .perso select, .perso-ok { min-height: 44px; } }
 
+  /* Export CSV : bouton dans la barre, panneau dessous (mêmes styles que la durée personnalisée) */
+  .bouton-export {
+    min-height: 40px; padding: 8px 14px;
+    border: 2px solid var(--encre); border-radius: 3px;
+    background: transparent; color: var(--encre);
+    font: 600 .85rem/1 var(--sans); font-stretch: 112%; cursor: pointer;
+  }
+  .bouton-export[aria-expanded="true"] { background: var(--encre); color: var(--fond); }
+  @media (hover: hover) { .bouton-export[aria-expanded="false"]:hover { background: rgba(14, 27, 36, .08); } }
+  .bouton-export:focus-visible { outline: 3px solid var(--cobalt); outline-offset: 2px; }
+  .export .export-dates { display: contents; }
+  .export .export-dates[hidden] { display: none; }
+  .export input[type="datetime-local"] { width: auto; font-size: .9rem; }
+  .export button[disabled] { opacity: .55; cursor: wait; }
+  @media (pointer: coarse) { .bouton-export { min-height: 44px; } }
+
   /* Pas de la moyenne (fréquence d'échantillonnage des graphes) */
   .pas { display: inline-flex; align-items: center; gap: 8px; font-size: .9rem; font-weight: 600; }
   .pas select {
@@ -1136,6 +1152,8 @@
       <span class="option-long" data-i18n="p.seuils_long">Afficher les seuils sur les graphes</span>
       <span class="option-court" aria-hidden="true" data-i18n="p.seuils_court">Seuils</span>
     </label>
+
+    <button type="button" class="bouton-export" id="bouton-export" aria-expanded="false" aria-controls="export"><span aria-hidden="true">⤓</span> <span data-i18n="export.bouton">Export CSV</span></button>
   </div>
 
   <form class="perso" id="perso" aria-label="Durée personnalisée" data-i18n-attr="aria-label:perso.aria" novalidate hidden>
@@ -1151,7 +1169,42 @@
       <p class="perso-aide" id="perso-aide" role="status"></p>
     </div>
   </form>
-</div>
+
+  <!-- Export CSV : période (prédéfinie ou dates précises), pas de la moyenne, format du fichier -->
+  <form class="perso export" id="export" aria-label="Exporter les mesures en CSV" data-i18n-attr="aria-label:export.aria" novalidate hidden>
+    <div class="conteneur perso-int">
+      <label for="export-periode" data-i18n="export.periode">Période</label>
+      <select id="export-periode">
+        <option value="affichee" data-i18n="export.p_affichee">Période affichée</option>
+        <option value="60" data-i18n="export.p_1h">Dernière heure</option>
+        <option value="360" data-i18n="export.p_6h">6 dernières heures</option>
+        <option value="1440" data-i18n="export.p_24h" selected>24 dernières heures</option>
+        <option value="10080" data-i18n="export.p_7d">7 derniers jours</option>
+        <option value="dates" data-i18n="export.p_dates">Dates précises…</option>
+      </select>
+      <span class="export-dates" id="export-dates" hidden>
+        <label for="export-du" data-i18n="export.du">Du</label>
+        <input id="export-du" type="datetime-local" step="60">
+        <label for="export-au" data-i18n="export.au">au</label>
+        <input id="export-au" type="datetime-local" step="60">
+      </span>
+      <label for="export-pas" data-i18n="export.pas">Pas</label>
+      <select id="export-pas">
+        <option value="" data-i18n="export.brut">Mesures brutes</option>
+        <option value="5m">5 min</option>
+        <option value="15m">15 min</option>
+        <option value="1h">1 h</option>
+        <option value="1d">1 j</option>
+      </select>
+      <label for="export-format" data-i18n="export.format">Format</label>
+      <select id="export-format">
+        <option value="fr" data-i18n="export.f_fr">Excel France (;)</option>
+        <option value="std" data-i18n="export.f_std">Standard (,)</option>
+      </select>
+      <button type="submit" class="perso-ok" id="export-ok" data-i18n="export.ok">Télécharger</button>
+      <p class="perso-aide" id="export-aide" role="status"></p>
+    </div>
+  </form>
 
 <main class="conteneur">
   <p id="etat" class="etat" role="status">Chargement…</p>
@@ -1241,6 +1294,15 @@
         <h3>CO₂</h3>
         <div>
           <p data-i18n="comp.co2.p">À l'intérieur, le CO₂ vient surtout de notre respiration. Aux niveaux mesurés en salle, ce n'est pas lui qui est dangereux&nbsp;: il sert d'indicateur de confinement. Plus il monte, moins l'air est renouvelé. Le Haut Conseil de la santé publique (HCSP) fixe un objectif sous 800&nbsp;ppm dans les lieux clos et recommande d'aérer au-delà. L'air extérieur est autour de 400&nbsp;ppm.</p>
+        </div>
+      </div>
+
+      <div class="texte-ligne revele">
+        <h3 data-i18n="comp.indice.h3">Comment est calculé le verdict «&nbsp;L'air est…&nbsp;»&nbsp;?</h3>
+        <div>
+          <p data-i18n-html="comp.indice.p1">Les polluants ne pèsent pas tous le même poids, mais on ne fait <strong>ni moyenne ni pondération</strong>&nbsp;: on applique la règle officielle de l'indice ATMO (arrêté du 10 juillet 2020). Chaque polluant reçoit un <em>sous-indice</em> sur sa propre échelle, et le verdict est le <strong>sous-indice le plus dégradé</strong>.</p>
+          <p data-i18n-html="comp.indice.p2">La «&nbsp;pondération&nbsp;» est déjà dans les seuils&nbsp;: les PM2.5, plus fines et plus nocives, deviennent «&nbsp;mauvaises&nbsp;» dès 26&nbsp;µg/m³, les PM10 seulement à partir de 51&nbsp;µg/m³. Une moyenne serait trompeuse&nbsp;: avec PM2.5 = 30&nbsp;µg/m³ (mauvais) et PM10 = 15&nbsp;µg/m³ (bon), elle annoncerait un air «&nbsp;moyen&nbsp;» alors qu'un seul polluant élevé suffit à rendre l'air mauvais.</p>
+          <p data-i18n-html="comp.indice.p3">Ce qui entre dans le verdict&nbsp;: <strong>PM2.5, PM10 et PM1</strong>. L'indice ATMO ne fixe pas de seuil pour les PM1&nbsp;: on leur applique <strong>les mêmes seuils que les PM2.5</strong>. Comme les PM1 font partie des PM2.5 (une particule de moins de 1&nbsp;µm mesure aussi moins de 2,5&nbsp;µm), leur valeur est presque toujours inférieure ou égale&nbsp;: elles changent rarement le verdict, mais ont leur propre couleur et leur propre alerte. Ce qui n'y entre pas&nbsp;: le <strong>CO₂</strong>, qui n'est pas un polluant de l'indice mais un indicateur d'aération&nbsp;: il est affiché à part (ligne «&nbsp;Aération&nbsp;» du bandeau). Limites&nbsp;: l'indice ATMO complet compte aussi l'ozone, le dioxyde d'azote et le dioxyde de soufre, que notre capteur ne mesure pas, et il porte sur des moyennes journalières&nbsp;; notre verdict est donc un indice partiel et indicatif, calculé sur les 5 dernières minutes.</p>
         </div>
       </div>
 
@@ -2307,11 +2369,20 @@ function afficherDerniere(stats, pasMs) {
   return plusRecent;
 }
 
-// La mesure la plus mauvaise parmi celles qui ont des seuils (et qui sont assez récentes).
+// Le verdict du bandeau suit la règle de l'indice ATMO (arrêté du 10 juillet 2020) : chaque polluant a un sous-indice
+// sur SA propre échelle et l'indice est le sous-indice LE PLUS DÉGRADÉ. Pas de moyenne ni de pondération : le poids
+// de chaque polluant est déjà dans ses seuils (PM2.5 « mauvais » dès 26 µg/m³, PM10 dès 51 µg/m³).
+// PM2.5, PM10 et PM1 entrent dans l'indice ; PM1 n'a pas de seuil ATMO propre et suit ceux des PM2.5 (SEUILS.pm1).
+// Ordre : à égalité, le premier de la liste reste « décisif » (PM2.5 avant PM1, qui en est une partie).
+// Le CO₂ est un indicateur d'aération (pas un polluant de l'indice) : affiché à part (ligne « Aération »). Justification
+// détaillée pour le visiteur : section « Comprendre les mesures » (clés comp.indice.*).
+const CHAMPS_INDICE = ["pm25", "pm10", "pm1"];
+
+// La mesure la plus mauvaise parmi celles de l'indice (et qui sont assez récentes).
 function calculerPire(stats, plusRecent, pasMs) {
   const perime = Math.max(2 * pasMs, 30 * 60000);
   let pire = null;
-  Object.keys(SEUILS).forEach(c => {
+  CHAMPS_INDICE.forEach(c => {
     const d = stats[c] && stats[c].derniere;
     if (!d || plusRecent - d.t > perime) return;
     const indice = indiceNiveau(c, d.valeur);
@@ -2423,8 +2494,16 @@ function majBandeau(cle, fabrique, couleurs, indiceGrains) {
   if (nuage) nuage.regler(indiceGrains);
 }
 
-// Les trois lignes sous le verdict : mesure décisive, heure, conseil.
-const LIGNES_LECTURE = ["decisif", "mesure", "conseil"];
+// Les lignes sous le verdict : mesure décisive (indice ATMO), aération (CO₂, à part), heure, conseil.
+const LIGNES_LECTURE = ["decisif", "aeration", "mesure", "conseil"];
+
+// CO₂ : hors de l'indice, mais affiché à part. null si pas de mesure de CO₂ assez récente.
+let aerationCourante = null;
+function calculerAeration(stats, plusRecent, pasMs) {
+  const d = stats.co2 && stats.co2.derniere;
+  if (!d || plusRecent - d.t > Math.max(2 * pasMs, 30 * 60000)) return null;
+  return { valeur: d.valeur, indice: indiceNiveau("co2", d.valeur) };
+}
 
 function majLecture(pire, plusRecent, ancien) {
   const dl = document.getElementById("lecture");
@@ -2446,11 +2525,18 @@ function majLecture(pire, plusRecent, ancien) {
     const info = CHAMPS[pire.champ];
     ligneLecture.decisif.dd.textContent =
       nomChamp(pire.champ) + " · " + nb(pire.valeur, info.decimales) + " " + info.unite + " · " + NIVEAUX[pire.indice].nom;
-    ligneLecture.conseil.dd.textContent = conseil(pire.champ === "co2" ? "co2" : "pm", pire.indice);
+    ligneLecture.conseil.dd.textContent = conseil("pm", pire.indice);
     ligneLecture.conseil.ligne.hidden = !!ancien;   // pas de conseil sur une mesure ancienne
   } else {
     ligneLecture.decisif.dd.textContent = trad("lecture.aucune");
     ligneLecture.conseil.ligne.hidden = true;
+  }
+  // Aération (CO₂) : jamais mélangée à l'indice ; valeur, niveau et consigne d'aération si besoin
+  const a = aerationCourante;
+  ligneLecture.aeration.ligne.hidden = !a || !!ancien;
+  if (a) {
+    ligneLecture.aeration.dd.textContent = "CO₂ · " + nb(a.valeur, 0) + " ppm · " + NIVEAUX[a.indice].nom
+      + (a.indice > 0 ? " · " + conseil("co2", a.indice) : "");
   }
 }
 
@@ -2590,6 +2676,7 @@ function afficherTout() {
   tDerniere = plusRecent;
   pasAffiche = pasRef;
   majStatut(plusRecent, pasRef);
+  aerationCourante = calculerAeration(stats, plusRecent, pasRef);
   afficherVerdict(calculerPire(stats, plusRecent, pasRef), plusRecent, capteurMuet(plusRecent, pasRef));
 
   // Les sections de mesures n'apparaissent qu'une fois les données reçues
@@ -3974,6 +4061,170 @@ function initPerso() {
   });
 }
 
+// =====================================================================
+// EXPORT CSV (bouton « Export CSV » de la barre)
+// =====================================================================
+// Période : celle affichée, une durée prédéfinie, ou deux dates précises (dans les PERSO_MAX dernières minutes : le
+// serveur ne sert que des durées relatives à maintenant, jusqu'à 7 jours). Pas : mesures brutes ou moyennes.
+// Pour ménager le serveur (5 min entre deux requêtes), on réutilise les mesures déjà chargées quand elles couvrent la
+// période ; sinon une seule requête couvre de la date de début à maintenant. Heures réelles (x_age_s déjà appliqué).
+let aideExport = { cle: "export.aide", vars: null, erreur: false };
+function ecrireAideExport() {
+  const aide = document.getElementById("export-aide");
+  if (!aide) return;
+  const a = aideExport;
+  aide.textContent = a.n !== undefined ? tradp(a.cle, a.n, a.vars) : trad(a.cle, a.vars);
+  aide.classList.toggle("erreur", a.erreur);
+}
+function messageExport(cle, erreur, vars, n) {
+  aideExport = { cle, erreur: !!erreur, vars: vars || null, n };
+  ecrireAideExport();
+}
+
+const deux = n => String(n).padStart(2, "0");
+// Date pour un champ datetime-local (heure locale, sans secondes) : "2026-11-19T14:05"
+function versChampDate(t) {
+  const d = new Date(t);
+  return d.getFullYear() + "-" + deux(d.getMonth() + 1) + "-" + deux(d.getDate()) + "T" + deux(d.getHours()) + ":" + deux(d.getMinutes());
+}
+// Date lisible dans le fichier (heure locale) : "2026-11-19 14:05:30"
+function dateLocaleCsv(t) {
+  const d = new Date(t);
+  return d.getFullYear() + "-" + deux(d.getMonth() + 1) + "-" + deux(d.getDate()) + " "
+    + deux(d.getHours()) + ":" + deux(d.getMinutes()) + ":" + deux(d.getSeconds());
+}
+function horodatageFichier(t) {
+  const d = new Date(t);
+  return "" + d.getFullYear() + deux(d.getMonth() + 1) + deux(d.getDate()) + "-" + deux(d.getHours()) + deux(d.getMinutes());
+}
+
+// Début et fin (ms) choisis dans le panneau, ou null si les dates sont invalides.
+function bornesExport(maintenant) {
+  const choix = document.getElementById("export-periode").value;
+  if (choix === "affichee") return { debut: maintenant - reglagesPeriode(periodeActuelle).duree, fin: maintenant };
+  if (choix !== "dates") return { debut: maintenant - Number(choix) * 60000, fin: maintenant };
+  const du = new Date(document.getElementById("export-du").value).getTime();
+  const au = new Date(document.getElementById("export-au").value).getTime();
+  if (!Number.isFinite(du) || !Number.isFinite(au) || du >= au) return null;
+  if (du < maintenant - PERSO_MAX * 60000 - 60000) return null;   // au-delà de 7 jours : le serveur ne répond pas
+  return { debut: du, fin: Math.min(au, maintenant) };
+}
+
+// Mesures (heures réelles) couvrant [debut, maintenant] : le cache si possible, sinon une requête.
+async function mesuresPourExport(debut, maintenant) {
+  const besoin = maintenant - debut;
+  if (cache && cache.lus.length && reglagesPeriode(cache.periode).duree >= besoin
+      && Date.now() - derniereMaj < RAFRAICHISSEMENT_MS + 60000) {
+    return cache.lus;
+  }
+  const minutes = Math.min(PERSO_MAX, Math.max(PERSO_MIN, Math.ceil(besoin / 60000) + 1));
+  const cle = "-" + minutes + "m";
+  const points = await chargerMesures(cle);
+  const r = points.length ? lirePoints(points, cle, maintenant) : null;
+  return r ? r.lus : [];
+}
+
+// Construit le texte CSV. Colonnes : seulement les mesures présentes sur la période + l'indice ATMO (PM2.5 / PM10 / PM1).
+function texteCsv(lignes, format, pas) {
+  const sep = format === "fr" ? ";" : ",";
+  const virgule = format === "fr";
+  const champs = Object.keys(CHAMPS).filter(k => lignes.some(l => l.v[k] !== undefined));
+  const UNITES = { pm1: "ug_m3", pm25: "ug_m3", pm10: "ug_m3", co2: "ppm", temp: "C", hum: "pct" };
+  const entete = ["date_locale", "horodatage_utc"].concat(champs.map(k => k + "_" + UNITES[k]), ["indice_atmo_pm", "polluant_decisif"]);
+  const nombre = (k, x) => {
+    let t = x.toFixed(CHAMPS[k].decimales + (pas ? 1 : 0));   // une décimale de plus pour une moyenne
+    return virgule ? t.replace(".", ",") : t;
+  };
+  const sortie = [entete.join(sep)];
+  lignes.forEach(l => {
+    // indice ATMO partiel de la ligne : sous-indice le plus dégradé entre PM2.5, PM10 et PM1 (seuils PM2.5)
+    let pire = -1, nom = "";
+    CHAMPS_INDICE.forEach(k => {
+      if (l.v[k] === undefined) return;
+      const i = indiceNiveau(k, l.v[k]);
+      if (i > pire) { pire = i; nom = CHAMPS[k].nom; }
+    });
+    const cols = [dateLocaleCsv(l.t), new Date(l.t).toISOString()]
+      .concat(champs.map(k => (l.v[k] === undefined ? "" : nombre(k, l.v[k]))))
+      .concat([pire < 0 ? "" : NIVEAUX[pire].nom, nom]);
+    // guillemets seulement si la cellule contient le séparateur, un guillemet ou un retour à la ligne
+    sortie.push(cols.map(c => ((c.includes(sep) || /["\n]/.test(c)) ? '"' + c.replace(/"/g, '""') + '"' : c)).join(sep));
+  });
+  return "﻿" + sortie.join("\r\n") + "\r\n";   // BOM : Excel lit les accents (µ, é) correctement
+}
+
+function telecharger(nom, texte) {
+  const blob = new Blob([texte], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = nom;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+function initExport() {
+  const bouton = document.getElementById("bouton-export");
+  const panneau = document.getElementById("export");
+  if (!bouton || !panneau) return;
+  const choix = document.getElementById("export-periode");
+  const dates = document.getElementById("export-dates");
+  const du = document.getElementById("export-du");
+  const au = document.getElementById("export-au");
+  const ok = document.getElementById("export-ok");
+  const preparerDates = () => {
+    const maintenant = Date.now();
+    du.min = au.min = versChampDate(maintenant - PERSO_MAX * 60000);
+    du.max = au.max = versChampDate(maintenant);
+    if (!au.value) au.value = versChampDate(maintenant);
+    if (!du.value) du.value = versChampDate(maintenant - 24 * 3600000);
+  };
+  messageExport("export.aide");
+
+  bouton.addEventListener("click", () => {
+    const ouvrir = panneau.hidden;
+    panneau.hidden = !ouvrir;
+    bouton.setAttribute("aria-expanded", String(ouvrir));
+    if (ouvrir) { preparerDates(); messageExport("export.aide"); choix.focus(); }
+  });
+  panneau.addEventListener("keydown", e => {
+    if (e.key === "Escape") { panneau.hidden = true; bouton.setAttribute("aria-expanded", "false"); bouton.focus(); }
+  });
+  choix.addEventListener("change", () => {
+    dates.hidden = choix.value !== "dates";
+    if (!dates.hidden) { preparerDates(); du.focus(); }
+  });
+
+  panneau.addEventListener("submit", async e => {
+    e.preventDefault();
+    const maintenant = Date.now();
+    const bornes = bornesExport(maintenant);
+    if (!bornes) { messageExport("export.erreur_dates", true); du.focus(); return; }
+    const pas = document.getElementById("export-pas").value;
+    const format = document.getElementById("export-format").value;
+    ok.disabled = true;
+    messageExport("export.chargement");
+    try {
+      const lus = await mesuresPourExport(bornes.debut, maintenant);
+      const dedans = lus.filter(l => l.t >= bornes.debut && l.t <= bornes.fin);
+      const lignes = pas
+        ? regrouper(dedans, enMs(pas)).filter(c => c.p).map(c => ({ t: c.t, v: c.p }))
+        : dedans;
+      if (!lignes.length) { messageExport("export.vide", true); return; }
+      const nom = "labonnemair_" + horodatageFichier(bornes.debut) + "_" + horodatageFichier(bornes.fin)
+        + (pas ? "_moy" + pas : "_brut") + ".csv";
+      telecharger(nom, texteCsv(lignes, format, pas));
+      messageExport("export.fait", false, { n: nb(lignes.length, 0) }, lignes.length);
+    } catch (erreur) {
+      messageExport("export.erreur", true, { message: texteErreur(erreur) });
+    } finally {
+      ok.disabled = false;
+    }
+  });
+}
+
 function initControles() {
   document.querySelectorAll('.periode[data-periode^="-"]').forEach(bouton => {
     bouton.addEventListener("click", () => {
@@ -3982,6 +4233,7 @@ function initControles() {
     });
   });
   initPerso();
+  securise(initExport);
   document.getElementById("afficher-seuils").addEventListener("change", afficherTout);
   // Menu « Pas » : les moyennes sont recalculées à partir des mesures déjà reçues, sans nouvelle requête.
   const menuPas = document.getElementById("pas");
@@ -4069,6 +4321,7 @@ function demarrer() {
     securise(remplirSeuils);
     securise(majPerso);
     securise(ecrireAide);
+    securise(ecrireAideExport);
     securise(majMenuPas);
     securise(majPleinLangue);
     securise(() => { if (nuage) nuage.majLangue(); });
