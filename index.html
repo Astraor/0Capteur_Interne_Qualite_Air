@@ -1305,7 +1305,7 @@
         <div>
           <p data-i18n-html="comp.indice.p1">Les polluants ne pèsent pas tous le même poids, mais on ne fait <strong>ni moyenne ni pondération</strong>&nbsp;: on applique la règle officielle de l'indice ATMO (arrêté du 10 juillet 2020). Chaque polluant reçoit un <em>sous-indice</em> sur sa propre échelle, et le verdict est le <strong>sous-indice le plus dégradé</strong>.</p>
           <p data-i18n-html="comp.indice.p2">La «&nbsp;pondération&nbsp;» est déjà dans les seuils&nbsp;: les PM2.5, plus fines et plus nocives, deviennent «&nbsp;mauvaises&nbsp;» dès 26&nbsp;µg/m³, les PM10 seulement à partir de 51&nbsp;µg/m³. Une moyenne serait trompeuse&nbsp;: avec PM2.5 = 30&nbsp;µg/m³ (mauvais) et PM10 = 15&nbsp;µg/m³ (bon), elle annoncerait un air «&nbsp;moyen&nbsp;» alors qu'un seul polluant élevé suffit à rendre l'air mauvais.</p>
-          <p data-i18n-html="comp.indice.p3">Ce qui entre dans le verdict&nbsp;: <strong>PM2.5 et PM10</strong>. Ce qui n'y entre pas&nbsp;: les <strong>PM1</strong> (aucun seuil ATMO), et le <strong>CO₂</strong>, qui n'est pas un polluant de l'indice mais un indicateur d'aération&nbsp;: il est affiché à part (ligne «&nbsp;Aération&nbsp;» du bandeau). Limites&nbsp;: l'indice ATMO complet compte aussi l'ozone, le dioxyde d'azote et le dioxyde de soufre, que notre capteur ne mesure pas, et il porte sur des moyennes journalières&nbsp;; notre verdict est donc un indice partiel et indicatif, calculé sur les 5 dernières minutes.</p>
+          <p data-i18n-html="comp.indice.p3">Ce qui entre dans le verdict&nbsp;: <strong>PM2.5, PM10 et PM1</strong>. L'indice ATMO ne fixe pas de seuil pour les PM1&nbsp;: on leur applique <strong>les mêmes seuils que les PM2.5</strong>. Comme les PM1 font partie des PM2.5 (une particule de moins de 1&nbsp;µm mesure aussi moins de 2,5&nbsp;µm), leur valeur est presque toujours inférieure ou égale&nbsp;: elles changent rarement le verdict, mais ont leur propre couleur et leur propre alerte. Ce qui n'y entre pas&nbsp;: le <strong>CO₂</strong>, qui n'est pas un polluant de l'indice mais un indicateur d'aération&nbsp;: il est affiché à part (ligne «&nbsp;Aération&nbsp;» du bandeau). Limites&nbsp;: l'indice ATMO complet compte aussi l'ozone, le dioxyde d'azote et le dioxyde de soufre, que notre capteur ne mesure pas, et il porte sur des moyennes journalières&nbsp;; notre verdict est donc un indice partiel et indicatif, calculé sur les 5 dernières minutes.</p>
         </div>
       </div>
 
@@ -2375,10 +2375,11 @@ function afficherDerniere(stats, pasMs) {
 // Le verdict du bandeau suit la règle de l'indice ATMO (arrêté du 10 juillet 2020) : chaque polluant a un sous-indice
 // sur SA propre échelle et l'indice est le sous-indice LE PLUS DÉGRADÉ. Pas de moyenne ni de pondération : le poids
 // de chaque polluant est déjà dans ses seuils (PM2.5 « mauvais » dès 26 µg/m³, PM10 dès 51 µg/m³).
-// Seuls PM2.5 et PM10 entrent dans l'indice : PM1 n'a pas de seuil ATMO, et le CO₂ est un indicateur d'aération
-// (pas un polluant de l'indice) : il est affiché à part (ligne « Aération », voir majLecture). Justification
+// PM2.5, PM10 et PM1 entrent dans l'indice ; PM1 n'a pas de seuil ATMO propre et suit ceux des PM2.5 (SEUILS.pm1).
+// Ordre : à égalité, le premier de la liste reste « décisif » (PM2.5 avant PM1, qui en est une partie).
+// Le CO₂ est un indicateur d'aération (pas un polluant de l'indice) : affiché à part (ligne « Aération »). Justification
 // détaillée pour le visiteur : section « Comprendre les mesures » (clés comp.indice.*).
-const CHAMPS_INDICE = ["pm25", "pm10"];
+const CHAMPS_INDICE = ["pm25", "pm10", "pm1"];
 
 // La mesure la plus mauvaise parmi celles de l'indice (et qui sont assez récentes).
 function calculerPire(stats, plusRecent, pasMs) {
@@ -4126,7 +4127,7 @@ async function mesuresPourExport(debut, maintenant) {
   return r ? r.lus : [];
 }
 
-// Construit le texte CSV. Colonnes : seulement les mesures présentes sur la période + l'indice ATMO (PM2.5 / PM10).
+// Construit le texte CSV. Colonnes : seulement les mesures présentes sur la période + l'indice ATMO (PM2.5 / PM10 / PM1).
 function texteCsv(lignes, format, pas) {
   const sep = format === "fr" ? ";" : ",";
   const virgule = format === "fr";
@@ -4139,7 +4140,7 @@ function texteCsv(lignes, format, pas) {
   };
   const sortie = [entete.join(sep)];
   lignes.forEach(l => {
-    // indice ATMO partiel de la ligne : sous-indice le plus dégradé entre PM2.5 et PM10
+    // indice ATMO partiel de la ligne : sous-indice le plus dégradé entre PM2.5, PM10 et PM1 (seuils PM2.5)
     let pire = -1, nom = "";
     CHAMPS_INDICE.forEach(k => {
       if (l.v[k] === undefined) return;

@@ -29,7 +29,7 @@
  *   l'écran saute AUSSITÔT sur sa page (sans fondu), clignote plein écran à la couleur du niveau, puis la valeur
  *   pulse ; tant que l'alerte dure, sa page revient une page sur deux (voir verifierAlertes).
  *   INDICE ATMO : règle officielle de l'indice ATMO = le PIRE des sous-indices (pas de moyenne, pas de
- *   pondération), calculé ici sur PM2.5 et PM10 seulement (voir niveauIndiceATMO).
+ *   pondération), calculé ici sur PM2.5, PM10 et PM1 (PM1 avec les seuils des PM2.5, voir niveauIndiceATMO).
  *   Trois polices (petite Picopixel, 5x7, grande FreeSansBold), pas de blanc : titres en cyan.
  *   Ancienne version de l'affichage : sauvegarde/main_avant_refonte.cpp
  *   Démarrage : logo animé "LA BONNE M'AIR" (basilique stylisée, voir afficherSplash).
@@ -243,7 +243,7 @@ static const unsigned long BUZZER_PAUSE_MS = 300000UL;  // un bip toutes les 5 m
 
 // --- Alerte « hors norme » (changement brutal de l'écran) ---
 // Niveaux : 0 bon | 1 moyen | 2 dégradé | 3 mauvais | 4 très mauvais | 5 extrêmement mauvais (indice ATMO)
-// PM : alerte à partir de « MAUVAIS » (PM2.5 > 25 ug/m3, PM10 > 50 ug/m3 : 50 = valeur limite journalière UE des PM10).
+// PM : alerte à partir de « MAUVAIS » (PM2.5 et PM1 > 25 ug/m3, PM10 > 50 ug/m3 : 50 = valeur limite journalière UE des PM10).
 // CO2 : alerte à partir du niveau 2 (>= 1000 ppm = SEUIL_AERER_PPM) : la page AERER s'affiche d'un coup.
 static const int NIVEAU_ALERTE_PM  = 3;
 static const int NIVEAU_ALERTE_CO2 = 2;
@@ -1710,7 +1710,9 @@ int niveauMesure(const Mesure &m, const Echelle &e) {
 // une moyenne, pondérée ou non, laisserait un polluant très élevé être « caché » par un autre resté bas.
 // Ce qui entre dans l'indice :
 //   - PM2.5 et PM10 : oui (seuils ATMO officiels) ;
-//   - PM1  : non, l'indice ATMO ne lui fixe aucun seuil (la page PM1 reste colorée à titre indicatif) ;
+//   - PM1  : oui, avec les MÊMES seuils que les PM2.5 (l'indice ATMO ne fixe pas de seuil propre aux PM1).
+//            Les PM1 font partie des PM2.5 (PM1 <= PM2.5) : elles ne changent l'indice que si le capteur les
+//            mesure plus haut ; à niveau égal, c'est PM2.5 qui est affiché comme responsable ;
 //   - CO2  : non, ce n'est pas un polluant de l'indice ATMO mais un indicateur de CONFINEMENT (aération) :
 //            il garde ses propres pages (CO2, AERER) et ne modifie jamais l'indice.
 // L'ATMO officiel inclut aussi O3, NO2 et SO2, que la carte ne mesure pas : cet indice est donc PARTIEL (particules).
@@ -1718,9 +1720,11 @@ int niveauMesure(const Mesure &m, const Echelle &e) {
 int niveauIndiceATMO(const char** pire) {
   int n25 = niveauMesure(mPM25, ECH_PM25);
   int n10 = niveauMesure(mPM10, ECH_PM10);
+  int n1  = niveauMesure(mPM1,  ECH_PM25);   // PM1 : seuils des PM2.5
   int pireN = n25;
   const char* nom = "PM2.5";
   if (n10 > pireN) { pireN = n10; nom = "PM10"; }
+  if (n1  > pireN) { pireN = n1;  nom = "PM1"; }   // strictement pire seulement : à égalité, PM2.5 / PM10 restent affichés
   if (pire) *pire = nom;
   return pireN;
 }
@@ -2000,7 +2004,7 @@ void dessinerPageCO2() {
 //   0..5   nom (cyan) à gauche | unité ug/m3 à droite
 //   7..23  la valeur en grand (FreeSansBold 12 pt), couleur du niveau ATMO ; elle PULSE si le polluant est en alerte
 //   25..31 qualificatif ATMO (petite police, couleur du niveau) à gauche | VU-mètre des 6 niveaux (x 39..55)
-// PM1 : pas de seuil ATMO, il est coloré avec l'échelle des PM2.5, à titre indicatif.
+// PM1 : l'indice ATMO ne lui fixe pas de seuil, il suit les MÊMES seuils que les PM2.5 (couleur, alerte, indice).
 bool alertePage(uint8_t p);
 void dessinerPagePM(const Mesure &m, const char* nom, const Echelle &e, uint8_t page) {
   ecrireP(nom, 0, 0, COL_TITRE);
@@ -2389,7 +2393,8 @@ void declencherAlerte(uint8_t i, int niv, const char* nom, unsigned long now) {
 // Appelée après chaque lecture des capteurs (toutes les 10 s).
 // Une alerte se déclenche quand un polluant FRANCHIT son seuil, ou quand il EMPIRE pendant l'alerte.
 // Anti-rebond : une valeur qui oscille autour du seuil ne refait pas clignoter l'écran plus d'une fois par minute.
-// PM1 n'a pas de seuil réglementaire : il ne déclenche pas d'alerte (PM2.5 >= PM1, donc PM2.5 alerte avant lui).
+// PM1 suit les seuils des PM2.5. Comme PM1 <= PM2.5, les deux passent souvent en alerte ensemble : un seul éclair
+// (priorité à PM2.5 à niveau égal), mais la page PM1 entre aussi dans le tourniquet des pages en alerte.
 void verifierAlertes(unsigned long now) {
   const Mesure* m[4] = {&mCO2, &mPM1, &mPM25, &mPM10};
   const Echelle* e[4] = {&ECH_CO2, &ECH_PM25, &ECH_PM25, &ECH_PM10};
@@ -2399,14 +2404,15 @@ void verifierAlertes(unsigned long now) {
     EtatAlerte &a = alertes[i];
     int niv = niveauMesure(*m[i], *e[i]);
     int seuil = (i == 0) ? NIVEAU_ALERTE_CO2 : NIVEAU_ALERTE_PM;
-    if (i == 1 || niv < seuil) { a.active = false; a.nivMax = -1; continue; }
+    if (niv < seuil) { a.active = false; a.nivMax = -1; continue; }
     bool empire = a.active && niv > a.nivMax;
     bool entree = !a.active;
     a.active = true;
     if (niv > a.nivMax) a.nivMax = niv;
     bool rearme = (a.tFlash == 0) || (now - a.tFlash >= ALERTE_REARME_MS);
     if ((entree && rearme) || empire) {
-      if (niv > nivChoix) { choix = i; nivChoix = niv; }   // plusieurs à la fois : le plus grave d'abord
+      // plusieurs à la fois : le plus grave d'abord ; à égalité, PM2.5 passe devant PM1
+      if (niv > nivChoix || (niv == nivChoix && choix == 1)) { choix = i; nivChoix = niv; }
     }
   }
   if (choix >= 0) declencherAlerte(choix, nivChoix, NOMS[choix], now);
@@ -2490,7 +2496,7 @@ void dessinerContenu() {
   switch (pageCourante) {
     case PAGE_CO2:    dessinerPageCO2(); break;
     case PAGE_AERER:  dessinerPageAerer(); break;
-    case PAGE_PM1:    dessinerPagePM(mPM1,  "PM1",   ECH_PM25, PAGE_PM1);  break;   // échelle PM2.5, indicative
+    case PAGE_PM1:    dessinerPagePM(mPM1,  "PM1",   ECH_PM25, PAGE_PM1);  break;   // mêmes seuils que PM2.5
     case PAGE_PM25:   dessinerPagePM(mPM25, "PM2.5", ECH_PM25, PAGE_PM25); break;
     case PAGE_PM10:   dessinerPagePM(mPM10, "PM10",  ECH_PM10, PAGE_PM10); break;
     case PAGE_GLOBAL: dessinerPageGlobal(); break;
