@@ -6,17 +6,26 @@
 // 3. Plus de SEUIL_MIN minutes sans rien : ouvre une issue « Capteur muet » -> GitHub envoie un MAIL au propriétaire
 //    du dépôt (notification d'issue). Une seule issue tant que la panne dure (pas de mail toutes les 5 min).
 // 4. Les mesures reviennent : commentaire « Capteur revenu » + fermeture de l'issue (-> second mail).
+// 5. CO2 : la carte envoie bien ses mesures (particules) mais aucun CO2 valable depuis SEUIL_CO2_MIN minutes
+//    -> issue « CO2 à vérifier » (capteur débranché, en panne, ou qui dérive vers des valeurs impossibles, < 300 ppm).
+//    Fermée toute seule dès qu'un CO2 valable revient. Pas évaluée quand la carte est muette (une seule alerte).
 //
 // Variables d'environnement (fournies par le workflow) :
 //   AIRCARTO_CLE   clé du groupe (secret du dépôt) ; vide -> lue dans index.html (const CLE = "...")
 //   DEVICE_ID      adresse MAC d'une carte (facultatif, "" = toutes les cartes du groupe)
 //   SEUIL_MIN      minutes sans mesure avant l'alerte (défaut 10)
+//   SEUIL_CO2_MIN  minutes sans CO2 valable (alors que les autres mesures arrivent) avant l'alerte CO2 (défaut 60)
 //   GITHUB_TOKEN, GITHUB_REPOSITORY, GITHUB_REPOSITORY_OWNER : fournis par GitHub Actions
 import { readFileSync } from "node:fs";
 
 const URL_API = "https://api.aircarto.fr/iut-amu/data";
 const LABEL = "capteur-muet";
+const LABEL_CO2 = "co2-a-verifier";
 const SEUIL_MIN = Number(process.env.SEUIL_MIN || 10);
+const SEUIL_CO2_MIN = Number(process.env.SEUIL_CO2_MIN || 60);
+const CO2_PLAUSIBLE = [300, 5000];   // mêmes bornes que la carte (CO2_MIN_PLAUSIBLE) et le site
+const CO2_RETOUR_MIN = 15;            // un CO2 valable dans les 15 dernières minutes = capteur revenu
+const MESURES_MIN = 10;               // il faut au moins ~5 min de mesures pour juger le CO2 (pas juste après un démarrage)
 const DEVICE_ID = process.env.DEVICE_ID || "";
 const DEPOT = process.env.GITHUB_REPOSITORY;
 const PROPRIO = process.env.GITHUB_REPOSITORY_OWNER;
@@ -31,10 +40,12 @@ function lireCle() {
   return "";
 }
 
-// Mesures de la dernière heure. Points bruts d'abord ; si le serveur exige "freq", moyenne d'1 min.
+// Mesures de la dernière heure (ou plus, pour couvrir SEUIL_CO2_MIN). Points bruts d'abord ; si le serveur exige
+// "freq", moyenne d'1 min.
 async function lirePoints(cle) {
+  const fenetreMin = Math.max(60, SEUIL_CO2_MIN + 5);
   for (const freq of ["", "1m"]) {
-    const params = new URLSearchParams({ key: cle, start: "-1h" });
+    const params = new URLSearchParams({ key: cle, start: "-" + fenetreMin + "m" });
     if (freq) params.set("freq", freq);
     if (DEVICE_ID) params.set("device_id", DEVICE_ID);
     const rep = await fetch(URL_API + "?" + params, { signal: AbortSignal.timeout(30000) });
@@ -63,6 +74,46 @@ async function github(methode, chemin, corps) {
 
 const heureFr = t => new Date(t).toLocaleString("fr-FR", { timeZone: "Europe/Paris", dateStyle: "short", timeStyle: "medium" });
 
+// Ouvre (une seule fois) ou ferme l'issue d'une alerte. probleme : true / false ; texte : { titre, corps, retour }.
+async function majAlerte(label, couleur, description, probleme, texte) {
+  const ouvertes = await github("GET", `/issues?state=open&labels=${label}&per_page=10`);
+  const issue = (ouvertes || []).find(i => !i.pull_request);
+  if (probleme && !issue) {
+    await github("POST", "/labels", { name: label, color: couleur, description });
+    const cree = await github("POST", "/issues", {
+      title: texte.titre(),
+      labels: [label],
+      assignees: PROPRIO ? [PROPRIO] : [],
+      body: texte.corps(),
+    });
+    console.log(`[${label}] issue d'alerte ouverte : ` + (cree && cree.html_url));
+  } else if (!probleme && issue) {
+    await github("POST", `/issues/${issue.number}/comments`, { body: texte.retour() });
+    await github("PATCH", `/issues/${issue.number}`, { state: "closed", state_reason: "completed" });
+    console.log(`[${label}] retour à la normale : issue #${issue.number} fermée.`);
+  } else {
+    console.log(`[${label}] ` + (probleme ? `alerte déjà ouverte (issue #${issue.number}) : pas de nouveau mail.` : "rien à faire."));
+  }
+}
+
+// CO2 : parmi les mesures REÇUES pendant les SEUIL_CO2_MIN dernières minutes et qui contiennent des particules
+// (preuve que la carte tourne), y a-t-il un CO2 valable ? Renvoie null si on ne peut pas juger (trop peu de mesures,
+// ou carte allumée depuis trop peu de temps).
+function etatCO2(points, maintenant) {
+  const recu = p => new Date(p.time).getTime();
+  const valable = p => typeof p.co2 === "number" && p.co2 >= CO2_PLAUSIBLE[0] && p.co2 <= CO2_PLAUSIBLE[1];
+  const actives = points.filter(p => typeof p.pm25 === "number" && Number.isFinite(recu(p)));
+  const fenetre = actives.filter(p => maintenant - recu(p) <= SEUIL_CO2_MIN * 60000);
+  const recents = actives.filter(p => maintenant - recu(p) <= CO2_RETOUR_MIN * 60000);
+  const dernierValable = Math.max(0, ...points.filter(valable).map(recu));
+  if (recents.some(valable)) return { probleme: false, dernierValable };
+  const couvre = actives.length && maintenant - Math.min(...actives.map(recu)) >= (SEUIL_CO2_MIN - 10) * 60000;
+  if (fenetre.length < MESURES_MIN || !couvre) return null;
+  if (fenetre.some(valable)) return { probleme: false, dernierValable };
+  const impossibles = fenetre.filter(p => typeof p.co2 === "number" && !valable(p)).map(p => p.co2);
+  return { probleme: true, dernierValable, impossibles, nb: fenetre.length };
+}
+
 async function main() {
   const cle = lireCle();
   if (!cle) throw new Error("clé AirCarto introuvable (secret AIRCARTO_CLE ou index.html)");
@@ -84,41 +135,54 @@ async function main() {
   const muet = silenceMin > SEUIL_MIN;
   console.log(dernier
     ? `Dernière mesure reçue : ${heureFr(dernier)} (il y a ${silenceMin.toFixed(1)} min) -> ${muet ? "MUET" : "OK"}`
-    : `Aucune mesure reçue depuis 1 h -> MUET`);
+    : `Aucune mesure reçue depuis ${Math.max(60, SEUIL_CO2_MIN + 5)} min -> MUET`);
 
-  // L'issue d'alerte déjà ouverte, s'il y en a une
-  const ouvertes = await github("GET", `/issues?state=open&labels=${LABEL}&per_page=10`);
-  const issue = (ouvertes || []).find(i => !i.pull_request);
+  await majAlerte(LABEL, "d73a4a", "Le capteur n'envoie plus de mesures", muet, {
+    titre: () => `⚠️ Capteur muet : aucune mesure ${dernier ? "depuis " + Math.round(silenceMin) + " min" : "depuis plus d'1 h"}`,
+    corps: () => [
+      `@${PROPRIO} le serveur AirCarto ne reçoit plus aucune mesure ${dernier ? `depuis le **${heureFr(dernier)}** (heure de Paris)` : "depuis **plus d'une heure**"}.`,
+      "",
+      `- Seuil d'alerte : ${SEUIL_MIN} min sans mesure`,
+      DEVICE_ID ? `- Carte surveillée : \`${DEVICE_ID}\`` : "- Cartes surveillées : toutes celles du groupe",
+      "",
+      "**À vérifier** : alimentation de la carte, Wi-Fi (commande `status` dans le moniteur série), clé du groupe (`set cle`).",
+      "La carte garde ses mesures en mémoire pendant la coupure et les renverra au retour du réseau.",
+      "",
+      "_Cette issue se fermera toute seule dès que les mesures reviendront._",
+    ].join("\n"),
+    retour: () => `✅ Capteur revenu : mesure reçue le ${heureFr(dernier)} (heure de Paris). Fermeture automatique.`,
+  });
 
-  if (muet && !issue) {
-    await github("POST", "/labels", { name: LABEL, color: "d73a4a", description: "Le capteur n'envoie plus de mesures" });
-    const depuis = dernier ? `depuis le **${heureFr(dernier)}** (heure de Paris)` : "depuis **plus d'une heure**";
-    const cree = await github("POST", "/issues", {
-      title: `⚠️ Capteur muet : aucune mesure ${dernier ? "depuis " + Math.round(silenceMin) + " min" : "depuis plus d'1 h"}`,
-      labels: [LABEL],
-      assignees: PROPRIO ? [PROPRIO] : [],
-      body: [
-        `@${PROPRIO} le serveur AirCarto ne reçoit plus aucune mesure ${depuis}.`,
-        "",
-        `- Seuil d'alerte : ${SEUIL_MIN} min sans mesure`,
-        DEVICE_ID ? `- Carte surveillée : \`${DEVICE_ID}\`` : "- Cartes surveillées : toutes celles du groupe",
-        "",
-        "**À vérifier** : alimentation de la carte, Wi-Fi (commande `status` dans le moniteur série), clé du groupe (`set cle`).",
-        "La carte garde ses mesures en mémoire pendant la coupure et les renverra au retour du réseau.",
-        "",
-        "_Cette issue se fermera toute seule dès que les mesures reviendront._",
-      ].join("\n"),
-    });
-    console.log("Issue d'alerte ouverte : " + (cree && cree.html_url));
-  } else if (!muet && issue) {
-    await github("POST", `/issues/${issue.number}/comments`, {
-      body: `✅ Capteur revenu : mesure reçue le ${heureFr(dernier)} (heure de Paris). Fermeture automatique.`,
-    });
-    await github("PATCH", `/issues/${issue.number}`, { state: "closed", state_reason: "completed" });
-    console.log("Capteur revenu : issue #" + issue.number + " fermée.");
-  } else {
-    console.log(muet ? "Alerte déjà ouverte (issue #" + issue.number + ") : pas de nouveau mail." : "Rien à faire.");
-  }
+  // CO2 : seulement si la carte envoie (sinon l'alerte « capteur muet » suffit)
+  if (muet) return;
+  const co2 = etatCO2(points, maintenant);
+  if (!co2) { console.log("[co2] pas assez de mesures récentes pour juger le CO2."); return; }
+  console.log(co2.probleme
+    ? `CO2 : aucune valeur valable dans les ${co2.nb} mesures des ${SEUIL_CO2_MIN} dernières minutes -> ALERTE`
+    : "CO2 : OK");
+  await majAlerte(LABEL_CO2, "fbca04", "Le capteur de CO2 ne donne plus de valeur valable", co2.probleme, {
+    titre: () => co2.impossibles.length
+      ? `⚠️ CO₂ à recalibrer : valeurs impossibles depuis plus de ${SEUIL_CO2_MIN} min`
+      : `⚠️ CO₂ absent depuis plus de ${SEUIL_CO2_MIN} min (le reste des mesures arrive)`,
+    corps: () => [
+      `@${PROPRIO} la carte envoie bien ses mesures (particules), mais **aucune valeur de CO₂ valable** ` +
+        `(${CO2_PLAUSIBLE[0]} à ${CO2_PLAUSIBLE[1]} ppm) depuis plus de ${SEUIL_CO2_MIN} min.`,
+      "",
+      co2.impossibles.length
+        ? `- Valeurs reçues mais impossibles : ${[...new Set(co2.impossibles.map(Math.round))].slice(0, 8).join(", ")} ppm (l'air ne descend pas sous ~400 ppm).`
+        : "- Aucune valeur de CO₂ reçue (champ `co2` absent des mesures).",
+      co2.dernierValable ? `- Dernier CO₂ valable reçu : ${heureFr(co2.dernierValable)} (heure de Paris).` : `- Aucun CO₂ valable dans la fenêtre surveillée.`,
+      "",
+      "**À vérifier** :",
+      "- Commande `status` dans le moniteur série : ligne « CO2 » (en erreur ? lectures impossibles écartées ?).",
+      "- Écran : page CO₂ « PANNE » (le capteur ne répond plus : câblage du MH-Z19C, GPIO 36 / 27, alimentation 5 V) " +
+        "ou « A CALIBRER » (valeurs impossibles).",
+      "- Valeurs impossibles : poser la carte 20 min à l'air libre (fenêtre ouverte), puis taper `calib oui`.",
+      "",
+      "_Cette issue se fermera toute seule dès qu'un CO₂ valable reviendra._",
+    ].join("\n"),
+    retour: () => `✅ CO₂ revenu : valeur valable reçue le ${heureFr(co2.dernierValable)} (heure de Paris). Fermeture automatique.`,
+  });
 }
 
 main().catch(e => {

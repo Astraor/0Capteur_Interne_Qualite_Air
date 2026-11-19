@@ -1,13 +1,16 @@
-# Alerte par MAIL si le capteur n'envoie plus aucune mesure pendant plus de 10 min.
+# Alerte par MAIL si le capteur n'envoie plus aucune mesure pendant plus de 10 min,
+# ou si le CO2 manque (ou n'a que des valeurs impossibles) depuis plus d'1 h alors que le reste arrive.
 #
 # Fonctionnement : toutes les 5 min, GitHub lance .github/scripts/surveiller-capteur.mjs, qui interroge le serveur
 # AirCarto. Plus de SEUIL_MIN minutes sans mesure -> une issue « Capteur muet » est ouverte et t'est assignée :
 # GitHub t'envoie un mail. Quand les mesures reviennent, l'issue est fermée toute seule (second mail).
+# Même principe pour le CO2 : issue « CO2 à vérifier » (capteur débranché, en panne ou à recalibrer).
 #
 # Réglages, dans GitHub : Settings > Secrets and variables > Actions
 #   - secret  AIRCARTO_CLE : clé du groupe (facultatif : sinon elle est lue dans index.html)
 #   - variable SEUIL_MIN   : minutes sans mesure avant l'alerte (défaut 10 ; 5 possible, mais voir la note ci-dessous)
 #   - variable DEVICE_ID   : adresse MAC d'une carte précise (défaut : toutes les cartes du groupe)
+#   - variable SEUIL_CO2_MIN : minutes sans CO2 valable avant l'alerte CO2 (défaut 60)
 # Mail : GitHub > Settings > Notifications > « Issues » coché pour l'e-mail (c'est le réglage par défaut).
 #
 # NOTE : GitHub ne garantit pas l'heure des tâches planifiées (souvent quelques minutes de retard aux heures
@@ -48,3 +51,4 @@ jobs:
           AIRCARTO_CLE: ${{ secrets.AIRCARTO_CLE }}
           SEUIL_MIN: ${{ vars.SEUIL_MIN || '10' }}
           DEVICE_ID: ${{ vars.DEVICE_ID }}
+          SEUIL_CO2_MIN: ${{ vars.SEUIL_CO2_MIN || '60' }}

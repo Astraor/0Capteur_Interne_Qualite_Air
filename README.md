@@ -273,10 +273,12 @@ On applique la règle officielle de l’indice ATMO : chaque polluant reçoit un
 
 ---
 
-## Alerte mail « capteur muet »
+## Alertes mail « capteur muet » et « CO₂ à vérifier »
 
 Le workflow `.github/workflows/surveillance-capteur.yml` interroge le serveur AirCarto **toutes les 5 minutes**.
 Si aucune mesure n’est arrivée depuis `SEUIL_MIN` minutes (10 par défaut), il ouvre une issue **« Capteur muet »** assignée au propriétaire du dépôt → GitHub envoie un **mail**. Quand les mesures reviennent, l’issue se ferme toute seule (second mail).
+
+Si la carte envoie bien ses mesures (particules) mais **aucun CO₂ valable** (300 à 5 000 ppm) depuis `SEUIL_CO2_MIN` minutes (60 par défaut), il ouvre de la même façon une issue **« CO₂ à vérifier »** : « CO₂ absent » si le capteur ne répond plus, « CO₂ à recalibrer » s’il ne donne que des valeurs impossibles. L’issue indique quoi vérifier (commande `status`, câblage du MH-Z19C, `calib oui` à l’air libre) et se ferme toute seule dès qu’un CO₂ valable revient. Pas d’alerte CO₂ juste après un démarrage, ni quand la carte est déjà muette (une seule alerte à la fois).
 
 Réglages dans **Settings → Secrets and variables → Actions** :
 
@@ -285,6 +287,7 @@ Réglages dans **Settings → Secrets and variables → Actions** :
 | `AIRCARTO_CLE` | secret | Clé du groupe (sinon lue dans `index.html`) |
 | `SEUIL_MIN` | variable | Minutes sans mesure avant l’alerte (défaut 10) |
 | `DEVICE_ID` | variable | Surveiller une seule carte (défaut : toutes) |
+| `SEUIL_CO2_MIN` | variable | Minutes sans CO₂ valable avant l’alerte CO₂ (défaut 60) |
 
 Test manuel : onglet **Actions → Surveillance du capteur → Run workflow**.
 GitHub peut retarder les tâches planifiées de quelques minutes, et les met en pause après 60 jours sans commit sur un dépôt public.
