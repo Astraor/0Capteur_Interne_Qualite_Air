@@ -178,7 +178,10 @@ const char* STATUS_BITS[8] = {
 #define MHZ_TX 27  // l'ESP32 émet (fil RX du capteur)
 
 // --- Détection de coupure secteur (pont diviseur sur GPIO 34) ---
-static const bool DETECTION_SECTEUR_ACTIVE = true;  // false si le pont n'est pas câblé
+// Désactivée par défaut : sur la carte actuelle, GPIO 34 lit 0 en permanence (x_alim = 0 sur 100 % des mesures
+// du serveur, alors que la carte est branchée). Elle se croyait donc toujours sur batterie : une mesure par
+// minute au lieu de 30 s et l'écran bridé à LUMINOSITE_BATTERIE. Mettre true seulement si le pont est câblé.
+static const bool DETECTION_SECTEUR_ACTIVE = false;
 #define PIN_SECTEUR 34
 
 // --- Matériel optionnel : -1 = absent (aucun code actif) ---
@@ -211,6 +214,11 @@ static const unsigned long INTERVALLE_RESEAU_MS     = 15000;
 static const unsigned long INTERVALLE_LUMI_MS        = 60000;
 static const unsigned long INTERVALLE_HIST_MS        = MODE_DEMO ? 5000UL : 60000UL;  // un point de la courbe CO2 par minute (5 s en démo)
 static const unsigned long CHAUFFE_MHZ_MS            = 180000UL;  // MH-Z19C : environ 3 min pour se stabiliser (fiche technique)
+// CO2 plausible : l'air extérieur ne descend pas sous ~400 ppm ; 5000 = haut de la gamme du MH-Z19C.
+// En dessous de CO2_MIN_PLAUSIBLE, la lecture est écartée (vu sur le serveur : dérive jusqu'à 37 ppm la nuit) :
+// après 3 lectures écartées de suite, la page CO2 affiche « A CALIBRER ».
+static const int CO2_MIN_PLAUSIBLE = 300;
+static const int CO2_MAX_PLAUSIBLE = 5000;
 static const unsigned long ANTIREBOND_SECTEUR_MS     = 500;
 static const unsigned long WIFI_TIMEOUT_PSK_MS       = 20000UL;   // délai max pour se connecter à un Wi-Fi classique
 static const unsigned long WIFI_TIMEOUT_EAP_MS       = 35000UL;   // eduroam est plus lent (authentification ENT)
@@ -425,7 +433,9 @@ bool cleInvalide = false;  // le serveur a refusé la clé (401)
 uint8_t etatEnvoi = 0;     // 0 gris | 1 vert (OK) | 2 orange (réessai) | 3 rouge (refus)
 int dernierCodeHttp = 0;
 unsigned long tDernierWifiOK = 0;
+unsigned long tVisibleDepuis = 0;    // depuis quand un réseau en mémoire est visible SANS que la connexion réussisse (0 = non)
 uint32_t nbCoupuresWifi = 0;
+uint32_t nbSansHeure = 0;            // mesures d'un démarrage précédent abandonnées faute d'heure (commande status)
 
 // Cache des réseaux Wi-Fi connus (enregistré en mémoire permanente, clés "w_...")
 #define NB_WIFI_MAX 5
@@ -687,6 +697,7 @@ const char* raisonCourte(uint8_t r) {
   switch (r) {
     case 0:                                  return "DELAI";
     case WIFI_REASON_NO_AP_FOUND:            return "ABSENT";
+    case WIFI_REASON_BEACON_TIMEOUT:         return "PERDU";
     case WIFI_REASON_AUTH_FAIL:
     case WIFI_REASON_AUTH_EXPIRE:
     case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
@@ -700,6 +711,7 @@ const char* raisonLongue(uint8_t r) {
   switch (r) {
     case 0:                                  return "pas de réponse dans le délai";
     case WIFI_REASON_NO_AP_FOUND:            return "réseau introuvable (hors de portée ? nom exact ?)";
+    case WIFI_REASON_BEACON_TIMEOUT:         return "signal perdu (borne éteinte ou trop loin)";
     case WIFI_REASON_802_1X_AUTH_FAILED:     return "identifiant ou mot de passe ENT refusé";
     case WIFI_REASON_AUTH_FAIL:
     case WIFI_REASON_AUTH_EXPIRE:
@@ -785,6 +797,9 @@ void preparerCandidats(int n) {
     candidats[pos] = i;
     nbCandidats++;
   }
+  // Un réseau connu est-il visible ? (sert à surveillerWifiLongue : visible mais connexion impossible = pile bloquée)
+  if (nbCandidats > 0) { if (tVisibleDepuis == 0) tVisibleDepuis = millis() | 1UL; }
+  else tVisibleDepuis = 0;
   // Rien de visible : peut-être un réseau caché, on tente le dernier réseau qui a fonctionné
   if (nbCandidats == 0 && dernierReseau >= 0) candidats[nbCandidats++] = dernierReseau;
   if (wifiInteractif || verbose)
@@ -804,6 +819,7 @@ void montrerResultatWifi(bool ok) {
 void connexionReussie(unsigned long now) {
   etatWifi = WIFI_CONNECTE;
   tDernierWifiOK = now;
+  tVisibleDepuis = 0;
   if (dernierReseau != reseauCourant) {
     dernierReseau = reseauCourant;
     prefs.putChar("w_last", dernierReseau);
@@ -833,6 +849,7 @@ void relancerWifi(bool interactif) {
 #if WIFI_ACTIVE
   resultatWifiAffiche = false;
   tDernierWifiOK = millis();  // le compte à rebours d'1 h repart
+  tVisibleDepuis = 0;         // (nouveau réseau, nouveau mot de passe : on lui laisse sa chance)
   if (nbReseaux == 0) {
     WiFi.disconnect(false, false);
     etatWifi = WIFI_INACTIF;
@@ -921,12 +938,20 @@ void gererWiFi(unsigned long now) {
 #endif
 }
 
-// Toutes les 15 s : 1 h sans Wi-Fi (avec des réseaux en mémoire) = dernier recours, on redémarre la carte.
+// Toutes les 15 s : un réseau connu VISIBLE depuis 1 h sans que la connexion réussisse = la pile Wi-Fi est sans doute
+// bloquée : dernier recours, on redémarre la carte. Si aucun réseau connu n'est visible (borne éteinte la nuit, carte
+// déplacée), redémarrer ne servirait à rien : avant, la carte redémarrait alors toutes les heures toute la nuit.
+// (le compte part du moment où le réseau réapparaît : la carte a le temps de s'y connecter normalement)
 void surveillerWifiLongue(unsigned long now) {
 #if WIFI_ACTIVE
   if (nbReseaux == 0 || etatWifi == WIFI_CONNECTE) return;
-  if (now - tDernierWifiOK > WIFI_REBOOT_MS) {
-    Serial.println("Wi-Fi absent depuis 1 h : redémarrage de la carte.");
+  bool bloque = tVisibleDepuis != 0 && now - tVisibleDepuis > WIFI_REBOOT_MS;
+  // mot de passe / identifiant refusé : un redémarrage ne le corrigerait pas non plus
+  uint8_t r = raisonDeco;
+  bool refusIdentifiants = (r == WIFI_REASON_AUTH_FAIL || r == WIFI_REASON_802_1X_AUTH_FAILED ||
+                            r == WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT);
+  if (bloque && !refusIdentifiants) {
+    Serial.println("Wi-Fi visible mais connexion impossible depuis 1 h : redémarrage de la carte.");
     delay(100);
     ESP.restart();
   }
@@ -1009,6 +1034,7 @@ void lireNextPM() {
   if (result != nextpm.ku8MBSuccess) {
     LOG("NextPM : pas de réponse (erreur Modbus 0x%02X) : broches ? parité 8E1 ?\n", result);
     majMesure(mPM1, false, 0); majMesure(mPM25, false, 0); majMesure(mPM10, false, 0);
+    if (mPM25.etat == CAPTEUR_ERREUR) { tempPM = NAN; humPM = NAN; }   // plus de vieilles valeurs envoyées en boucle
     return;
   }
   statutPM = nextpm.getResponseBuffer(0) & 0xFF;
@@ -1046,16 +1072,33 @@ void lireNextPM() {
 }
 
 // Lit le MH-Z19C (CO2 en ppm). Pendant le préchauffage il n'y a pas de valeur fiable : on le signale simplement.
+// Le capteur est-il resté alimenté pendant le redémarrage ? (redémarrage logiciel, watchdog, plantage :
+// seul l'ESP32 repart, le MH-Z19C est déjà chaud). Dans ce cas, pas de nouveau préchauffage de 3 min.
+bool capteursDejaChauds() {
+  esp_reset_reason_t r = esp_reset_reason();
+  return r == ESP_RST_SW || r == ESP_RST_PANIC || r == ESP_RST_INT_WDT || r == ESP_RST_TASK_WDT || r == ESP_RST_WDT;
+}
+
+bool co2HorsPlage = false;        // la dernière lecture écartée l'était pour une valeur impossible
+uint32_t nbCO2HorsPlage = 0;      // lectures écartées depuis le démarrage (commande status)
+
 void lireMHZ() {
 #if MHZ_ACTIVE
   // (drapeau : sans lui, millis() qui repasse à 0 au bout de 49 jours relancerait 3 min de "préchauffage")
-  static bool chauffeFinie = false;
+  static bool chauffeFinie = capteursDejaChauds();
   if (!chauffeFinie) {
     if (millis() < CHAUFFE_MHZ_MS) { forcerEtat(mCO2, CAPTEUR_CHAUFFE); return; }
     chauffeFinie = true;
   }
   int co2 = mhz.getCO2();
-  majMesure(mCO2, (mhz.errorCode == RESULT_OK && co2 > 0), (float)co2);
+  bool repond = (mhz.errorCode == RESULT_OK && co2 > 0);
+  bool plausible = repond && co2 >= CO2_MIN_PLAUSIBLE && co2 <= CO2_MAX_PLAUSIBLE;
+  if (repond && !plausible) {
+    nbCO2HorsPlage++;
+    LOG("CO2 = %d ppm : valeur impossible, lecture écartée (capteur à recalibrer ?)\n", co2);
+  }
+  if (repond) co2HorsPlage = !plausible;
+  majMesure(mCO2, plausible, (float)co2);
 #else
   forcerEtat(mCO2, CAPTEUR_ERREUR);
 #endif
@@ -1447,7 +1490,9 @@ ResultatPush envoyerLigne(const String &ligne) {
   }
   tAttenteHeure = 0;
   if (age < 0) {
-    LOG("Heure de la mesure inconnue (redémarrage sans heure NTP) : abandonnée.\n");
+    // Mesure prise lors d'un démarrage précédent qui n'a jamais eu l'heure (courant coupé avant le retour du
+    // Wi-Fi) : impossible de la dater. On le signale toujours (pas seulement en verbose) : c'est une perte.
+    if (nbSansHeure++ == 0) Serial.println("Mesures d'un démarrage précédent sans heure (pas de Wi-Fi avant la coupure) : impossibles à dater, abandonnées.");
     return PUSH_INVALIDE;
   }
   doc.remove("_u"); doc.remove("_e"); doc.remove("_b");
@@ -1970,8 +2015,9 @@ void dessinerPageCO2() {
   if (m.etat == CAPTEUR_CHAUFFE) {                     // préchauffage : compte à rebours + barre de progression
     unsigned long t = millis();
     unsigned long reste = (t < CHAUFFE_MHZ_MS) ? (CHAUFFE_MHZ_MS - t + 999UL) / 1000UL : 0;
-    char buf[8];
-    snprintf(buf, sizeof(buf), "%lu", reste);
+    char buf[12];
+    // minutes:secondes ("2:18") : un nombre seul ("138") se lisait comme une valeur de CO2 en ppm
+    snprintf(buf, sizeof(buf), "%lu:%02lu", reste / 60UL, reste % 60UL);
     ecrirePDroite("PRECHAUFFAGE", 63, 0, COL_TITRE);
     ecrireGrand(buf, 32, 23, COL_TITRE);
     display.fillRect(0, 28, LARGEUR_BAS, 2, COL_PISTE);
@@ -1979,9 +2025,9 @@ void dessinerPageCO2() {
     display.fillRect(0, 28, w, 2, COL_TITRE);
     return;
   }
-  if (m.etat == CAPTEUR_ERREUR) {                      // panne
-    ecrirePDroite("PANNE", 63, 0, COL_ERREUR);
-    ecrireGrand("ERR", 32, 23, COL_ERREUR);
+  if (m.etat == CAPTEUR_ERREUR) {                      // panne, ou valeurs impossibles (capteur à recalibrer)
+    ecrirePDroite(co2HorsPlage ? "A CALIBRER" : "PANNE", 63, 0, COL_ERREUR);
+    ecrireGrand(co2HorsPlage ? "CAL" : "ERR", 32, 23, COL_ERREUR);
     for (int x = 0; x < LARGEUR_BAS; x += 4) display.drawFastHLine(x, 28, 2, atten(COL_ERREUR, 140));
     return;
   }
@@ -2274,7 +2320,7 @@ void dessinerPageWifi() {
   const char* etat = (etatWifi == WIFI_SCAN) ? "RECHER" : (etatWifi == WIFI_CONNEXION) ? "CONNEX" : "ABSENT";
   ecrireTexte(etat, 17, 9, 1, COL_TITRE);
   char mem[16];
-  snprintf(mem, sizeof(mem), "%u CONNUS", (unsigned)nbReseaux);
+  snprintf(mem, sizeof(mem), "%u CONNU%s", (unsigned)nbReseaux, nbReseaux > 1 ? "S" : "");
   ecrireP(mem, 17, 18, COL_DISCRET);
   if (etatWifi == WIFI_CONNEXION && reseauCourant >= 0) ecrireLigneDefilante(reseaux[reseauCourant].ssid.c_str(), 25, COL_TITRE);
   else ecrireLigneDefilante("HORS LIGNE", 25, COL_DISCRET);
@@ -2325,10 +2371,10 @@ void dessinerEcranConnexion() {
     dessinerLogoWifi(7, 19, phase + 1, COL_TITRE, COL_ETEINT);
     ecrireTexte("RECHER", 17, 9, 1, COL_TITRE);
     char mem[16];
-    snprintf(mem, sizeof(mem), "%u CONNUS", (unsigned)nbReseaux);
+    snprintf(mem, sizeof(mem), "%u CONNU%s", (unsigned)nbReseaux, nbReseaux > 1 ? "S" : "");
     ecrireLigneDefilante(mem, 25, COL_DISCRET);
   } else {
-    char buf[12];
+    char buf[16];
     snprintf(buf, sizeof(buf), "ESSAI %u/%u", (unsigned)(idxCandidat + 1), (unsigned)nbCandidats);
     dessinerEnteteWifi(buf, COL_TITRE);
     dessinerLogoWifi(7, 19, phase + 1, COL_TITRE, COL_ETEINT);
@@ -2338,7 +2384,7 @@ void dessinerEcranConnexion() {
   // points animés + secondes écoulées (y 18..22)
   int nbPoints = (int)((now / 400UL) % 4UL);
   for (int i = 0; i < nbPoints; i++) display.fillRect(17 + i * 4, 20, 2, 2, COL_TITRE);
-  char sec[8];
+  char sec[12];
   snprintf(sec, sizeof(sec), "%lu s", (now - tEtatWifi) / 1000UL);
   ecrirePDroite(sec, 63, 18, COL_DISCRET);
 #endif
@@ -2410,6 +2456,10 @@ void verifierAlertes(unsigned long now) {
     a.active = true;
     if (niv > a.nivMax) a.nivMax = niv;
     bool rearme = (a.tFlash == 0) || (now - a.tFlash >= ALERTE_REARME_MS);
+    // PM1 fait partie des PM2.5 : si PM2.5 est déjà en alerte à un niveau au moins égal, un éclair « PM1 » de plus
+    // n'apprend rien (vu en simulation : PM1 franchissait le seuil quelques minutes après PM2.5 -> 2e éclair).
+    // La page PM1 reste quand même dans le tourniquet des pages en alerte.
+    if (i == 1 && alertes[2].active && alertes[2].nivMax >= niv) continue;
     if ((entree && rearme) || empire) {
       // plusieurs à la fois : le plus grave d'abord ; à égalité, PM2.5 passe devant PM1
       if (niv > nivChoix || (niv == nivChoix && choix == 1)) { choix = i; nivChoix = niv; }
@@ -2903,6 +2953,10 @@ void afficherStatus() {
     if (parS > 0) Serial.printf(" | rattrapé dans ~%u min", (unsigned)(nbLignesAttente / parS / 60.0f + 0.99f));
   }
   Serial.println();
+  if (nbSansHeure > 0) Serial.printf("mesures sans heure abandonnées (coupure de courant hors ligne) : %u\n", (unsigned)nbSansHeure);
+  Serial.printf("CO2 : %s | lectures impossibles écartées : %u%s\n",
+                mCO2.etat == CAPTEUR_OK ? "ok" : (mCO2.etat == CAPTEUR_CHAUFFE ? "préchauffage" : "en erreur"),
+                (unsigned)nbCO2HorsPlage, co2HorsPlage ? " (dernière lecture hors plage : 'calib' à l'air libre ?)" : "");
   Serial.printf("période de mesure : %lu s%s\n", periodeMesureMs() / 1000UL,
                 (estSurSecteur && periodeMesureMs() == PERIODE_MESURE_RATTRAPAGE_MS) ? " (rattrapage du retard)" : "");
   Serial.printf("alimentation : %s\n", estSurSecteur ? "secteur" : "batterie");
