@@ -24,3 +24,7 @@ sh lancer.sh      # télécharge ArduinoJson 7.4.3 la première fois, compile, l
 | Coupure Wi-Fi qui chevauche le retour à zéro de `millis()` (~49,7 jours) | **avant correction : 61** ; après : 0 | 1 s | 25 min |
 
 Le dernier cas a révélé un bug, corrigé dans `calculerAge` : `millis()/1000` repart de 0 au bout d'environ 49,7 jours. L'âge calculé était alors négatif, et les mesures étaient jetées comme « impossibles à dater ».
+
+## Voir aussi : la carte complète
+
+Le dossier [`carte/`](carte/LISEZMOI.md) fait tourner **tout** le firmware : capteurs, écran LED rendu en images, Wi-Fi, commandes série, redémarrages. Il simule des jours entiers en quelques secondes. C'est lui qui a trouvé les pannes capables de bloquer les envois pendant des jours : refus 401 passager, Wi-Fi « fantôme », délai aberrant du serveur.
