@@ -19,6 +19,9 @@
   /* Animations : toujours actives par défaut, même si le système demande de les réduire (Windows : « Effets d'animation »
      désactivés). La personne peut les réduire avec le bouton « Animations » du pied de page : choix mémorisé. */
   try { if (localStorage.getItem("animations") === "reduites") document.documentElement.classList.add("mouvement-reduit"); } catch (e) {}
+  /* Introduction déjà vue lors d'une visite précédente : la page s'ouvre directement sur les mesures.
+     On la revoit en cliquant sur « 00 » (ordinateur) ou sur « Introduction » (téléphone) dans le sommaire. */
+  try { if (localStorage.getItem("intro-vue") === "1") document.documentElement.classList.add("intro-masquee"); } catch (e) {}
   setTimeout(function () {
     if (!window.__pret) document.documentElement.classList.remove("js");
   }, 6000);
@@ -373,7 +376,11 @@
   .ouv-sur { margin: 0; font: 600 clamp(.7rem, 1.4vw, .85rem)/1.3 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: rgba(242, 244, 240, .62); }
   .marque-nom {
     margin: 0; font-family: "Cinzel Decorative", "Cinzel", "Trajan Pro", Georgia, serif; font-weight: 700;
-    font-size: clamp(2.4rem, 9.6vw, 9rem); line-height: 1; letter-spacing: .01em; white-space: nowrap; text-transform: uppercase;   /* en capitales, comme sur l'affiche */
+    /* taille bornée par la largeur utile : le nom (~9 em avec ses marges) tient toujours sur une ligne, sans déborder */
+    font-size: clamp(1.6rem, min(9.6vw, (100vw - 2 * var(--gouttiere)) / 9.2), 9rem); line-height: 1; letter-spacing: .01em; white-space: nowrap; text-transform: uppercase;   /* en capitales, comme sur l'affiche */
+    /* La jambe du R final (et le A initial) dépassent de la boîte de la lettre : avec background-clip: text, tout ce qui
+       sort de la boîte n'est pas peint (R coupé net). Les marges intérieures agrandissent la zone peinte. */
+    padding: .06em .16em .1em;
     background: linear-gradient(180deg, #ffffff 0%, #f1ece2 48%, #cbc3b2 100%);   /* ivoire : la pierre claire de la basilique */
     -webkit-background-clip: text; background-clip: text; color: transparent;
     filter: drop-shadow(0 0 30px rgba(255, 236, 200, .16));
@@ -465,6 +472,10 @@
   html.js.mouvement-reduit .reel-piste { transform: none !important; }
   html.js.mouvement-reduit .reel-avance, html.mouvement-reduit .ouv-defiler { display: none; }
 
+  /* ---------- Introduction masquée (déjà vue) : ouverture, bandeau, manifeste et points forts ---------- */
+  html.intro-masquee #ouverture, html.intro-masquee #piste, html.intro-masquee #manifeste, html.intro-masquee #atouts,
+  html.intro-masquee .aller-mesures { display: none !important; }
+
   /* ---------- Barre de contrôle (reste collée en haut) ---------- */
   .barre { position: sticky; top: 0; z-index: 30; background: var(--fond); border-bottom: 2px solid var(--encre); }
   .barre-int { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 24px; padding-top: 10px; padding-bottom: 10px; }
@@ -518,17 +529,17 @@
   .export button[type="submit"][disabled] { opacity: .55; cursor: wait; }
   @media (pointer: coarse) { .bouton-export { min-height: 44px; } }
   /* Le panneau d'export peut être long (calendrier) : dans la barre collante, il défile sur lui-même */
-  /* Téléphone : la barre (2 à 3 lignes) défile avec la page au lieu de rester collée, pour laisser la place aux courbes ;
-     le bouton « Export CSV » au-dessus des courbes reste à portée de main. */
-  @media (max-width: 599px) { .barre { position: relative; } }
+  /* Téléphone : la barre reste collée, mais se range quand on descend (place pour les courbes)
+     et revient dès qu'on remonte, comme la barre d'adresse du navigateur (voir initBarreMobile). */
+  @media (max-width: 599px) {
+    .barre { transition: transform .3s var(--courbe); }
+    .barre.barre-rangee { transform: translateY(calc(-100% - 6px)); }
+  }
+  html.mouvement-reduit .barre { transition: none; }
   .barre > .export { max-height: calc(100vh - 120px); max-height: calc(100svh - 120px); overflow-y: auto; overscroll-behavior: contain; }
 
-  /* Bouton « Export CSV » au-dessus des courbes : le panneau d'export s'ouvre alors juste sous ce bouton */
   .outils-graphe { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 16px; margin: 0 0 12px; }
   .outils-graphe .puces { flex: 1 1 auto; margin: 0; }
-  .bouton-export-graphe { margin-left: auto; background: var(--fond); }
-  .bloc-corps > .export { margin: 0 0 14px; border: 2px solid var(--encre); border-radius: 4px; background: var(--fond); }
-  .bloc-corps > .export .conteneur { max-width: none; padding-left: 14px; padding-right: 14px; }
 
   /* Calendrier « Dates précises » : blanc = des mesures existent ce jour-là, noir = aucune mesure (jour non sélectionnable) */
   .cal {
@@ -905,8 +916,10 @@
   @media (max-width: 560px) {
     /* la barre reste collée en haut : périodes sur la 1re ligne, pas et seuils sur la 2e */
     .barre-int { gap: 8px 10px; padding-top: 8px; padding-bottom: 8px; }
-    .periodes { display: flex; width: 100%; }
+    .periodes { display: flex; flex: 1 1 calc(100% - 84px); min-width: 0; }
     .periode { flex: 1 1 auto; padding: 8px 10px; }
+    .barre-int > .bouton-export { order: -1; flex: 0 0 74px; padding: 8px 6px; }
+    .barre-int > .periodes { order: -2; }
     .long, .option-long { display: none; }
     .option-court, .court { display: inline; }
     .option { gap: 8px; font-size: .85rem; }
@@ -1243,7 +1256,7 @@
       <span class="option-court" aria-hidden="true" data-i18n="p.seuils_court">Seuils</span>
     </label>
 
-    <button type="button" class="bouton-export" id="bouton-export" aria-expanded="false" aria-controls="export"><span aria-hidden="true">⤓</span> <span data-i18n="export.bouton">Export CSV</span></button>
+    <button type="button" class="bouton-export" id="bouton-export" aria-expanded="false" aria-controls="export" aria-label="Exporter les mesures en CSV" title="Exporter les mesures en CSV" data-i18n-attr="aria-label:export.aria;title:export.aria"><span aria-hidden="true">⤓</span> <span class="long" data-i18n="export.bouton">Export CSV</span><span class="court">CSV</span></button>
   </div>
 
   <form class="perso" id="perso" aria-label="Durée personnalisée" data-i18n-attr="aria-label:perso.aria" novalidate hidden>
@@ -1348,7 +1361,6 @@
     <div class="bloc-corps revele" style="--d:1">
       <div class="outils-graphe">
         <div class="puces" role="group" aria-label="Mesures affichées sur le graphe" data-i18n-attr="aria-label:graphe.puces"></div>
-        <button type="button" class="bouton-export bouton-export-graphe" id="bouton-export-graphe" aria-expanded="false" aria-controls="export" title="Exporter les mesures en CSV" data-i18n-attr="title:export.aria"><span aria-hidden="true">⤓</span> <span data-i18n="export.bouton">Export CSV</span></button>
       </div>
       <div class="zone-graphe">
         <canvas id="graphe-air" role="img" aria-label="Courbes des particules fines PM1, PM2.5, PM10 et du CO₂ sur la période choisie" data-i18n-attr="aria-label:pm.aria"></canvas>
@@ -3486,6 +3498,7 @@ function initTampon() {
 // =====================================================================
 const sommaire = { signature: "", sections: [], liens: [], actif: "hero" };
 let majDefilement = function () {};
+let majEtoilesOuverture = function () {};
 
 // Le bandeau + les chapitres actuellement visibles (un chapitre sans données est masqué : il n'a pas de numéro).
 function listeChapitres() {
@@ -3506,6 +3519,7 @@ function construireSommaire(sections) {
     lien.dataset.cible = section.id;
     if (i === 0) lien.addEventListener("click", e => {
       e.preventDefault();
+      if (document.documentElement.classList.contains("intro-masquee")) { revoirIntro(); return; }
       const piste = document.getElementById("piste");
       const haut = piste ? piste.getBoundingClientRect().top + window.scrollY : 0;
       window.scrollTo({ top: haut, behavior: reduit() ? "auto" : "smooth" });
@@ -4123,6 +4137,7 @@ function initEtoilesOuverture() {
     else if (!doitTourner && tourne) { tourne = false; if (image) cancelAnimationFrame(image); image = 0; }
   }
   mesurer();
+  majEtoilesOuverture = mesurer;   // l'introduction masquée réapparaît : le ciel était de taille nulle
   let largeurAvant = window.innerWidth;
   window.addEventListener("resize", () => {   // la barre d'adresse du téléphone (hauteur seule) ne ressème pas les étoiles
     if (window.innerWidth === largeurAvant) return;
@@ -4193,20 +4208,35 @@ function pauseHorsEcran() {
 
 // Applique une période (clé de l'API : "-6h", "-90m"…). Si aucun bouton ne lui correspond, c'est une durée personnalisée.
 function choisirPeriode(cle) {
-  const bouton = document.querySelector('.periode[data-periode="' + cle + '"]');
-  const perso = document.getElementById("bouton-perso");
   animerProchain = (cle !== periodeActuelle);
   periodeActuelle = cle;
-  document.querySelectorAll(".periode").forEach(b => {
-    const actif = bouton ? (b === bouton) : (b === perso);
-    b.classList.toggle("actif", actif);
-    b.setAttribute("aria-pressed", String(actif));
-  });
+  ecrireMemoire("periode", cle);   // retrouvée à la prochaine visite
+  marquerPeriode();
   majPerso();
   majMenuPas();
   placerCurseur();
   majEtat("etat", () => trad("etat.chargement"));
   rafraichir();
+}
+
+// Boutons de période : celui de la période en cours est enfoncé (« Perso » pour une durée personnalisée).
+function marquerPeriode() {
+  const bouton = document.querySelector('.periode[data-periode="' + periodeActuelle + '"]');
+  const perso = document.getElementById("bouton-perso");
+  document.querySelectorAll(".periode").forEach(b => {
+    const actif = bouton ? (b === bouton) : (b === perso);
+    b.classList.toggle("actif", actif);
+    b.setAttribute("aria-pressed", String(actif));
+  });
+}
+
+// Dernière période choisie (visite précédente) : reprise si elle reste dans les bornes acceptées par le serveur.
+function restaurerPeriode() {
+  const cle = lireMemoire("periode");
+  const duree = typeof cle === "string" ? dureeDeCle(cle) : 0;
+  if (!duree || duree < PERSO_MIN * 60000 || duree > PERSO_MAX * 60000) return;
+  periodeActuelle = cle;
+  marquerPeriode();
 }
 
 // Texte et nom accessible du bouton « Perso » : la durée choisie s'il y en a une, sinon « Perso ».
@@ -4276,7 +4306,7 @@ function initPerso() {
 }
 
 // =====================================================================
-// EXPORT CSV (bouton « Export CSV » de la barre, et bouton au-dessus des courbes)
+// EXPORT CSV (bouton « Export CSV » de la barre collante)
 // =====================================================================
 // Période : celle affichée, une durée prédéfinie, tout l'historique, ou des jours choisis dans le calendrier.
 // Le serveur AirCarto limite chaque requête à 7 jours en mesures brutes et à 31 jours avec une moyenne (freq), mais
@@ -4691,7 +4721,6 @@ function creerCalendrier() {
 
 function initExport() {
   const boutonBarre = document.getElementById("bouton-export");
-  const boutonGraphe = document.getElementById("bouton-export-graphe");
   const panneau = document.getElementById("export");
   if (!boutonBarre || !panneau) return;
   const choix = document.getElementById("export-periode");
@@ -4699,12 +4728,10 @@ function initExport() {
   const ok = document.getElementById("export-ok");
   const calRacine = document.getElementById("cal");
   const calendrier = creerCalendrier();
-  // Place d'origine du panneau (sous la barre) : il y revient quand on l'ouvre depuis la barre
-  const origine = { parent: panneau.parentNode, suivant: panneau.nextSibling };
   let ouvertPar = null;
   messageExport("export.aide");
 
-  const boutons = [boutonBarre, boutonGraphe].filter(Boolean);
+  const boutons = [boutonBarre];
   const majBoutons = () => boutons.forEach(b => b.setAttribute("aria-expanded", String(!panneau.hidden && b === ouvertPar)));
   const fermer = rendreLeFocus => {
     if (panneau.hidden) return;
@@ -4721,13 +4748,6 @@ function initExport() {
   };
   const ouvrir = declencheur => {
     if (!panneau.hidden && ouvertPar === declencheur) { fermer(false); return; }
-    // Depuis les courbes : le panneau s'ouvre juste au-dessus du graphe, sur la période affichée
-    if (declencheur === boutonGraphe) {
-      declencheur.closest(".outils-graphe").after(panneau);
-      if (panneau.hidden) choix.value = "affichee";
-    } else {
-      origine.parent.insertBefore(panneau, origine.suivant);
-    }
     const etaitFerme = panneau.hidden;
     panneau.hidden = false;
     ouvertPar = declencheur;
@@ -4735,10 +4755,6 @@ function initExport() {
     majDates();
     if (etaitFerme) messageExport("export.aide");
     choix.focus({ preventScroll: true });
-    if (declencheur === boutonGraphe) {
-      const r = panneau.getBoundingClientRect();
-      if (r.top < 0 || r.top > window.innerHeight * 0.6) panneau.scrollIntoView({ block: "nearest", behavior: reduit() ? "auto" : "smooth" });
-    }
   };
   boutons.forEach(b => b.addEventListener("click", () => ouvrir(b)));
   panneau.addEventListener("keydown", e => { if (e.key === "Escape") fermer(true); });
@@ -4814,6 +4830,56 @@ function initAllerMesures() {
   });
 }
 
+// =====================================================================
+// Introduction déjà vue (mémorisée) et barre collante du téléphone
+// =====================================================================
+// Dès que la barre des mesures est atteinte (en défilant ou avec « Aller aux mesures »), l'introduction compte comme vue :
+// aux visites suivantes, la page s'ouvre directement sur les mesures (classe intro-masquee posée dans <head>).
+function initIntroVue() {
+  const cible = document.getElementById("mesures");
+  if (!cible || !("IntersectionObserver" in window)) return;
+  const obs = new IntersectionObserver(([e]) => {
+    if (!e.isIntersecting) return;
+    try { localStorage.setItem("intro-vue", "1"); } catch (err) { /* stockage bloqué : l'introduction sera rejouée */ }
+    obs.disconnect();
+  });
+  obs.observe(cible);
+}
+
+// « 00 » / « Introduction » du sommaire, introduction masquée : elle réapparaît et se rejoue depuis le début.
+function revoirIntro() {
+  document.documentElement.classList.remove("intro-masquee");
+  // Mesures faites pendant que l'introduction était masquée (tailles nulles) : on les refait.
+  securise(ajusterHero);
+  securise(ajusterTampon);
+  securise(placerCurseur);
+  securise(majDefilement);
+  securise(majEtoilesOuverture);
+  try { window.scrollTo({ top: 0, behavior: "instant" }); } catch (err) { window.scrollTo(0, 0); }
+}
+
+// Téléphone (< 600 px) : la barre reste collée en haut, se range quand on descend et revient quand on remonte.
+// Elle reste affichée tant qu'un de ses panneaux (durée personnalisée, export) est ouvert.
+function initBarreMobile() {
+  const barre = document.getElementById("mesures");
+  if (!barre || !window.matchMedia) return;
+  const etroit = window.matchMedia("(max-width: 599px)");
+  const panneaux = [document.getElementById("perso"), document.getElementById("export")].filter(Boolean);
+  let yAvant = window.scrollY, rangee = false;
+  const ranger = r => { if (r !== rangee) { rangee = r; barre.classList.toggle("barre-rangee", r); } };
+  window.addEventListener("scroll", () => {
+    const y = window.scrollY, dy = y - yAvant;
+    if (Math.abs(dy) < 8) return;          // petits tremblements du doigt : ignorés
+    yAvant = y;
+    const colle = barre.getBoundingClientRect().bottom <= barre.offsetHeight + 8;   // la barre est épinglée en haut
+    const ouvert = panneaux.some(p => !p.hidden);
+    ranger(etroit.matches && dy > 0 && colle && !ouvert && y > 40);
+  }, { passive: true });
+  const montrer = () => ranger(false);
+  if (etroit.addEventListener) etroit.addEventListener("change", montrer);
+  barre.addEventListener("focusin", montrer);   // navigation au clavier : la barre revient
+}
+
 function initControles() {
   document.querySelectorAll('.periode[data-periode^="-"]').forEach(bouton => {
     bouton.addEventListener("click", () => {
@@ -4836,6 +4902,7 @@ function initControles() {
 }
 
 function demarrer() {
+  securise(restaurerPeriode);   // avant tout : textes, menu « Pas » et première requête suivent la période retrouvée
   securise(reglerChart);
   // Textes écrits par le script : première écriture (le HTML contient encore le français de secours).
   securise(() => { ecrireStatut(); ecrireEtat(); majPerso(); ecrireAide(); majTextesFixes(); });
@@ -4857,6 +4924,8 @@ function demarrer() {
   securise(initBoutonAnimations);
   securise(initPleinEcran);
   securise(initAllerMesures);
+  securise(initIntroVue);
+  securise(initBarreMobile);
   securise(ajusterHero);   // avant même les données : le bandeau tient dans l'écran dès l'arrivée
   securise(() => {   // « Haut de page » : le bandeau est épinglé (sticky), l'ancre #hero ne menait donc pas tout en haut
     const haut = document.querySelector(".haut");
