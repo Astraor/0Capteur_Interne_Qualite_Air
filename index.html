@@ -505,11 +505,87 @@
   .bouton-export[aria-expanded="true"] { background: var(--encre); color: var(--fond); }
   @media (hover: hover) { .bouton-export[aria-expanded="false"]:hover { background: rgba(14, 27, 36, .08); } }
   .bouton-export:focus-visible { outline: 3px solid var(--cobalt); outline-offset: 2px; }
-  .export .export-dates { display: contents; }
-  .export .export-dates[hidden] { display: none; }
-  .export input[type="datetime-local"] { width: auto; font-size: .9rem; }
-  .export button[disabled] { opacity: .55; cursor: wait; }
+  .export button[type="submit"][disabled] { opacity: .55; cursor: wait; }
   @media (pointer: coarse) { .bouton-export { min-height: 44px; } }
+  /* Le panneau d'export peut être long (calendrier) : dans la barre collante, il défile sur lui-même */
+  /* Téléphone : la barre (2 à 3 lignes) défile avec la page au lieu de rester collée, pour laisser la place aux courbes ;
+     le bouton « Export CSV » au-dessus des courbes reste à portée de main. */
+  @media (max-width: 599px) { .barre { position: relative; } }
+  .barre > .export { max-height: calc(100vh - 120px); max-height: calc(100svh - 120px); overflow-y: auto; overscroll-behavior: contain; }
+
+  /* Bouton « Export CSV » au-dessus des courbes : le panneau d'export s'ouvre alors juste sous ce bouton */
+  .outils-graphe { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 16px; margin: 0 0 12px; }
+  .outils-graphe .puces { flex: 1 1 auto; margin: 0; }
+  .bouton-export-graphe { margin-left: auto; background: var(--fond); }
+  .bloc-corps > .export { margin: 0 0 14px; border: 2px solid var(--encre); border-radius: 4px; background: var(--fond); }
+  .bloc-corps > .export .conteneur { max-width: none; padding-left: 14px; padding-right: 14px; }
+
+  /* Calendrier « Dates précises » : blanc = des mesures existent ce jour-là, noir = aucune mesure (jour non sélectionnable) */
+  .cal {
+    flex-basis: 100%; width: 100%; max-width: 400px;
+    padding: 14px; border: 2px solid var(--encre); border-radius: 6px; background: var(--fond-2);
+  }
+  .cal-tete { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+  .cal-mois { margin: 0; font: 800 1.05rem/1.2 var(--titre); font-stretch: 100%; text-transform: capitalize; text-align: center; }
+  .cal-nav {
+    flex: none; width: 40px; height: 40px; display: grid; place-items: center; padding: 0;
+    border: 2px solid var(--encre); border-radius: 50%; background: var(--fond); color: var(--encre);
+    font: 700 1.35rem/1 var(--sans); cursor: pointer; transition: background .2s, color .2s;
+  }
+  .cal-nav span { margin-top: -2px; }
+  .cal-nav:disabled { opacity: .3; cursor: default; }
+  @media (hover: hover) { .cal-nav:not(:disabled):hover { background: var(--encre); color: var(--fond); } }
+  .cal-nav:focus-visible { outline: 3px solid var(--cobalt); outline-offset: 2px; }
+  .cal-semaine, .cal-grille { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+  .cal-semaine { margin-bottom: 4px; }
+  .cal-semaine span { padding: 4px 0; text-align: center; font: 600 .66rem/1 var(--mono); letter-spacing: .04em; text-transform: uppercase; color: var(--doux); }
+  .cal-jour {
+    position: relative; aspect-ratio: 1; min-height: 34px; padding: 0;
+    border: 1px solid var(--filet); border-radius: 4px; background: #fff; color: var(--encre);
+    font: 600 .9rem/1 var(--mono); cursor: pointer;
+    transition: background .15s, color .15s, box-shadow .15s, transform .15s var(--courbe);
+  }
+  .cal-jour.vide { background: var(--encre); border-color: var(--encre); color: #6b7a83; cursor: not-allowed; }
+  .cal-jour.attente { background: #cfd5d0; border-color: #cfd5d0; color: transparent; cursor: progress; animation: cal-attente 1.1s ease-in-out infinite alternate; }
+  @keyframes cal-attente { to { background: #e9ece8; border-color: #e9ece8; } }
+  .cal-jour.dans:not(.vide) { background: #dce4f7; border-color: #9fb2e4; }
+  .cal-jour.vide.dans { box-shadow: inset 0 -4px 0 var(--cobalt); }
+  .cal-grille .cal-jour.debut, .cal-grille .cal-jour.fin { background: var(--cobalt); border-color: var(--cobalt); color: #fff; box-shadow: none; }
+  .cal-jour.auj::after { content: ""; position: absolute; left: 50%; bottom: 4px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: currentColor; }
+  .cal-jour:focus-visible { outline: 3px solid var(--cobalt); outline-offset: 2px; z-index: 1; }
+  @media (hover: hover) {
+    .cal-jour:not(.vide):not(.attente):hover { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(14, 27, 36, .2); z-index: 1; }
+  }
+  .cal-legende { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 12px 0 0; font: 500 .74rem/1.3 var(--mono); color: var(--doux); }
+  .cal-legende > span { display: inline-flex; align-items: center; gap: 7px; }
+  .cal-pastille { width: 14px; height: 14px; border-radius: 3px; border: 1px solid var(--filet); }
+  .cal-pastille.dispo { background: #fff; }
+  .cal-pastille.vide { background: var(--encre); border-color: var(--encre); }
+  .cal-choix { margin: 10px 0 0; font: 600 .82rem/1.4 var(--sans); }
+  .cal-choix.erreur { color: #9c1f17; }
+  .cal-heures { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-top: 10px; }
+  .cal-heures label { font-size: .8rem; }
+  .cal-heures input { width: auto; min-height: 36px; font-size: .95rem; }
+  html.mouvement-reduit .cal-jour { transition: none; }
+  html.mouvement-reduit .cal-jour.attente { animation: none; }
+
+  /* Raccourci flottant vers les mesures (après l'écran d'entrée) */
+  .aller-mesures {
+    position: fixed; z-index: 75; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
+    display: inline-flex; align-items: center; gap: 10px; min-height: 44px; padding: 10px 20px;
+    border: 2px solid var(--encre); border-radius: 999px; background: var(--fond); color: var(--encre);
+    font: 700 .85rem/1 var(--sans); font-stretch: 112%; white-space: nowrap;
+    box-shadow: 0 4px 18px rgba(14, 27, 36, .28); cursor: pointer;
+    animation: aller-apparait .45s var(--courbe) both;
+  }
+  .aller-mesures .fleche { display: inline-block; animation: rebond 1.8s ease-in-out infinite; }
+  @keyframes aller-apparait { from { opacity: 0; transform: translate(-50%, 12px); } }
+  @media (hover: hover) { .aller-mesures:hover { background: var(--encre); color: var(--fond); } }
+  .aller-mesures:focus-visible { outline: 3px solid var(--cobalt); outline-offset: 3px; }
+  @media (max-width: 899px) { .aller-mesures { bottom: calc(82px + env(safe-area-inset-bottom, 0px)); } }
+  html.jeu-actif .aller-mesures, html.gate-ouvert .aller-mesures { display: none !important; }
+  html.mouvement-reduit .aller-mesures, html.mouvement-reduit .aller-mesures .fleche { animation: none; }
+  @media print { .aller-mesures { display: none !important; } }
 
   /* Pas de la moyenne (fréquence d'échantillonnage des graphes) */
   .pas { display: inline-flex; align-items: center; gap: 8px; font-size: .9rem; font-weight: 600; }
@@ -965,6 +1041,9 @@
   <svg class="ic-sortir" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 4v5H4M15 4v5h5M20 15h-5v5M4 15h5v5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
 </button>
 
+<!-- Raccourci vers les mesures : visible après l'écran d'entrée, tant que l'on n'est pas arrivé à la barre des mesures -->
+<button type="button" class="aller-mesures" id="aller-mesures" hidden><span data-i18n="mesures.aller">Aller aux mesures</span> <span class="fleche" aria-hidden="true">↓</span></button>
+
 <nav class="sommaire-story" id="sommaire" aria-label="Chapitres de la page" data-i18n-attr="aria-label:nav.chapitres" hidden>
   <p class="sommaire-etat" id="sommaire-etat" aria-hidden="true"></p>
   <ol id="sommaire-liste"></ol>
@@ -1180,14 +1259,31 @@
         <option value="360" data-i18n="export.p_6h">6 dernières heures</option>
         <option value="1440" data-i18n="export.p_24h" selected>24 dernières heures</option>
         <option value="10080" data-i18n="export.p_7d">7 derniers jours</option>
+        <option value="43200" data-i18n="export.p_30d">30 derniers jours</option>
+        <option value="tout" data-i18n="export.p_tout">Tout l'historique</option>
         <option value="dates" data-i18n="export.p_dates">Dates précises…</option>
       </select>
-      <span class="export-dates" id="export-dates" hidden>
-        <label for="export-du" data-i18n="export.du">Du</label>
-        <input id="export-du" type="datetime-local" step="60">
-        <label for="export-au" data-i18n="export.au">au</label>
-        <input id="export-au" type="datetime-local" step="60">
-      </span>
+      <!-- Calendrier « Dates précises » : jours blancs = mesures disponibles, jours noirs = aucune mesure (non sélectionnables) -->
+      <div class="cal" id="cal" hidden>
+        <div class="cal-tete">
+          <button type="button" class="cal-nav" id="cal-prec" aria-label="Mois précédent" title="Mois précédent" data-i18n-attr="aria-label:cal.prec;title:cal.prec"><span aria-hidden="true">‹</span></button>
+          <p class="cal-mois" id="cal-mois" aria-live="polite"></p>
+          <button type="button" class="cal-nav" id="cal-suiv" aria-label="Mois suivant" title="Mois suivant" data-i18n-attr="aria-label:cal.suiv;title:cal.suiv"><span aria-hidden="true">›</span></button>
+        </div>
+        <div class="cal-semaine" id="cal-semaine" aria-hidden="true"></div>
+        <div class="cal-grille" id="cal-grille"></div>
+        <p class="cal-legende">
+          <span><i class="cal-pastille dispo" aria-hidden="true"></i><span data-i18n="cal.dispo">Mesures disponibles</span></span>
+          <span><i class="cal-pastille vide" aria-hidden="true"></i><span data-i18n="cal.vide">Aucune mesure</span></span>
+        </p>
+        <p class="cal-choix" id="cal-choix" role="status"></p>
+        <div class="cal-heures">
+          <label for="export-h-du" data-i18n="cal.h_du">Heure de début</label>
+          <input id="export-h-du" type="time" value="00:00">
+          <label for="export-h-au" data-i18n="cal.h_au">Heure de fin</label>
+          <input id="export-h-au" type="time" value="23:59">
+        </div>
+      </div>
       <label for="export-pas" data-i18n="export.pas">Pas</label>
       <select id="export-pas">
         <option value="" data-i18n="export.brut">Mesures brutes</option>
@@ -1205,6 +1301,7 @@
       <p class="perso-aide" id="export-aide" role="status"></p>
     </div>
   </form>
+</div>
 
 <main class="conteneur">
   <p id="etat" class="etat" role="status">Chargement…</p>
@@ -1238,7 +1335,10 @@
     </div>
 
     <div class="bloc-corps revele" style="--d:1">
-      <div class="puces" role="group" aria-label="Mesures affichées sur le graphe" data-i18n-attr="aria-label:graphe.puces"></div>
+      <div class="outils-graphe">
+        <div class="puces" role="group" aria-label="Mesures affichées sur le graphe" data-i18n-attr="aria-label:graphe.puces"></div>
+        <button type="button" class="bouton-export bouton-export-graphe" id="bouton-export-graphe" aria-expanded="false" aria-controls="export" title="Exporter les mesures en CSV" data-i18n-attr="title:export.aria"><span aria-hidden="true">⤓</span> <span data-i18n="export.bouton">Export CSV</span></button>
+      </div>
       <div class="zone-graphe">
         <canvas id="graphe-air" role="img" aria-label="Courbes des particules fines PM1, PM2.5, PM10 et du CO₂ sur la période choisie" data-i18n-attr="aria-label:pm.aria"></canvas>
       </div>
@@ -1429,7 +1529,7 @@ const DUREE_PERIODE = { "-6h": 6 * 3600000, "-24h": 24 * 3600000, "-7d": 7 * 864
 
 // Durée personnalisée (bouton « Perso ») : bornes acceptées, en minutes.
 const PERSO_MIN = 5;
-const PERSO_MAX = 7 * 24 * 60;
+const PERSO_MAX = 31 * 24 * 60;   // 31 jours : la plus longue période que le serveur sert en une requête (avec une moyenne)
 // Pour une durée personnalisée, la moyenne affichée (« Auto ») prend le plus fin de ces pas qui donne au plus POINTS_MAX points.
 const PAS_AFFICHAGE = ["1m", "2m", "5m", "10m", "15m", "30m", "1h", "2h", "3h", "6h"];
 const POINTS_MAX = 180;
@@ -1615,7 +1715,9 @@ function reglagesPeriode(cle) {
   const duree = dureeDeCle(cle) || DUREE_PERIODE["-24h"];
   const moyenne = PAS_AFFICHAGE.find(p => duree / enMs(p) <= POINTS_MAX) || PAS_AFFICHAGE[PAS_AFFICHAGE.length - 1];
   const longue = duree > DUREE_PERIODE["-24h"];   // au-delà de 24 h : moyenne de 5 min côté serveur, comme pour 7 jours
-  return { duree, moyenne, freq: longue ? "5m" : "", secours: longue ? "5m" : "1m" };
+  const tresLongue = duree > DUREE_PERIODE["-7d"];   // au-delà de 7 jours : moyenne de 15 min (requête plus légère)
+  const freq = tresLongue ? "15m" : longue ? "5m" : "";
+  return { duree, moyenne, freq, secours: freq || "1m" };
 }
 
 // "-90m" -> "1 h 30" ; "-3h" -> "3 h" ; "-2d" -> "2 j" (dans la langue courante, espaces insécables comprises)
@@ -1742,8 +1844,21 @@ function texteErreur(erreur) {
 async function appelerApi(periode, freq) {
   const params = new URLSearchParams({ key: CLE, start: periode });
   if (freq) params.set("freq", freq);
-  if (DEVICE_ID) params.set("device_id", DEVICE_ID);
+  return interrogerApi(params);
+}
 
+// Même appel, sur des dates absolues (ms). Le serveur accepte start / end au format ISO (sans millisecondes).
+// Ses limites : 7 jours par requête en mesures brutes (sans freq), 31 jours avec une moyenne (freq).
+const isoServeur = t => new Date(t).toISOString().replace(/\.\d{3}Z$/, "Z");
+async function appelerApiPlage(debut, fin, freq) {
+  if (!CLE) throw erreurI18n("err.cle");
+  const params = new URLSearchParams({ key: CLE, start: isoServeur(debut), end: isoServeur(fin) });
+  if (freq) params.set("freq", freq);
+  return interrogerApi(params);
+}
+
+async function interrogerApi(params) {
+  if (DEVICE_ID) params.set("device_id", DEVICE_ID);
   let reponse;
   try {
     reponse = await fetch(URL_API + "?" + params);
@@ -1824,6 +1939,9 @@ function lirePoints(points, periode, maintenant) {
 // Les cases sont calées sur l'heure locale (un pas de 1 jour va de minuit à minuit, pas de 1 h à 1 h).
 function regrouper(lus, pasMs) {
   if (!lus.length) return [];
+  // Pas d'un jour (ou plusieurs) : cases de minuit à minuit en heure locale, y compris les jours de changement d'heure
+  // (23 h ou 25 h). Un décalage fixe, pris sur la première mesure, décalerait d'une heure tous les jours suivants.
+  if (pasMs % 86400000 === 0) return regrouperParJours(lus, pasMs / 86400000);
   const decalage = -new Date(lus[0].t).getTimezoneOffset() * 60000;
   const t0 = Math.floor((lus[0].t + decalage) / pasMs) * pasMs - decalage;
   const n = Math.floor((lus[lus.length - 1].t - t0) / pasMs) + 1;
@@ -1841,6 +1959,29 @@ function regrouper(lus, pasMs) {
     for (const k in c.nb) moyenne[k] = c.somme[k] / c.nb[k];
     return { t, p: moyenne };
   });
+}
+
+function regrouperParJours(lus, nbJours) {
+  const cases = [];
+  let debut = minuit(lus[0].t), fin = jourDecale(debut, nbJours), c = null;
+  for (let j = 0; j < lus.length; j++) {
+    const { t, v } = lus[j];
+    while (t >= fin) {
+      cases.push(c ? moyenneCase(debut, c) : { t: debut, p: null });
+      c = null;
+      debut = fin;
+      fin = jourDecale(debut, nbJours);
+    }
+    c = c || { somme: {}, nb: {} };
+    for (const k in v) { c.somme[k] = (c.somme[k] || 0) + v[k]; c.nb[k] = (c.nb[k] || 0) + 1; }
+  }
+  cases.push(c ? moyenneCase(debut, c) : { t: debut, p: null });
+  return cases;
+}
+function moyenneCase(t, c) {
+  const moyenne = {};
+  for (const k in c.nb) moyenne[k] = c.somme[k] / c.nb[k];
+  return { t, p: moyenne };
 }
 
 // Pour chaque champ : minimum et maximum sur la période (mesures non moyennées, donc indépendants du pas choisi)
@@ -4062,12 +4203,22 @@ function initPerso() {
 }
 
 // =====================================================================
-// EXPORT CSV (bouton « Export CSV » de la barre)
+// EXPORT CSV (bouton « Export CSV » de la barre, et bouton au-dessus des courbes)
 // =====================================================================
-// Période : celle affichée, une durée prédéfinie, ou deux dates précises (dans les PERSO_MAX dernières minutes : le
-// serveur ne sert que des durées relatives à maintenant, jusqu'à 7 jours). Pas : mesures brutes ou moyennes.
-// Pour ménager le serveur (5 min entre deux requêtes), on réutilise les mesures déjà chargées quand elles couvrent la
-// période ; sinon une seule requête couvre de la date de début à maintenant. Heures réelles (x_age_s déjà appliqué).
+// Période : celle affichée, une durée prédéfinie, tout l'historique, ou des jours choisis dans le calendrier.
+// Le serveur AirCarto limite chaque requête à 7 jours en mesures brutes et à 31 jours avec une moyenne (freq), mais
+// accepte des dates absolues : on découpe donc la période en tranches, demandées l'une après l'autre. Rien n'empêche
+// ainsi d'exporter des mois entiers. Heures réelles des mesures (x_age_s appliqué aux mesures brutes).
+// Une moyenne du serveur est datée à la FIN de son intervalle (15:00 pour 14:00-15:00) : on la ramène à son début.
+const TRANCHE_BRUTE_MS = 7 * 86400000;        // mesures brutes : 7 jours par requête au plus (limite du serveur)
+const TRANCHE_MOY_MS = 31 * 86400000;         // avec une moyenne : 31 jours par requête au plus (limite du serveur)
+const EXPORT_BRUT_MAX_MS = 31 * 86400000;     // mesures brutes dans un fichier : 31 jours au plus (~90 000 lignes)
+const EXPORT_BRUT_LOCAL_MS = 7 * 86400000;    // jusqu'à 7 jours, les moyennes sont recalculées ici (heures exactes)
+const RETARD_REJEU_MS = 12 * 3600000;         // une mesure rejouée arrive jusqu'à ~12 h après avoir été prise
+const HISTORIQUE_VIDES_MAX = 3;               // début de l'historique : on s'arrête après 3 tranches de 31 jours vides
+const HISTORIQUE_TRANCHES_MAX = 36;           // ... et en tout cas après ~3 ans
+const JOUR_MS = 86400000;
+
 let aideExport = { cle: "export.aide", vars: null, erreur: false };
 function ecrireAideExport() {
   const aide = document.getElementById("export-aide");
@@ -4082,11 +4233,6 @@ function messageExport(cle, erreur, vars, n) {
 }
 
 const deux = n => String(n).padStart(2, "0");
-// Date pour un champ datetime-local (heure locale, sans secondes) : "2026-11-19T14:05"
-function versChampDate(t) {
-  const d = new Date(t);
-  return d.getFullYear() + "-" + deux(d.getMonth() + 1) + "-" + deux(d.getDate()) + "T" + deux(d.getHours()) + ":" + deux(d.getMinutes());
-}
 // Date lisible dans le fichier (heure locale) : "2026-11-19 14:05:30"
 function dateLocaleCsv(t) {
   const d = new Date(t);
@@ -4097,31 +4243,138 @@ function horodatageFichier(t) {
   const d = new Date(t);
   return "" + d.getFullYear() + deux(d.getMonth() + 1) + deux(d.getDate()) + "-" + deux(d.getHours()) + deux(d.getMinutes());
 }
+// Minuit (heure locale) du jour qui contient t
+function minuit(t) { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); }
+// Jour suivant / précédent en heure locale (les jours de changement d'heure font 23 h ou 25 h)
+function jourDecale(t, n) { const d = new Date(t); d.setDate(d.getDate() + n); d.setHours(0, 0, 0, 0); return d.getTime(); }
 
-// Début et fin (ms) choisis dans le panneau, ou null si les dates sont invalides.
-function bornesExport(maintenant) {
-  const choix = document.getElementById("export-periode").value;
-  if (choix === "affichee") return { debut: maintenant - reglagesPeriode(periodeActuelle).duree, fin: maintenant };
-  if (choix !== "dates") return { debut: maintenant - Number(choix) * 60000, fin: maintenant };
-  const du = new Date(document.getElementById("export-du").value).getTime();
-  const au = new Date(document.getElementById("export-au").value).getTime();
-  if (!Number.isFinite(du) || !Number.isFinite(au) || du >= au) return null;
-  if (du < maintenant - PERSO_MAX * 60000 - 60000) return null;   // au-delà de 7 jours : le serveur ne répond pas
-  return { debut: du, fin: Math.min(au, maintenant) };
+// Points bruts du serveur sur [debut, fin], tranche par tranche. progres(i, n) avant chaque requête.
+async function chargerPlage(debut, fin, freq, progres) {
+  const tranche = freq ? TRANCHE_MOY_MS : TRANCHE_BRUTE_MS;
+  const morceaux = [];
+  for (let a = debut; a < fin; a += tranche) morceaux.push([a, Math.min(fin, a + tranche)]);
+  const vus = new Set();   // un point pile sur la limite de deux tranches peut revenir deux fois
+  const points = [];
+  for (let i = 0; i < morceaux.length; i++) {
+    if (progres) progres(i, morceaux.length);
+    const recus = await appelerApiPlage(morceaux[i][0], morceaux[i][1], freq);
+    for (const p of recus) {
+      const cle = p.time + "|" + (p.device_id || "");
+      if (vus.has(cle)) continue;
+      vus.add(cle);
+      points.push(p);
+    }
+  }
+  return points;
 }
 
-// Mesures (heures réelles) couvrant [debut, maintenant] : le cache si possible, sinon une requête.
-async function mesuresPourExport(debut, maintenant) {
-  const besoin = maintenant - debut;
-  if (cache && cache.lus.length && reglagesPeriode(cache.periode).duree >= besoin
-      && Date.now() - derniereMaj < RAFRAICHISSEMENT_MS + 60000) {
-    return cache.lus;
+// Points du serveur -> mesures { t, v } dans [debut, fin], triées. Brut : heure réelle (x_age_s) ;
+// moyenne du serveur : début de son intervalle.
+function versMesures(points, freq, debut, fin, maintenant) {
+  const decalage = freq ? enMs(freq) : 0;
+  const noms = Object.keys(CHAMPS);
+  const lus = [];
+  points.forEach(p => {
+    let t;
+    if (freq) {
+      t = new Date(p.time).getTime() - decalage;
+      if (!Number.isFinite(t)) return;
+    } else {
+      const h = heureReelle(p);
+      if (!h) return;
+      t = h.t;
+    }
+    t = Math.min(t, maintenant);
+    if (t < debut || t > fin) return;
+    const v = {};
+    let utile = false;
+    noms.forEach(k => { if (estNombre(p[k])) { v[k] = p[k]; utile = true; } });
+    if (utile) lus.push({ t, v });
+  });
+  lus.sort((a, b) => a.t - b.t);
+  return lus;
+}
+
+// Mesures de [debut, fin] pour l'export, au pas demandé ("" = mesures brutes).
+async function mesuresExport(debut, fin, pas, maintenant, progres) {
+  const duree = fin - debut;
+  // (+ 2 h de tolérance : 31 jours entiers du calendrier peuvent compter une heure de plus au changement d'heure)
+  if (!pas && duree > EXPORT_BRUT_MAX_MS + 2 * 3600000) throw erreurI18n("export.erreur_brut");
+  let lus;
+  // Mesures brutes déjà chargées par la page (6 h, 24 h…) et encore fraîches : aucune requête
+  const enCache = cache && cache.lus.length && !reglagesPeriode(cache.periode).freq
+    && maintenant - reglagesPeriode(cache.periode).duree <= debut
+    && Date.now() - derniereMaj < RAFRAICHISSEMENT_MS + 60000;
+  if (enCache) {
+    lus = cache.lus.filter(l => l.t >= debut && l.t <= fin);
+  } else if (!pas || duree <= EXPORT_BRUT_LOCAL_MS) {
+    // Mesures brutes (moyennes recalculées ici si un pas est choisi). On lit un peu au-delà de la fin :
+    // une mesure prise avant la fin mais rejouée après une coupure est arrivée plus tard au serveur.
+    const points = await chargerPlage(debut, Math.min(maintenant, fin + RETARD_REJEU_MS), "", progres);
+    lus = versMesures(points, "", debut, fin, maintenant);
+  } else {
+    // Longue période avec un pas : moyennes du serveur (1 h au plus large, regroupées ensuite à minuit local pour 1 j)
+    const freq = enMs(pas) >= 3600000 ? "1h" : pas;
+    const points = await chargerPlage(debut, fin, freq, progres);
+    lus = versMesures(points, freq, debut, fin, maintenant);
   }
-  const minutes = Math.min(PERSO_MAX, Math.max(PERSO_MIN, Math.ceil(besoin / 60000) + 1));
-  const cle = "-" + minutes + "m";
-  const points = await chargerMesures(cle);
-  const r = points.length ? lirePoints(points, cle, maintenant) : null;
-  return r ? r.lus : [];
+  return pas ? regrouper(lus, enMs(pas)).filter(c => c.p).map(c => ({ t: c.t, v: c.p })) : lus;
+}
+
+// Date de la toute première mesure (ms), cherchée une seule fois : tranches de 31 jours en remontant le temps
+// (moyennes d'1 jour : réponses très légères), jusqu'à HISTORIQUE_VIDES_MAX tranches vides d'affilée.
+let promesseHistorique = null;
+function debutHistorique() {
+  if (!promesseHistorique) {
+    promesseHistorique = (async () => {
+      let fin = Date.now(), vides = 0, premier = null;
+      for (let i = 0; i < HISTORIQUE_TRANCHES_MAX && vides < HISTORIQUE_VIDES_MAX; i++) {
+        const debut = fin - TRANCHE_MOY_MS;
+        const points = await appelerApiPlage(debut, fin, "1d");
+        if (points.length) {
+          vides = 0;
+          points.forEach(p => {
+            const t = new Date(p.time).getTime() - JOUR_MS;   // début de la journée moyennée
+            if (Number.isFinite(t) && (premier === null || t < premier)) premier = Math.max(t, debut);
+          });
+        } else {
+          vides++;
+        }
+        fin = debut;
+      }
+      return premier;   // null : aucune mesure du tout
+    })();
+    promesseHistorique.catch(() => { promesseHistorique = null; });   // échec réseau : on réessaiera
+  }
+  return promesseHistorique;
+}
+
+// Jours (1..31) d'un mois qui ont au moins une mesure, d'après les moyennes horaires du serveur (une requête par
+// mois, gardée en mémoire ; le mois en cours est redemandé au bout de 5 min).
+const joursMesures = new Map();   // "2026-10" -> { quand, promesse }
+function joursAvecMesures(annee, mois) {
+  const cle = annee + "-" + mois;
+  const maintenant = Date.now();
+  const debut = new Date(annee, mois, 1).getTime();
+  const finMois = new Date(annee, mois + 1, 1).getTime();
+  const connu = joursMesures.get(cle);
+  if (connu && (finMois <= connu.quand || maintenant - connu.quand < RAFRAICHISSEMENT_MS)) return connu.promesse;
+  let promesse;
+  if (debut >= maintenant) {
+    promesse = Promise.resolve(new Set());
+  } else {
+    promesse = chargerPlage(debut, Math.min(finMois, maintenant), "1h").then(points => {
+      const jours = new Set();
+      points.forEach(p => {
+        const d = new Date(new Date(p.time).getTime() - 1);   // datée à la fin de l'heure : 1 ms avant = dans l'heure
+        if (d.getFullYear() === annee && d.getMonth() === mois) jours.add(d.getDate());
+      });
+      return jours;
+    });
+    promesse.catch(() => joursMesures.delete(cle));
+  }
+  joursMesures.set(cle, { quand: maintenant, promesse });
+  return promesse;
 }
 
 // Construit le texte CSV. Colonnes : seulement les mesures présentes sur la période + l'indice ATMO (PM2.5 / PM10 / PM1).
@@ -4165,63 +4418,326 @@ function telecharger(nom, texte) {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
-function initExport() {
-  const bouton = document.getElementById("bouton-export");
-  const panneau = document.getElementById("export");
-  if (!bouton || !panneau) return;
-  const choix = document.getElementById("export-periode");
-  const dates = document.getElementById("export-dates");
-  const du = document.getElementById("export-du");
-  const au = document.getElementById("export-au");
-  const ok = document.getElementById("export-ok");
-  const preparerDates = () => {
-    const maintenant = Date.now();
-    du.min = au.min = versChampDate(maintenant - PERSO_MAX * 60000);
-    du.max = au.max = versChampDate(maintenant);
-    if (!au.value) au.value = versChampDate(maintenant);
-    if (!du.value) du.value = versChampDate(maintenant - 24 * 3600000);
+// ---------- Calendrier « Dates précises » ----------
+// Grille d'un mois (semaine du lundi au dimanche). Jour blanc : des mesures existent, on peut le choisir.
+// Jour noir : aucune mesure (ou jour à venir), non sélectionnable. Premier clic = premier jour, second clic = dernier
+// jour ; un clic avant le premier jour le remplace. Flèches du clavier : jour voisin ; Page préc. / suiv. : mois voisin.
+let majCalendrierLangue = function () {};
+function creerCalendrier() {
+  const racine = document.getElementById("cal");
+  const grille = document.getElementById("cal-grille");
+  const semaine = document.getElementById("cal-semaine");
+  const titre = document.getElementById("cal-mois");
+  const prec = document.getElementById("cal-prec");
+  const suiv = document.getElementById("cal-suiv");
+  const choix = document.getElementById("cal-choix");
+  const hDu = document.getElementById("export-h-du");
+  const hAu = document.getElementById("export-h-au");
+  if (!racine || !grille) return null;
+
+  const auj = new Date();
+  let vue = { annee: auj.getFullYear(), mois: auj.getMonth() };
+  let debut = null, fin = null, survol = null;   // minuit (ms) des jours choisis
+  let premierMois = null;                        // { annee, mois } de la première mesure, une fois connu
+  let jours = null;                              // Set des jours mesurés du mois affiché (null : en cours)
+  let erreur = null;
+  let focusJour = null;                          // jour à reprendre au clavier après un nouveau rendu
+  let jeton = 0;
+  let boutons = [];
+
+  const estDispo = t => {
+    const d = new Date(t);
+    return jours !== null && d.getFullYear() === vue.annee && d.getMonth() === vue.mois && jours.has(d.getDate()) && t <= Date.now();
   };
+  const dateLongue = t => I18N.date(t, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const dateCourte = t => I18N.date(t, { day: "numeric", month: "short", year: "numeric" });
+
+  function ecrireChoix() {
+    choix.classList.toggle("erreur", !!erreur);
+    if (erreur) { choix.textContent = trad("cal.erreur", { message: texteErreur(erreur) }); return; }
+    if (debut === null) { choix.textContent = trad(jours === null ? "cal.chargement" : "cal.choisir_debut"); return; }
+    const dernier = fin === null ? debut : fin;
+    const n = Math.round((dernier - debut) / JOUR_MS) + 1;
+    choix.textContent = (fin === null && n === 1 ? trad("cal.choisir_fin") + " " : "")
+      + tradp("cal.resume", n, { du: dateCourte(debut), au: dateCourte(dernier), n: nb(n, 0) });
+  }
+
+  // Construit la grille du mois affiché (état de chaque jour), puis la sélection.
+  function rendre() {
+    const avaitFocus = racine.contains(document.activeElement) && document.activeElement.classList.contains("cal-jour");
+    const premierJour = new Date(vue.annee, vue.mois, 1);
+    titre.textContent = I18N.date(premierJour.getTime(), { month: "long", year: "numeric" });
+    const finVue = new Date(vue.annee, vue.mois + 1, 1).getTime();
+    suiv.disabled = finVue > Date.now();
+    prec.disabled = !!premierMois && (vue.annee < premierMois.annee || (vue.annee === premierMois.annee && vue.mois <= premierMois.mois));
+    // jours de la semaine, du lundi au dimanche (5 janvier 2026 = un lundi)
+    semaine.replaceChildren(...[0, 1, 2, 3, 4, 5, 6].map(i =>
+      el("span", "", I18N.date(new Date(2026, 0, 5 + i).getTime(), { weekday: "short" }).replace(/\.$/, ""))));
+    const decalage = (premierJour.getDay() + 6) % 7;   // lundi = 0
+    const nbJours = new Date(vue.annee, vue.mois + 1, 0).getDate();
+    const cases = [];
+    for (let i = 0; i < decalage; i++) cases.push(el("span", "cal-hors"));
+    boutons = [];
+    const aujourdhui = minuit(Date.now());
+    for (let j = 1; j <= nbJours; j++) {
+      const t = new Date(vue.annee, vue.mois, j).getTime();
+      const b = el("button", "cal-jour", String(j));
+      b.type = "button";
+      b.dataset.t = String(t);
+      const dispo = estDispo(t);
+      let etat;
+      if (erreur) { b.classList.add("vide"); etat = trad("cal.inconnu"); }
+      else if (jours === null && t <= Date.now()) { b.classList.add("attente"); etat = trad("cal.chargement"); }
+      else if (!dispo) { b.classList.add("vide"); etat = trad("cal.vide"); }
+      else etat = trad("cal.dispo");
+      if (!dispo) b.setAttribute("aria-disabled", "true");
+      if (t === aujourdhui) b.classList.add("auj");
+      b.setAttribute("aria-label", trad("cal.aria_jour", { date: dateLongue(t), etat }));
+      b.tabIndex = -1;
+      boutons.push(b);
+      cases.push(b);
+    }
+    grille.replaceChildren(...cases);
+    majSelection(avaitFocus);
+  }
+
+  // Met à jour la sélection (premier / dernier jour, jours entre les deux) sans reconstruire la grille.
+  function majSelection(garderFocus) {
+    const finChoix = fin !== null ? fin : (debut !== null && survol !== null && survol >= debut ? survol : debut);
+    boutons.forEach(b => {
+      const t = Number(b.dataset.t);
+      b.classList.toggle("dans", debut !== null && t >= debut && t <= finChoix);
+      b.classList.toggle("debut", t === debut);
+      b.classList.toggle("fin", finChoix !== null && t === finChoix);
+      b.setAttribute("aria-pressed", String(t === debut || t === fin));
+      b.tabIndex = -1;
+    });
+    // un seul jour atteignable au Tab : celui du clavier, sinon le choisi, sinon aujourd'hui, sinon le premier jour mesuré
+    const cible = boutons.find(b => Number(b.dataset.t) === focusJour)
+      || boutons.find(b => b.getAttribute("aria-pressed") === "true")
+      || boutons.find(b => b.classList.contains("auj") && !b.hasAttribute("aria-disabled"))
+      || boutons.find(b => !b.hasAttribute("aria-disabled"))
+      || boutons[0];
+    if (cible) {
+      cible.tabIndex = 0;
+      if (garderFocus) cible.focus({ preventScroll: true });
+    }
+    ecrireChoix();
+  }
+
+  function charger() {
+    const ici = ++jeton;
+    jours = null;
+    erreur = null;
+    rendre();
+    joursAvecMesures(vue.annee, vue.mois).then(s => {
+      if (ici !== jeton) return;
+      jours = s;
+      rendre();
+    }, e => {
+      if (ici !== jeton) return;
+      erreur = e;
+      rendre();
+    });
+  }
+
+  function allerMois(n) {
+    const d = new Date(vue.annee, vue.mois + n, 1);
+    if (d.getTime() > Date.now()) return;
+    if (premierMois && (d.getFullYear() < premierMois.annee || (d.getFullYear() === premierMois.annee && d.getMonth() < premierMois.mois))) return;
+    vue = { annee: d.getFullYear(), mois: d.getMonth() };
+    charger();
+  }
+
+  prec.addEventListener("click", () => allerMois(-1));
+  suiv.addEventListener("click", () => allerMois(1));
+
+  grille.addEventListener("click", e => {
+    const b = e.target.closest(".cal-jour");
+    if (!b || b.hasAttribute("aria-disabled")) return;
+    const t = Number(b.dataset.t);
+    if (debut === null || fin !== null || t < debut) { debut = t; fin = null; }
+    else fin = t;
+    focusJour = t;
+    survol = null;
+    majSelection(false);
+    messageExport("export.aide");
+  });
+  grille.addEventListener("pointerover", e => {
+    if (debut === null || fin !== null || e.pointerType === "touch") return;
+    const b = e.target.closest(".cal-jour");
+    const t = b ? Number(b.dataset.t) : null;
+    if (t !== survol) { survol = t; majSelection(false); }
+  });
+  grille.addEventListener("pointerleave", () => { if (survol !== null) { survol = null; majSelection(false); } });
+  grille.addEventListener("keydown", e => {
+    const b = e.target.closest(".cal-jour");
+    if (!b) return;
+    const pas = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[e.key];
+    if (e.key === "PageUp" || e.key === "PageDown") { e.preventDefault(); focusJour = null; allerMois(e.key === "PageUp" ? -1 : 1); return; }
+    if (!pas) return;
+    e.preventDefault();
+    const t = jourDecale(Number(b.dataset.t), pas);
+    const d = new Date(t);
+    focusJour = t;
+    if (d.getMonth() !== vue.mois || d.getFullYear() !== vue.annee) { allerMois(pas > 0 ? 1 : -1); return; }
+    majSelection(true);
+  });
+
+  // Heure (minutes depuis minuit) d'un champ "HH:MM", ou la valeur par défaut
+  const minutesDe = (champ, defaut) => {
+    const m = /^(\d{1,2}):(\d{2})/.exec(champ.value || "");
+    return m ? Number(m[1]) * 60 + Number(m[2]) : defaut;
+  };
+
+  majCalendrierLangue = () => { if (!racine.hidden) rendre(); };
+
+  return {
+    ouvrir() {
+      charger();
+      // le mois de la première mesure borne le bouton « mois précédent »
+      debutHistorique().then(t => {
+        if (t === null) return;
+        const d = new Date(t);
+        premierMois = { annee: d.getFullYear(), mois: d.getMonth() };
+        if (!racine.hidden) rendre();
+      }, () => {});
+    },
+    // { debut, fin } en ms (heures comprises), ou null si aucun jour n'est choisi
+    bornes() {
+      if (debut === null) return null;
+      const dernier = fin === null ? debut : fin;
+      const a = new Date(debut); a.setMinutes(minutesDe(hDu, 0));
+      const b = new Date(dernier); b.setMinutes(minutesDe(hAu, 23 * 60 + 59), 59, 999);
+      if (b.getTime() <= a.getTime()) return null;
+      return { debut: a.getTime(), fin: b.getTime() };
+    },
+    focus() { const b = boutons.find(x => x.tabIndex === 0); if (b) b.focus(); else prec.focus(); },
+  };
+}
+
+function initExport() {
+  const boutonBarre = document.getElementById("bouton-export");
+  const boutonGraphe = document.getElementById("bouton-export-graphe");
+  const panneau = document.getElementById("export");
+  if (!boutonBarre || !panneau) return;
+  const choix = document.getElementById("export-periode");
+  const champPas = document.getElementById("export-pas");
+  const ok = document.getElementById("export-ok");
+  const calRacine = document.getElementById("cal");
+  const calendrier = creerCalendrier();
+  // Place d'origine du panneau (sous la barre) : il y revient quand on l'ouvre depuis la barre
+  const origine = { parent: panneau.parentNode, suivant: panneau.nextSibling };
+  let ouvertPar = null;
   messageExport("export.aide");
 
-  bouton.addEventListener("click", () => {
-    const ouvrir = panneau.hidden;
-    panneau.hidden = !ouvrir;
-    bouton.setAttribute("aria-expanded", String(ouvrir));
-    if (ouvrir) { preparerDates(); messageExport("export.aide"); choix.focus(); }
-  });
-  panneau.addEventListener("keydown", e => {
-    if (e.key === "Escape") { panneau.hidden = true; bouton.setAttribute("aria-expanded", "false"); bouton.focus(); }
-  });
+  const boutons = [boutonBarre, boutonGraphe].filter(Boolean);
+  const majBoutons = () => boutons.forEach(b => b.setAttribute("aria-expanded", String(!panneau.hidden && b === ouvertPar)));
+  const fermer = rendreLeFocus => {
+    if (panneau.hidden) return;
+    panneau.hidden = true;
+    const b = ouvertPar;
+    ouvertPar = null;
+    majBoutons();
+    if (rendreLeFocus && b) b.focus();
+  };
+  const majDates = () => {
+    const dates = choix.value === "dates";
+    if (calRacine) calRacine.hidden = !dates;
+    if (dates && calendrier) calendrier.ouvrir();
+  };
+  const ouvrir = declencheur => {
+    if (!panneau.hidden && ouvertPar === declencheur) { fermer(false); return; }
+    // Depuis les courbes : le panneau s'ouvre juste au-dessus du graphe, sur la période affichée
+    if (declencheur === boutonGraphe) {
+      declencheur.closest(".outils-graphe").after(panneau);
+      if (panneau.hidden) choix.value = "affichee";
+    } else {
+      origine.parent.insertBefore(panneau, origine.suivant);
+    }
+    const etaitFerme = panneau.hidden;
+    panneau.hidden = false;
+    ouvertPar = declencheur;
+    majBoutons();
+    majDates();
+    if (etaitFerme) messageExport("export.aide");
+    choix.focus({ preventScroll: true });
+    if (declencheur === boutonGraphe) {
+      const r = panneau.getBoundingClientRect();
+      if (r.top < 0 || r.top > window.innerHeight * 0.6) panneau.scrollIntoView({ block: "nearest", behavior: reduit() ? "auto" : "smooth" });
+    }
+  };
+  boutons.forEach(b => b.addEventListener("click", () => ouvrir(b)));
+  panneau.addEventListener("keydown", e => { if (e.key === "Escape") fermer(true); });
   choix.addEventListener("change", () => {
-    dates.hidden = choix.value !== "dates";
-    if (!dates.hidden) { preparerDates(); du.focus(); }
+    majDates();
+    if (choix.value === "dates" && calendrier) calendrier.focus();
   });
 
   panneau.addEventListener("submit", async e => {
     e.preventDefault();
+    if (ok.disabled) return;
     const maintenant = Date.now();
-    const bornes = bornesExport(maintenant);
-    if (!bornes) { messageExport("export.erreur_dates", true); du.focus(); return; }
-    const pas = document.getElementById("export-pas").value;
+    const pas = champPas.value;
     const format = document.getElementById("export-format").value;
     ok.disabled = true;
-    messageExport("export.chargement");
     try {
-      const lus = await mesuresPourExport(bornes.debut, maintenant);
-      const dedans = lus.filter(l => l.t >= bornes.debut && l.t <= bornes.fin);
-      const lignes = pas
-        ? regrouper(dedans, enMs(pas)).filter(c => c.p).map(c => ({ t: c.t, v: c.p }))
-        : dedans;
+      let bornes;
+      if (choix.value === "tout") {
+        messageExport("export.recherche");
+        const premier = await debutHistorique();
+        if (premier === null) { messageExport("export.vide", true); return; }
+        bornes = { debut: premier, fin: maintenant };
+      } else if (choix.value === "dates") {
+        bornes = calendrier ? calendrier.bornes() : null;
+        if (!bornes) { messageExport("export.erreur_dates", true); if (calendrier) calendrier.focus(); return; }
+        bornes.fin = Math.min(bornes.fin, maintenant);
+      } else if (choix.value === "affichee") {
+        bornes = { debut: maintenant - reglagesPeriode(periodeActuelle).duree, fin: maintenant };
+      } else {
+        bornes = { debut: maintenant - Number(choix.value) * 60000, fin: maintenant };
+      }
+      messageExport("export.chargement");
+      const progres = (i, n) => { if (n > 1) messageExport("export.progression", false, { i: nb(i + 1, 0), n: nb(n, 0) }); };
+      const lignes = await mesuresExport(bornes.debut, bornes.fin, pas, maintenant, progres);
       if (!lignes.length) { messageExport("export.vide", true); return; }
       const nom = "labonnemair_" + horodatageFichier(bornes.debut) + "_" + horodatageFichier(bornes.fin)
         + (pas ? "_moy" + pas : "_brut") + ".csv";
       telecharger(nom, texteCsv(lignes, format, pas));
       messageExport("export.fait", false, { n: nb(lignes.length, 0) }, lignes.length);
     } catch (erreur) {
-      messageExport("export.erreur", true, { message: texteErreur(erreur) });
+      if (erreur && erreur.i18n && erreur.i18n.cle === "export.erreur_brut") { messageExport("export.erreur_brut", true); champPas.focus(); }
+      else messageExport("export.erreur", true, { message: texteErreur(erreur) });
     } finally {
       ok.disabled = false;
     }
+  });
+}
+
+// ---------- Raccourci « Aller aux mesures » ----------
+// Bouton flottant, visible une fois l'écran d'entrée (plein écran) passé, tant que la barre des mesures n'est pas
+// atteinte et que le lien « Voir les mesures » du bandeau n'est pas à l'écran.
+function initAllerMesures() {
+  const bouton = document.getElementById("aller-mesures");
+  const cible = document.getElementById("mesures");
+  if (!bouton || !cible || !("IntersectionObserver" in window)) return;
+  const lienBandeau = document.querySelector(".hero .descendre");
+  let avant = true;          // la barre des mesures est encore plus bas dans la page
+  let lienVisible = false;
+  const maj = () => { bouton.hidden = !avant || lienVisible; };
+  new IntersectionObserver(([e]) => {
+    avant = !e.isIntersecting && e.boundingClientRect.top > 0;
+    maj();
+  }, { rootMargin: "0px 0px -35% 0px" }).observe(cible);
+  if (lienBandeau) new IntersectionObserver(([e]) => { lienVisible = e.isIntersecting; maj(); }).observe(lienBandeau);
+  bouton.addEventListener("click", () => {
+    const y = cible.getBoundingClientRect().top + window.scrollY;
+    // loin (plusieurs écrans d'animations) : saut direct ; sinon défilement doux
+    const direct = reduit() || Math.abs(y - window.scrollY) > window.innerHeight * 3;
+    try { window.scrollTo({ top: y, behavior: direct ? "instant" : "smooth" }); }
+    catch (err) { window.scrollTo(0, y); }
+    const periode = cible.querySelector(".periode.actif") || cible.querySelector("button");
+    if (periode) periode.focus({ preventScroll: true });
   });
 }
 
@@ -4267,6 +4783,7 @@ function demarrer() {
   securise(initEtoilesOuverture);
   securise(initBoutonAnimations);
   securise(initPleinEcran);
+  securise(initAllerMesures);
   securise(ajusterHero);   // avant même les données : le bandeau tient dans l'écran dès l'arrivée
   securise(() => {   // « Haut de page » : le bandeau est épinglé (sticky), l'ancre #hero ne menait donc pas tout en haut
     const haut = document.querySelector(".haut");
@@ -4322,6 +4839,7 @@ function demarrer() {
     securise(majPerso);
     securise(ecrireAide);
     securise(ecrireAideExport);
+    securise(majCalendrierLangue);
     securise(majMenuPas);
     securise(majPleinLangue);
     securise(() => { if (nuage) nuage.majLangue(); });
