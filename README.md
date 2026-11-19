@@ -89,9 +89,7 @@ Sans réseau, la mesure est rangée en flash puis renvoyée plus tard avec son �
 ├── patch-lang.js               # Outil : met à jour des clés de traduction dans les 3 langues
 ├── Firmware/
 │   ├── platformio.ini          # Configuration PlatformIO
-│   ├── src/main.cpp            # Programme de la carte
-│   └── simulation/             # Simulation sur PC : coupures Wi-Fi (code d'envoi, LISEZMOI.md)
-│       └── carte/              #   et carte complète : écran, capteurs, pannes de plusieurs jours (LISEZMOI.md)
+│   └── src/main.cpp            # Programme de la carte
 └── .github/
     ├── workflows/surveillance-capteur.yml   # Tâche planifiée toutes les 5 min
     └── scripts/surveiller-capteur.mjs       # Vérifie que le capteur envoie encore
@@ -193,7 +191,7 @@ Le serveur AirCarto date chaque mesure à sa **réception** (champ `time`). Une 
 - Vues 6 h et 24 h, export CSV jusqu'à 7 jours : le site travaille sur les **mesures brutes** et corrige chacune.
 - Vue 7 jours, durées personnalisées de plus de 24 h et export au-delà de 7 jours : le site reçoit des moyennes calculées par le serveur **par heure de réception**, `x_age_s` compris, et datées à la fin de leur tranche. Pendant un rattrapage, une tranche mélange des mesures rejouées et des mesures fraîches. Le site repère ces tranches à leur `x_age_s` moyen (plus de 30 s, alors qu'un envoi en direct a 0 à 12 s), redemande pour elles seules les mesures brutes et remet chacune à son heure. Les autres moyennes sont ramenées au début de leur tranche.
 - Le site écarte aussi les mesures reçues deux fois (même heure réelle à ±5 s, mêmes valeurs).
-- Précision vérifiée en simulation : **±1 s** (voir [`Firmware/simulation`](Firmware/simulation/LISEZMOI.md)).
+- Précision vérifiée en simulation : **±1 s**.
 
 ---
 
