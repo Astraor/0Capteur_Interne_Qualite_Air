@@ -72,7 +72,7 @@ window.I18N_DICT.en = {
   "lecture.decisif": "Key value",
   "lecture.mesure": "Measured",
   "lecture.conseil": "To do",
-  "lecture.aucune": "No PM2.5 or PM10 reading received.",
+  "lecture.aucune": "No particle reading (PM2.5, PM10, PM1) received.",
   /* ---------- Manifesto ---------- */
   "manifeste.aria": "About the sensor",
   "manifeste.texte": "Sensors continuously measure CO₂, fine particles, temperature and humidity to assess the air quality of your home.",
@@ -244,7 +244,7 @@ window.I18N_DICT.en = {
   "comp.indice.h3": "How is the “The air is…” verdict calculated?",
   "comp.indice.p1": "Pollutants do not all weigh the same, yet we use <strong>no average and no weighting</strong>: we apply the official ATMO index rule (French order of 10 July 2020). Each pollutant gets a <em>sub-index</em> on its own scale, and the verdict is the <strong>worst sub-index</strong>.",
   "comp.indice.p2": "The “weighting” is already built into the thresholds: PM2.5, finer and more harmful, become “poor” from 26 µg/m³, PM10 only from 51 µg/m³. An average would mislead: with PM2.5 = 30 µg/m³ (poor) and PM10 = 15 µg/m³ (good), it would report “fair” air, whereas a single high pollutant is enough to make the air poor.",
-  "comp.indice.p3": "Included in the verdict: <strong>PM2.5 and PM10</strong>. Not included: <strong>PM1</strong> (no ATMO threshold) and <strong>CO₂</strong>, which is not an index pollutant but a ventilation indicator: it is shown separately (“Ventilation” line of the banner). Limits: the full ATMO index also covers ozone, nitrogen dioxide and sulphur dioxide, which our sensor does not measure, and it uses daily averages; our verdict is therefore a partial, indicative index computed over the last 5 minutes.",
+  "comp.indice.p3": "Included in the verdict: <strong>PM2.5, PM10 and PM1</strong>. The ATMO index sets no threshold for PM1, so we apply <strong>the same thresholds as PM2.5</strong>. Since PM1 is part of PM2.5 (a particle under 1 µm is also under 2.5 µm), its value is almost always lower or equal: it rarely changes the verdict, but it has its own colour and its own alert. Not included: <strong>CO₂</strong>, which is not an index pollutant but a ventilation indicator: it is shown separately (“Ventilation” line of the banner). Limits: the full ATMO index also covers ozone, nitrogen dioxide and sulphur dioxide, which our sensor does not measure, and it uses daily averages; our verdict is therefore a partial, indicative index computed over the last 5 minutes.",
   "export.bouton": "CSV export",
   "export.aria": "Export the readings as CSV",
   "export.periode": "Period",
