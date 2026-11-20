@@ -1,4 +1,5 @@
 # Relais Cloudflare de La Bonne M'Air (offre gratuite). Mise en ligne : npx wrangler deploy (voir LISEZMOI.md)
+# Wrangler 4.36 ou plus récent (pour [[ratelimits]]) : npx wrangler --version
 name = "mair-relais"
 main = "src/index.js"
 compatibility_date = "2025-10-01"
@@ -8,8 +9,10 @@ compatibility_date = "2025-10-01"
 DEPOT_GITHUB = "Astraor/0Capteur_Interne_Qualite_Air"
 # Site autorisé à lire les mesures par /donnees (plusieurs : séparés par des virgules ; localhost toujours accepté)
 ORIGINES_SITE = "https://astraor.github.io"
+# Plage maximale par requête à /donnees (en jours) : le site découpe en tranches de 31 jours au plus
+PLAGE_MAX_JOURS = "32"
 
-# Mémoire du relais (journal, commandes en attente) : un Durable Object avec sa petite base SQLite (offre gratuite)
+# Mémoire du relais (journal, commandes en attente, sessions) : un Durable Object avec sa petite base SQLite (offre gratuite)
 [[durable_objects.bindings]]
 name = "RELAIS"
 class_name = "Relais"
@@ -18,8 +21,23 @@ class_name = "Relais"
 tag = "v1"
 new_sqlite_classes = ["Relais"]
 
-# Secrets (jamais dans ce fichier) :
+# Limites de débit par adresse IP (bloc /64 en IPv6), gérées par Cloudflare, gratuites.
+# namespace_id : un nombre que tu choisis, unique sur ton compte Cloudflare.
+# Console + carte : la console lit toutes les 2 s (30/min), la carte aussi en direct (30/min).
+[[ratelimits]]
+name = "LIMITE"
+namespace_id = "1001"
+simple = { limit = 150, period = 60 }
+
+# Le site public (/donnees)
+[[ratelimits]]
+name = "LIMITE_DONNEES"
+namespace_id = "1002"
+simple = { limit = 60, period = 60 }
+
+# Secrets (jamais dans ce fichier) — 16 caractères minimum, idéalement aléatoires : openssl rand -base64 24
 #   npx wrangler secret put JETON_CARTE            le même que « set jeton ... » sur la carte
-#   npx wrangler secret put MOT_DE_PASSE_CONSOLE   pour ouvrir la page console
+#   npx wrangler secret put MOT_DE_PASSE_CONSOLE   pour ouvrir la page console (le changer déconnecte tout le monde)
 #   npx wrangler secret put AIRCARTO_CLE           clé du groupe AirCarto (le site la demande au relais, plus à GitHub)
-#   npx wrangler secret put GITHUB_TOKEN           seulement si le dépôt devient privé (lecture des releases)
+#   npx wrangler secret put GITHUB_TOKEN           seulement si le dépôt devient privé : jeton « fine-grained »,
+#                                                  ce seul dépôt, permission Contents = Read-only
