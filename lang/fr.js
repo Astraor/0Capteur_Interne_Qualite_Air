@@ -94,8 +94,8 @@ window.I18N_DICT.fr = {
   "reel.1.t": "Tout ce qui compte dans l’air d’une pièce.",
   "reel.1.p": "Particules fines PM1, PM2.5 et PM10, et CO₂ : les indicateurs clés d’un air intérieur sain.",
   "reel.2.u": "s",
-  "reel.2.t": "Une mesure toutes les 30 secondes.",
-  "reel.2.p": "Les capteurs sont lus toutes les 10 secondes ; chaque envoi donne la moyenne et le pic de la période.",
+  "reel.2.t": "Une mesure toutes les 10 secondes.",
+  "reel.2.p": "Les capteurs sont lus chaque seconde ; chaque envoi donne la moyenne et le pic de ces 10 secondes.",
   "reel.3.u": "capteurs",
   "reel.3.t": "Un laser pour les particules. L’infrarouge pour le CO₂.",
   "reel.3.p": "Le NextPM compte les particules par diffusion laser ; le MH-Z19C mesure le CO₂ par absorption infrarouge (NDIR).",
@@ -228,7 +228,7 @@ window.I18N_DICT.fr = {
 
   /* ---------- Pied de page ---------- */
   "pied.source.dt": "Source",
-  "pied.source.dd": "Capteur de qualité de l'air, qui envoie ses mesures au serveur AirCarto (api.aircarto.fr), environ toutes les 30\u00a0secondes.",
+  "pied.source.dd": "Capteur de qualité de l'air, qui envoie ses mesures au serveur AirCarto (api.aircarto.fr), environ toutes les 10\u00a0secondes.",
   "pied.mesures.dt": "Mesures",
   "pied.mesures.dd": "Particules fines PM1, PM2.5 et PM10 (µg/m³), température (°C), humidité relative (%) et CO₂ (ppm).",
   "pied.traitement.dt": "Traitement",

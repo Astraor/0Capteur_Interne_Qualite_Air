@@ -1191,9 +1191,9 @@
           <p data-i18n="reel.1.p">Particules fines PM1, PM2.5 et PM10, et CO₂ : les indicateurs clés d’un air intérieur sain.</p>
         </li>
         <li class="atout">
-          <p class="atout-chiffre">30<small data-i18n="reel.2.u">s</small></p>
-          <h3 data-i18n="reel.2.t">Une mesure toutes les 30 secondes.</h3>
-          <p data-i18n="reel.2.p">Les capteurs sont lus toutes les 10 secondes ; chaque envoi donne la moyenne et le pic de la période.</p>
+          <p class="atout-chiffre">10<small data-i18n="reel.2.u">s</small></p>
+          <h3 data-i18n="reel.2.t">Une mesure toutes les 10 secondes.</h3>
+          <p data-i18n="reel.2.p">Les capteurs sont lus chaque seconde ; chaque envoi donne la moyenne et le pic de ces 10 secondes.</p>
         </li>
         <li class="atout">
           <p class="atout-chiffre">2<small data-i18n="reel.3.u">capteurs</small></p>
@@ -1466,7 +1466,7 @@
       <p class="pied-marque"><img class="pied-logo" src="img/logo.svg" alt="" width="64" height="64" loading="lazy" decoding="async">La Bonne M’air</p>
       <dl class="pied-donnees">
         <dt data-i18n="pied.source.dt">Source</dt>
-        <dd data-i18n="pied.source.dd">Capteur de qualité de l'air, qui envoie ses mesures au serveur AirCarto (api.aircarto.fr), environ toutes les 30&nbsp;secondes.</dd>
+        <dd data-i18n="pied.source.dd">Capteur de qualité de l'air, qui envoie ses mesures au serveur AirCarto (api.aircarto.fr), environ toutes les 10&nbsp;secondes.</dd>
 
         <dt data-i18n="pied.mesures.dt">Mesures</dt>
         <dd data-i18n="pied.mesures.dd">Particules fines PM1, PM2.5 et PM10 (µg/m³), température (°C), humidité relative (%) et CO₂ (ppm).</dd>
@@ -1543,7 +1543,7 @@ const MOYENNE = { "-6h": "5m", "-24h": "15m", "-7d": "1h" };
 // (secondes écoulées entre la mesure et son envoi) : heure réelle = heure de réception − x_age_s.
 // Pour que la correction soit juste, il faut des points NON moyennés par le serveur (sinon une mesure
 // rejouée se mélange à une mesure en direct dans la même moyenne). On demande donc :
-//   - FREQ_API : "" = points bruts (une mesure toutes les 30 s) ; sinon, une moyenne fine du serveur ;
+//   - FREQ_API : "" = points bruts (une mesure toutes les 10 s, 30 s pendant une coupure) ; sinon, une moyenne fine du serveur ;
 //   - FREQ_SECOURS : utilisée si le serveur refuse la requête sans "freq".
 // La moyenne affichée (MOYENNE ci-dessus) est ensuite recalculée ici, par la page.
 const CHAMP_AGE = "x_age_s";const FREQ_API = { "-6h": "", "-24h": "", "-7d": "5m" };
@@ -1787,11 +1787,14 @@ function hexVersRgba(hex, alpha) {
   return "rgba(" + (n >> 16) + "," + ((n >> 8) & 255) + "," + (n & 255) + "," + alpha + ")";
 }
 
-// Indice du niveau (0 = Bon … 3 = Très élevé) d'une valeur, ou -1 si le champ n'a pas de seuils.
+// Indice du niveau (0 = Bon … 5 = Extrêmement mauvais) d'une valeur, ou -1 si le champ n'a pas de seuils.
+// Même règle que la carte : une valeur PILE sur un seuil reste dans le niveau le plus bas (PM2.5 = 10 -> Bon,
+// CO₂ = 800 -> Bon), et l'on compare la valeur arrondie à l'unité (10,4 -> 10 -> Bon ; 10,5 -> 11 -> Moyen).
 function indiceNiveau(champ, valeur) {
   const s = SEUILS[champ];
   if (!s) return -1;
-  const i = s.limites.findIndex(limite => valeur <= limite);
+  const v = Math.round(valeur);
+  const i = s.limites.findIndex(limite => v <= limite);
   return i === -1 ? s.limites.length : i;
 }
 
@@ -2043,7 +2046,7 @@ function lirePoints(points, periode, maintenant, freq) {
 // Une mesure peut arriver DEUX fois au serveur : il l'a enregistrée mais sa réponse s'est perdue en route, la carte
 // la renvoie donc plus tard. Les deux copies ont deux heures de réception différentes, mais une fois remises à leur
 // heure réelle (x_age_s), elles tombent à la même seconde (± 1 s) avec exactement les mêmes valeurs : on en garde une.
-// (Deux vraies mesures d'une même carte sont espacées d'au moins 30 s.) lus doit être trié dans le temps.
+// (Deux vraies mesures d'une même carte sont espacées d'au moins 10 s.) lus doit être trié dans le temps.
 function sansDoublons(lus) {
   const garde = [];
   for (const l of lus) {

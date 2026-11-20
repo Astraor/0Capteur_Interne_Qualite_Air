@@ -40,10 +40,11 @@
  *
  * CHAMPS ENVOYÉS (JSON plat, nombres uniquement) :
  *   standard : device_id, uptime, rssi, heap, co2, pm1, pm25, pm10
- *              (co2 / pm = MOYENNE sur la période de mesure)
+ *              (co2 / pm = MOYENNE des lectures de la période : capteurs lus chaque seconde, une mesure toutes
+ *               les 10 s en direct, 30 s hors ligne ou pendant un rattrapage, 60 s sur batterie)
  *   perso :
  *     x_age_s          secondes entre la mesure et son envoi
- *                       (0-12 en direct, plus pour une mesure rejouée)
+ *                       (0-2 en direct, plus pour une mesure rejouée)
  *     x_co2_max         pic de CO2 sur la période (ppm)
  *     x_pm25_max        pic de PM2.5 sur la période (ug/m3)
  *     x_aeration        1 = chute rapide du CO2 détectée (fenêtre ouverte ?)
@@ -66,9 +67,12 @@
  * mesures stockées est donc limité à ~6 par minute, quoi qu'on fasse sur la carte. Pour s'en approcher :
  *   - l'écart est compté entre les DÉBUTS de deux envois (10 s + une petite marge auto-ajustée sur les 429) ;
  *   - une ligne écartée sans envoi (illisible, heure inconnue) ne consomme pas de créneau ;
- *   - plus de 10 mesures en retard : une mesure fraîche par minute au lieu de 30 s (plus de créneaux pour
- *     le retard) ; "status" donne le temps de rattrapage estimé.
- *   100 mesures en retard : ~20 min (contre ~35 min avant). Plancher absolu imposé par le serveur : ~17 min.
+ *   - en direct, une mesure toutes les 10 s : elle est bouclée au moment précis où le serveur accepte l'envoi
+ *     suivant (10 s + la marge), et part aussitôt. Sans ce calage, une mesure produite toutes les 10 s pile
+ *     arrive un peu plus vite que le serveur ne les accepte : elles s'empileraient ;
+ *   - des mesures en retard : une mesure fraîche toutes les 30 s (2 créneaux sur 3 pour le retard), et toutes
+ *     les 60 s au-delà de 10 en retard ; "status" donne le temps de rattrapage estimé.
+ *   - hors ligne : une mesure toutes les 30 s, pour garder ~12 h dans la mémoire flash (4 h seulement à 10 s).
  *
  * VERSIONS : ce programme est écrit pour ESP32 Arduino 2.x. Dans platformio.ini :
  *   platform = espressif32@^6.0.0
@@ -79,7 +83,7 @@
 //
 // 1. setup() prépare tout, une seule fois : écran, capteurs, Wi-Fi, mémoire flash, tâche d'envoi.
 // 2. loop() tourne ensuite sans arrêt (cœur 1). Elle ne fait aucun travail long : chaque travail se déclenche
-//    quand son délai est écoulé (lecture des capteurs toutes les 10 s, une mesure toutes les 30 s, etc.).
+//    quand son délai est écoulé (lecture des capteurs chaque seconde, une mesure toutes les 10 s, etc.).
 // 3. Trois acteurs travaillent en parallèle :
 //    - loop()       : capteurs, animations, écran, commandes tapées dans le moniteur série ;
 //    - refreshTask  : rafraîchit l'écran LED en continu (cœur 0, réveillée par un timer toutes les 4 ms) ;
@@ -186,7 +190,7 @@ static const bool DETECTION_SECTEUR_ACTIVE = false;
 
 // --- Matériel optionnel : -1 = absent (aucun code actif) ---
 #define PIN_BOUTON -1  // GPIO libre, bouton vers GND : appui court = page suivante, long = envoi immédiat
-#define PIN_BUZZER -1  // GPIO libre, buzzer ACTIF : bip si CO2 >= SEUIL_ALARME_PPM
+#define PIN_BUZZER -1  // GPIO libre, buzzer ACTIF : bip si CO2 > SEUIL_ALARME_PPM
 
 // --- Luminosité (0..255) ---
 // Luminosité de l'écran selon la situation (255 = maximum).
@@ -199,12 +203,18 @@ static const int HEURE_NUIT_FIN   = 7;
 
 // --- Intervalles (ms) ---
 // Rythme de chaque travail : loop() lance un travail quand (maintenant - dernier passage) >= son intervalle.
-static const unsigned long INTERVALLE_LECTURE_MS   = 10000;      // lecture des capteurs
+static const unsigned long INTERVALLE_LECTURE_MS   = 1000;       // lecture des capteurs : chaque seconde (les deux capteurs
+                                                                  // font eux-mêmes une mesure par seconde : plus vite = doublons)
+static const unsigned long LECTURE_EN_PANNE_MS     = 10000;      // capteur en panne : relu toutes les 10 s seulement (une lecture
+                                                                  // ratée attend la fin du délai de réponse : jusqu'à 2 s en Modbus)
+static const uint8_t ECHECS_AVANT_PANNE            = 10;         // lectures ratées de suite avant « en panne » (~10 s)
 static const unsigned long INTERVALLE_PAGE_MS       = 5000;       // durée d'affichage de chaque page (une seule information par page)
-static const unsigned long PERIODE_MESURE_MS        = 30000;      // une mesure (moyenne + pic) toutes les 30 s
-static const unsigned long PERIODE_MESURE_BATT_MS   = 60000;      // idem sur batterie
+static const unsigned long PERIODE_MESURE_MS        = 10000;      // en direct : une mesure (moyenne + pic des lectures) toutes les 10 s
+static const unsigned long PERIODE_MESURE_HORS_LIGNE_MS = 30000;  // hors ligne, ou quelques mesures en retard : toutes les 30 s
+static const unsigned long PERIODE_MESURE_BATT_MS   = 60000;      // sur batterie
 static const unsigned long PERIODE_MESURE_RATTRAPAGE_MS = 60000;  // pendant le renvoi d'un gros retard (voir SEUIL_RATTRAPAGE)
 static const uint32_t SEUIL_RATTRAPAGE              = 10;         // plus de 10 mesures en retard : 1 mesure / min le temps de rattraper
+static const unsigned long ATTENTE_CRENEAU_MAX_MS   = 30000;      // en direct, une mesure attend le créneau d'envoi 30 s au plus
 static const unsigned long ECART_PUSH_MIN_MS        = 10000;      // entre 2 envois (le serveur exige >= 10 s, pas d'envoi groupé)
 static const unsigned long MARGE_PUSH_INIT_MS       = 800;        // marge au-dessus des 10 s (absorbe la variation du temps de connexion)
 static const unsigned long MARGE_PUSH_MIN_MS        = 400;        // la marge descend jusque-là tant que le serveur ne dit rien
@@ -219,6 +229,12 @@ static const unsigned long CHAUFFE_MHZ_MS            = 180000UL;  // MH-Z19C : e
 // après 3 lectures écartées de suite, la page CO2 affiche « A CALIBRER ».
 static const int CO2_MIN_PLAUSIBLE = 300;
 static const int CO2_MAX_PLAUSIBLE = 5000;
+// CO2 très élevé : au-dessus de CO2_CONFIRMATION_PPM, une lecture ne compte qu'une fois CONFIRMÉE par
+// CO2_NB_CONFIRMATION lectures de suite (une par seconde) au-dessus du seuil ET proches les unes des autres
+// (toutes à ± CO2_ECART_CONFIRMATION de leur médiane). Un pic isolé ou des valeurs qui sautent sont ignorés.
+static const int CO2_CONFIRMATION_PPM    = 3000;
+static const uint8_t CO2_NB_CONFIRMATION = 5;
+static const float CO2_ECART_CONFIRMATION = 0.10f;
 static const unsigned long ANTIREBOND_SECTEUR_MS     = 500;
 static const unsigned long WIFI_TIMEOUT_PSK_MS       = 20000UL;   // délai max pour se connecter à un Wi-Fi classique
 static const unsigned long WIFI_TIMEOUT_EAP_MS       = 35000UL;   // eduroam est plus lent (authentification ENT)
@@ -251,15 +267,15 @@ static const unsigned long ATTENTE_HEURE_MAX_MS = 900000UL;  // 15 min : au-del�
 #define COURBE_NB_BARRES     15
 #define COURBE_MIN_PAR_BARRE 4
 #define HIST_N (COURBE_NB_BARRES * COURBE_MIN_PAR_BARRE - 1)  // minutes terminées gardées (59) + la minute en cours = 1 h
-static const float SEUIL_AERER_PPM      = 1000;    // page "AERER" au-dessus (et x_pct_co2_1000)
-static const float SEUIL_ALARME_PPM     = 1500;    // buzzer au-dessus
+static const float SEUIL_AERER_PPM      = 1000;    // page "AERER" au-dessus de 1000 (1000 pile = encore « moyen ») et x_pct_co2_1000
+static const float SEUIL_ALARME_PPM     = 1500;    // buzzer au-dessus de 1500 (niveau « mauvais »)
 static const float AERATION_CHUTE_PPM   = 100;     // chute de CO2 en ~2 min = aération
 static const unsigned long BUZZER_PAUSE_MS = 300000UL;  // un bip toutes les 5 min au plus
 
 // --- Alerte « hors norme » (changement brutal de l'écran) ---
 // Niveaux : 0 bon | 1 moyen | 2 dégradé | 3 mauvais | 4 très mauvais | 5 extrêmement mauvais (indice ATMO)
 // PM : alerte à partir de « MAUVAIS » (PM2.5 et PM1 > 25 ug/m3, PM10 > 50 ug/m3 : 50 = valeur limite journalière UE des PM10).
-// CO2 : alerte à partir du niveau 2 (>= 1000 ppm = SEUIL_AERER_PPM) : la page AERER s'affiche d'un coup.
+// CO2 : alerte à partir du niveau 2 (> 1000 ppm = SEUIL_AERER_PPM) : la page AERER s'affiche d'un coup.
 static const int NIVEAU_ALERTE_PM  = 3;
 static const int NIVEAU_ALERTE_CO2 = 2;
 static const unsigned long ALERTE_FLASH_MS    = 150;     // durée d'une image du clignotement plein écran
@@ -269,13 +285,15 @@ static const unsigned long ALERTE_REARME_MS   = 60000UL; // un même polluant ne
 
 // --- Seuils d'affichage ---
 // Une échelle = ses seuils + la façon de les comparer :
-//   inclus = false : valeur <  seuil[i] => niveau i   (CO2 : seuils "à partir de")
-//   inclus = true  : valeur <= seuil[i] => niveau i   (indice ATMO : seuils "jusqu'à", valeur arrondie au 1/10)
+//   inclus = false : valeur <  seuil[i] => niveau i   (seuils "à partir de" : plus utilisé)
+//   inclus = true  : valeur <= seuil[i] => niveau i   (seuils "jusqu'à", valeur arrondie comme à l'écran)
+// Règle commune à la carte et au site : une valeur PILE sur un seuil est classée dans le niveau le plus BAS
+// (PM2.5 = 10 -> bon ; CO2 = 800 -> bon), et l'on compare la valeur arrondie à l'unité (10,4 -> 10 -> bon).
 struct Echelle { const float* seuils; uint8_t n; bool inclus; };
 
-// CO2 (ppm) : vert < 800 | jaune < 1000 | orange < 1500 | rouge >= 1500
+// CO2 (ppm) : bon <= 800 | moyen <= 1000 | dégradé <= 1500 | mauvais > 1500
 static const float SEUILS_CO2[] = {800, 1000, 1500};
-static const Echelle ECH_CO2 = {SEUILS_CO2, 3, false};
+static const Echelle ECH_CO2 = {SEUILS_CO2, 3, true};
 // PM2.5 (ug/m3), indice ATMO (arrêté du 10 juillet 2020, https://www.atmo-france.org/article/lindice-atmo) :
 //   bon <= 10 | moyen <= 20 | dégradé <= 25 | mauvais <= 50 | très mauvais <= 75 | extrêmement mauvais > 75
 // Aussi utilisé pour PM1 (pas de seuils réglementaires). L'ATMO porte sur des moyennes JOURNALIÈRES :
@@ -401,7 +419,7 @@ Agregat agPM10 = {0, 0, 0};
 
 // Statistiques CO2
 uint32_t nCO2Total = 0, nCO2Haut = 0;  // pour x_pct_co2_1000
-float tamponCO2[12];                   // ~2 min de lectures (détection d'aération)
+float tamponCO2[12];                   // ~2 min de CO2, un point toutes les 10 s (détection d'aération)
 uint8_t tamponIdx = 0, tamponN = 0;
 bool aerationPeriode = false;
 uint16_t histCO2[HIST_N];              // courbe : moyenne du CO2 de chacune des dernières minutes (0 = minute sans mesure)
@@ -569,11 +587,18 @@ bool estNuit() {
   return (h >= HEURE_NUIT_DEBUT || h < HEURE_NUIT_FIN);
 }
 
-// Durée d'une période de mesure : plus longue sur batterie (énergie), et pendant le renvoi d'un gros retard :
-// le serveur n'accepte qu'un envoi toutes les 10 s, donc chaque mesure fraîche en moins laisse un créneau au retard.
+// Durée d'une période de mesure (la moyenne de toutes les lectures de la période est envoyée) :
+//   - en direct, rien en retard : 10 s ;
+//   - hors ligne (ou clé absente / refusée) : 30 s, pour que la mémoire flash garde ~12 h ;
+//   - des mesures en retard : 30 s, puis 60 s au-delà de SEUIL_RATTRAPAGE. Le serveur n'accepte qu'un envoi
+//     toutes les 10 s : chaque mesure fraîche en moins laisse un créneau au retard ;
+//   - sur batterie : 60 s (énergie).
+bool envoiPossible();   // (plus bas, avec l'envoi)
 unsigned long periodeMesureMs() {
   if (!estSurSecteur) return PERIODE_MESURE_BATT_MS;
-  if (nbLignesAttente > SEUIL_RATTRAPAGE && reseauOK()) return PERIODE_MESURE_RATTRAPAGE_MS;
+  if (!envoiPossible()) return PERIODE_MESURE_HORS_LIGNE_MS;
+  if (nbLignesAttente > SEUIL_RATTRAPAGE) return PERIODE_MESURE_RATTRAPAGE_MS;
+  if (nbLignesAttente > 0) return PERIODE_MESURE_HORS_LIGNE_MS;
   return PERIODE_MESURE_MS;
 }
 
@@ -1013,7 +1038,8 @@ void verifierMemoire() {
 // =====================================================================
 // Met à jour une Mesure après une tentative de lecture.
 // Lecture réussie : filtre médian sur les 3 dernières valeurs (écarte une valeur aberrante isolée).
-// Lecture ratée : la valeur n'est plus considérée à jour, et après 3 échecs de suite le capteur passe en erreur.
+// Lecture ratée : la valeur n'est plus considérée à jour, et après ECHECS_AVANT_PANNE échecs de suite (~10 s)
+// le capteur passe en erreur.
 void majMesure(Mesure &m, bool lectureOk, float valeur) {
   if (lectureOk) {
     // filtre médian sur les 3 dernières lectures brutes
@@ -1025,7 +1051,8 @@ void majMesure(Mesure &m, bool lectureOk, float valeur) {
     m.aJour = true;
   } else {
     m.aJour = false;  // l'ancienne valeur ne sera plus envoyée
-    if (++m.echecs >= 3) m.etat = CAPTEUR_ERREUR;  // tolère 2 échecs consécutifs
+    if (m.echecs < 255) m.echecs++;
+    if (m.echecs >= ECHECS_AVANT_PANNE) m.etat = CAPTEUR_ERREUR;  // tolère quelques échecs isolés
   }
 }
 
@@ -1122,6 +1149,28 @@ bool capteursDejaChauds() {
 
 bool co2HorsPlage = false;        // la dernière lecture écartée l'était pour une valeur impossible
 uint32_t nbCO2HorsPlage = 0;      // lectures écartées depuis le démarrage (commande status)
+uint32_t nbCO2NonConfirmes = 0;   // lectures > CO2_CONFIRMATION_PPM ignorées faute de confirmation (commande status)
+
+// Lecture au-dessus de CO2_CONFIRMATION_PPM : est-elle confirmée ? On garde les dernières lectures hautes CONSÉCUTIVES ;
+// confirmé = CO2_NB_CONFIRMATION lectures de suite au-dessus du seuil, toutes à ± CO2_ECART_CONFIRMATION de leur
+// médiane (des valeurs « pareilles »). Une lecture sous le seuil remet la série à zéro.
+bool co2HautConfirme(int co2) {
+  static int serie[CO2_NB_CONFIRMATION];
+  static uint8_t n = 0;
+  if (co2 <= CO2_CONFIRMATION_PPM) { n = 0; return true; }   // pas concerné
+  if (n == CO2_NB_CONFIRMATION) {                              // série pleine : on décale (la plus ancienne sort)
+    for (uint8_t i = 1; i < n; i++) serie[i - 1] = serie[i];
+    n--;
+  }
+  serie[n++] = co2;
+  if (n < CO2_NB_CONFIRMATION) return false;
+  int tri[CO2_NB_CONFIRMATION];
+  memcpy(tri, serie, sizeof(tri));
+  for (uint8_t i = 1; i < n; i++)                              // tri par insertion (5 valeurs)
+    for (uint8_t j = i; j > 0 && tri[j - 1] > tri[j]; j--) { int t = tri[j]; tri[j] = tri[j - 1]; tri[j - 1] = t; }
+  float med = tri[n / 2];
+  return (tri[0] >= med * (1.0f - CO2_ECART_CONFIRMATION)) && (tri[n - 1] <= med * (1.0f + CO2_ECART_CONFIRMATION));
+}
 
 void lireMHZ() {
 #if MHZ_ACTIVE
@@ -1139,6 +1188,13 @@ void lireMHZ() {
     LOG("CO2 = %d ppm : valeur impossible, lecture écartée (capteur à recalibrer ?)\n", co2);
   }
   if (repond) co2HorsPlage = !plausible;
+  if (plausible && !co2HautConfirme(co2)) {
+    // très élevé mais pas (encore) confirmé : ni affiché, ni moyenné, ni envoyé. Ce n'est pas une panne.
+    nbCO2NonConfirmes++;
+    mCO2.aJour = false;
+    LOG("CO2 = %d ppm : au-dessus de %d ppm, en attente de confirmation\n", co2, CO2_CONFIRMATION_PPM);
+    return;
+  }
   majMesure(mCO2, plausible, (float)co2);
 #else
   forcerEtat(mCO2, CAPTEUR_ERREUR);
@@ -1158,13 +1214,25 @@ void lectureDemo() {
 }
 
 // Lit les deux capteurs, puis écrit une ligne de journal (visible seulement avec « verbose on »).
+// Un capteur en panne n'est relu que toutes les LECTURE_EN_PANNE_MS : chaque lecture ratée bloque jusqu'à la fin
+// du délai de réponse, ce qui figerait loop() presque en permanence avec une lecture par seconde.
 void lireCapteurs() {
+  unsigned long now = millis();
 #if MODE_DEMO
   lectureDemo();
 #else
-  lireMHZ();
-  lireNextPM();
+  static unsigned long tCO2 = 0, tPM = 0;
+  static bool premiere = true;
+  if (premiere || mCO2.etat != CAPTEUR_ERREUR || now - tCO2 >= LECTURE_EN_PANNE_MS) { tCO2 = now; lireMHZ(); }
+  else mCO2.aJour = false;
+  if (premiere || mPM25.etat != CAPTEUR_ERREUR || now - tPM >= LECTURE_EN_PANNE_MS) { tPM = now; lireNextPM(); }
+  else { mPM1.aJour = false; mPM25.aJour = false; mPM10.aJour = false; }
+  premiere = false;
 #endif
+  // journal : une ligne toutes les 10 s (une par seconde rendrait le moniteur illisible)
+  static unsigned long tLog = 0;
+  if (now - tLog < 10000UL) return;
+  tLog = now;
   LOG("CO2=%.0f ppm (etat %d) | PM1=%.1f PM2.5=%.1f PM10=%.1f ug/m3 (etat %d)",
       mCO2.valeur, mCO2.etat, mPM1.valeur, mPM25.valeur, mPM10.valeur, mPM25.etat);
   if (!isnan(tempPM)) LOG(" | T=%.1f C", tempPM);
@@ -1188,7 +1256,14 @@ void agregatRaz(Agregat &a) {
 }
 
 // Chute rapide du CO2 par rapport à il y a ~2 min : fenêtre ouverte ?
+// Le tampon garde une valeur toutes les 10 s (12 valeurs = 2 min), quel que soit le rythme de lecture.
 void detecterAeration(float co2) {
+  static unsigned long tPoint = 0;
+  static bool init = false;
+  unsigned long now = millis();
+  if (init && now - tPoint < 10000UL) return;
+  init = true;
+  tPoint = now;
   if (tamponN == 12) {
     float ancien = tamponCO2[tamponIdx];  // la plus ancienne, sur le point d'être écrasée
     if (ancien - co2 >= AERATION_CHUTE_PPM) aerationPeriode = true;
@@ -1702,8 +1777,7 @@ void gererEnvois(unsigned long now) {
     Serial.println("File d'attente vidée.");
   }
 
-  bool cleUtilisable = !cleInvalide || now - tCleRefusee >= ESSAI_CLE_MS;   // clé refusée : un essai toutes les 15 min
-  bool enLigne = reseauOK() && cleOK() && cleUtilisable;
+  bool enLigne = reseauOK() && cleOK() && (!cleInvalide || now - tCleRefusee >= ESSAI_CLE_MS);   // clé refusée : un essai / 15 min
 
   // Pas de réseau (ou pas de clé valide) : tout ce qui attend en RAM est mis de côté en flash
   if (!enLigne) {
@@ -1726,6 +1800,27 @@ void gererEnvois(unsigned long now) {
   if (nbLignesAttente == 0) return;
   if (tAttenteHeure != 0 && now - tEssaiNtp < ATTENTE_NTP_REESSAI_MS) return;  // l'heure NTP n'est pas encore là
   rejouerUneLigne();
+}
+
+// Le réseau et la clé permettent-ils d'envoyer ? (pour choisir le rythme des mesures : voir periodeMesureMs)
+bool envoiPossible() {
+  return reseauOK() && cleOK() && !cleInvalide;
+}
+
+// La mesure de la période est-elle due ? Appelée par loop().
+// En direct (10 s), la mesure est bouclée quand le serveur accepte l'envoi suivant (10 s + la marge) et que plus
+// rien n'attend en RAM : elle part dans les 50 ms, avec x_age_s = 0. Bouclée à 10 s pile, elle arriverait un peu
+// plus vite que le serveur ne les accepte : les mesures s'empileraient. Elle couvre donc 10 s ou un peu plus
+// (toutes les lectures depuis la précédente : aucune n'est perdue). Sécurité : ATTENTE_CRENEAU_MAX_MS au plus.
+bool mesureDue(unsigned long now, unsigned long tDebut) {
+  unsigned long p = periodeMesureMs();
+  unsigned long ecoule = now - tDebut;
+  if (ecoule < p) return false;
+  if (p != PERIODE_MESURE_MS) return true;                 // hors ligne, rattrapage, batterie : rythme fixe
+  if (ecoule >= ATTENTE_CRENEAU_MAX_MS) return true;
+  if (nbPendantes > 0) return false;                       // la précédente n'est pas encore partie
+  if (!dejaPoste) return true;
+  return millis() - tDernierPush + 100UL >= ecartCourantMs();
 }
 
 // Tâche d'envoi : un POST qui traîne (jusqu'à ~5 s) ne bloque plus l'écran ni les capteurs.
@@ -1859,7 +1954,7 @@ int niveauIndiceATMO(const char** pire, const Mesure** mPire = nullptr, const Ec
 
 // Vrai si le CO2 dépasse le seuil d'aération : déclenche la page « AERER ».
 bool alerteAerer() {
-  return mCO2.etat == CAPTEUR_OK && mCO2.valeur >= SEUIL_AERER_PPM;
+  return mCO2.etat == CAPTEUR_OK && mCO2.valeur > SEUIL_AERER_PPM;   // 1000 pile = encore « moyen »
 }
 
 // Valeur à afficher : celle qui glisse vers la vraie valeur (ou la vraie valeur si ANIMATIONS 0)
@@ -2598,7 +2693,7 @@ void declencherAlerte(uint8_t i, int niv, const char* nom, unsigned long now) {
   LOG("ALERTE %s : niveau %d (%s)\n", nom, niv, LABELS_NIVEAU[niv]);
 }
 
-// Appelée après chaque lecture des capteurs (toutes les 10 s).
+// Appelée après chaque lecture des capteurs (chaque seconde ; le filtre médian écarte déjà un pic isolé).
 // Une alerte se déclenche quand un polluant FRANCHIT son seuil, ou quand il EMPIRE pendant l'alerte.
 // Anti-rebond : une valeur qui oscille autour du seuil ne refait pas clignoter l'écran plus d'une fois par minute.
 // PM1 suit les seuils des PM2.5. Comme PM1 <= PM2.5, les deux passent souvent en alerte ensemble : un seul éclair
@@ -3017,7 +3112,7 @@ void surveillerBouton(unsigned long now) {
 #if PIN_BUZZER >= 0
 // Buzzer optionnel : un bip si le CO2 dépasse le seuil d'alarme, au plus toutes les 5 min, jamais la nuit.
 void gererBuzzer(unsigned long now) {
-  if (mCO2.etat != CAPTEUR_OK || mCO2.valeur < SEUIL_ALARME_PPM) return;
+  if (mCO2.etat != CAPTEUR_OK || mCO2.valeur <= SEUIL_ALARME_PPM) return;
   if (estNuit()) return;  // pas de bip la nuit
   if (tDernierBip != 0 && now - tDernierBip < BUZZER_PAUSE_MS) return;
   tDernierBip = now;
@@ -3084,8 +3179,10 @@ void afficherStatus() {
   Serial.printf("CO2 : %s | lectures impossibles écartées : %u%s\n",
                 mCO2.etat == CAPTEUR_OK ? "ok" : (mCO2.etat == CAPTEUR_CHAUFFE ? "préchauffage" : "en erreur"),
                 (unsigned)nbCO2HorsPlage, co2HorsPlage ? " (dernière lecture hors plage : 'calib' à l'air libre ?)" : "");
-  Serial.printf("période de mesure : %lu s%s\n", periodeMesureMs() / 1000UL,
-                (estSurSecteur && periodeMesureMs() == PERIODE_MESURE_RATTRAPAGE_MS) ? " (rattrapage du retard)" : "");
+  if (nbCO2NonConfirmes > 0) Serial.printf("CO2 > %d ppm non confirmés (ignorés) : %u\n", CO2_CONFIRMATION_PPM, (unsigned)nbCO2NonConfirmes);
+  Serial.printf("lecture des capteurs : toutes les %lu ms | période de mesure : %lu s%s\n", INTERVALLE_LECTURE_MS,
+                periodeMesureMs() / 1000UL,
+                !estSurSecteur ? " (batterie)" : !envoiPossible() ? " (hors ligne)" : nbLignesAttente > 0 ? " (rattrapage du retard)" : " (en direct)");
   Serial.printf("alimentation : %s\n", estSurSecteur ? "secteur" : "batterie");
   Serial.printf("affichage détaillé : %s\n", verbose ? "oui" : "non");
 }
@@ -3439,7 +3536,7 @@ void loop() {
     verifierMemoire();
   }
 
-  // Toutes les 10 s : lecture des capteurs, puis mise à jour des moyennes et des pics.
+  // Chaque seconde : lecture des capteurs, puis mise à jour des moyennes et des pics.
   if (now - tLecture >= INTERVALLE_LECTURE_MS) {
     tLecture = now;
     lireCapteurs();
@@ -3454,8 +3551,9 @@ void loop() {
     ajouterHistorique();
   }
 
-  // Toutes les 30 s (60 s sur batterie) : la mesure de la période est prête, on la dépose pour l'envoi.
-  if (now - tPeriode >= periodeMesureMs()) {
+  // Toutes les 10 s en direct (30 s hors ligne ou en rattrapage, 60 s sur batterie) : la moyenne de la période
+  // est prête, on la dépose pour l'envoi (en direct, calée sur le créneau du serveur : voir mesureDue).
+  if (mesureDue(now, tPeriode)) {
     tPeriode = now;
     finaliserPeriode();
   }

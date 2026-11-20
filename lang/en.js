@@ -89,8 +89,8 @@ window.I18N_DICT.en = {
   "reel.1.t": "Everything that matters in a room’s air.",
   "reel.1.p": "Fine particles PM1, PM2.5 and PM10, and CO₂: the key indicators of healthy indoor air.",
   "reel.2.u": "s",
-  "reel.2.t": "A reading every 30 seconds.",
-  "reel.2.p": "The sensors are read every 10 seconds; each upload carries the average and the peak of the period.",
+  "reel.2.t": "A reading every 10 seconds.",
+  "reel.2.p": "The sensors are read every second; each upload carries the average and the peak of those 10 seconds.",
   "reel.3.u": "sensors",
   "reel.3.t": "A laser for particles. Infrared for CO₂.",
   "reel.3.p": "The NextPM counts particles by laser scattering; the MH-Z19C measures CO₂ by infrared absorption (NDIR).",
@@ -223,7 +223,7 @@ window.I18N_DICT.en = {
 
   /* ---------- Footer ---------- */
   "pied.source.dt": "Source",
-  "pied.source.dd": "Air quality sensor, which sends its readings to the AirCarto server (api.aircarto.fr) about every 30\u00a0seconds.",
+  "pied.source.dd": "Air quality sensor, which sends its readings to the AirCarto server (api.aircarto.fr) about every 10\u00a0seconds.",
   "pied.mesures.dt": "Measurements",
   "pied.mesures.dd": "Fine particles PM1, PM2.5 and PM10 (µg/m³), temperature (°C), relative humidity (%) and CO₂ (ppm).",
   "pied.traitement.dt": "Processing",
