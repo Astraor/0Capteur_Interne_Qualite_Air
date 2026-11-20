@@ -12,7 +12,8 @@
 //    Fermée toute seule dès qu'un CO2 valable revient. Pas évaluée quand la carte est muette (une seule alerte).
 //
 // Variables d'environnement (fournies par le workflow) :
-//   AIRCARTO_CLE   clé du groupe (secret du dépôt) ; vide -> lue dans index.html (const CLE = "...")
+//   AIRCARTO_CLE   clé du groupe (secret du dépôt, facultatif) : interroge AirCarto directement ;
+//                  vide -> passe par le relais Cloudflare du site (const URL_API = "..." dans index.html), sans clé
 //   DEVICE_ID      adresse MAC d'une carte (facultatif, "" = toutes les cartes du groupe)
 //   SEUIL_MIN      minutes sans mesure avant l'alerte (défaut 10)
 //   SEUIL_CO2_MIN  minutes sans CO2 valable (alors que les autres mesures arrivent) avant l'alerte CO2 (défaut 60)
@@ -32,24 +33,26 @@ const DEPOT = process.env.GITHUB_REPOSITORY;
 const PROPRIO = process.env.GITHUB_REPOSITORY_OWNER;
 const TOKEN = process.env.GITHUB_TOKEN;
 
-function lireCle() {
-  if (process.env.AIRCARTO_CLE) return process.env.AIRCARTO_CLE.trim();
+// Où lire les mesures : AirCarto directement (avec le secret AIRCARTO_CLE), sinon le relais du site (il ajoute la clé).
+function source() {
+  if (process.env.AIRCARTO_CLE) return { url: URL_API, cle: process.env.AIRCARTO_CLE.trim() };
   try {
-    const m = /const\s+CLE\s*=\s*"([0-9a-fA-F]{32})"/.exec(readFileSync("index.html", "utf8"));
-    if (m) return m[1];
+    const m = /const\s+URL_API\s*=\s*"(https:\/\/[^"]+)"/.exec(readFileSync("index.html", "utf8"));
+    if (m && !m[1].includes("A-REMPLACER")) return { url: m[1], cle: "" };
   } catch (e) { /* pas d'index.html */ }
-  return "";
+  return null;
 }
 
 // Mesures de la dernière heure (ou plus, pour couvrir SEUIL_CO2_MIN). Points bruts d'abord ; si le serveur exige
 // "freq", moyenne d'1 min.
-async function lirePoints(cle) {
+async function lirePoints(src) {
   const fenetreMin = Math.max(60, SEUIL_CO2_MIN + 5);
   for (const freq of ["", "1m"]) {
-    const params = new URLSearchParams({ key: cle, start: "-" + fenetreMin + "m" });
+    const params = new URLSearchParams({ start: "-" + fenetreMin + "m" });
+    if (src.cle) params.set("key", src.cle);
     if (freq) params.set("freq", freq);
     if (DEVICE_ID) params.set("device_id", DEVICE_ID);
-    const rep = await fetch(URL_API + "?" + params, { signal: AbortSignal.timeout(30000) });
+    const rep = await fetch(src.url + "?" + params, { signal: AbortSignal.timeout(30000) });
     let json = null;
     try { json = await rep.json(); } catch (e) { /* réponse illisible */ }
     if (json && json.ok) return json.points || [];
@@ -125,12 +128,12 @@ function etatCO2(points, maintenant) {
 }
 
 async function main() {
-  const cle = lireCle();
-  if (!cle) throw new Error("clé AirCarto introuvable (secret AIRCARTO_CLE ou index.html)");
+  const src = source();
+  if (!src) throw new Error("ni secret AIRCARTO_CLE, ni adresse du relais (const URL_API dans index.html)");
 
   let points;
   try {
-    points = await lirePoints(cle);
+    points = await lirePoints(src);
   } catch (e) {
     // Le serveur lui-même ne répond pas : ce n'est pas forcément le capteur. On le signale sans ouvrir d'issue
     // (sinon une panne du serveur AirCarto déclencherait une fausse alerte).

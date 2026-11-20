@@ -1525,9 +1525,10 @@ I18N.initialiser();   // traduit le HTML (data-i18n…) AVANT de démarrer la pa
 // =====================================================================
 // 1) RÉGLAGES
 // =====================================================================
-const CLE = "CLE-RETIREE-DE-L-HISTORIQUE";            // clé du groupe (32 caractères)
+// Les mesures passent par TON relais Cloudflare (dossier relais/) : c'est lui qui ajoute la clé du groupe AirCarto.
+// La clé n'est donc plus écrite ici, dans une page publique (elle permettait aussi d'envoyer de fausses mesures).
+const URL_API = "https://mair-relais.astraor.workers.dev/donnees";
 const DEVICE_ID = "";      // adresse MAC d'une carte, ou "" pour toutes
-const URL_API = "https://api.aircarto.fr/iut-amu/data";
 const RAFRAICHISSEMENT_MS = 5 * 60 * 1000;   // mise à jour toutes les 5 minutes (le serveur n'accepte pas plus souvent)
 
 // Une moyenne par intervalle selon la période : assez de points pour une
@@ -1870,7 +1871,7 @@ function texteErreur(erreur) {
 
 // Un appel à l'API. freq = "" : pas de moyenne côté serveur.
 async function appelerApi(periode, freq) {
-  const params = new URLSearchParams({ key: CLE, start: periode });
+  const params = new URLSearchParams({ start: periode });
   if (freq) params.set("freq", freq);
   return interrogerApi(params);
 }
@@ -1879,11 +1880,13 @@ async function appelerApi(periode, freq) {
 // Ses limites : 7 jours par requête en mesures brutes (sans freq), 31 jours avec une moyenne (freq).
 const isoServeur = t => new Date(t).toISOString().replace(/\.\d{3}Z$/, "Z");
 async function appelerApiPlage(debut, fin, freq) {
-  if (!CLE) throw erreurI18n("err.cle");
-  const params = new URLSearchParams({ key: CLE, start: isoServeur(debut), end: isoServeur(fin) });
+  if (!relaisRenseigne()) throw erreurI18n("err.cle");
+  const params = new URLSearchParams({ start: isoServeur(debut), end: isoServeur(fin) });
   if (freq) params.set("freq", freq);
   return interrogerApi(params);
 }
+
+const relaisRenseigne = () => !URL_API.includes("A-REMPLACER");
 
 async function interrogerApi(params) {
   if (DEVICE_ID) params.set("device_id", DEVICE_ID);
@@ -1984,7 +1987,7 @@ async function remplacerRejeus(points, freq) {
 }
 
 async function chargerMesures(periode) {
-  if (!CLE) {
+  if (!relaisRenseigne()) {
     throw erreurI18n("err.cle");
   }
   const reglages = reglagesPeriode(periode);
