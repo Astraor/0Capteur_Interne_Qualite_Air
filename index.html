@@ -274,7 +274,6 @@
   .langues button:focus-visible { outline: 3px solid currentColor; outline-offset: -5px; }
   @media (pointer: coarse) { .langues button { min-width: 44px; min-height: 44px; } }
   .ep-int .langues { margin-top: 10px; }
-  .pied-droite { display: grid; justify-items: end; gap: 18px; }
   @media print { .langues { display: none !important; } }
 
   /* ---------- Titre et verdict ---------- */
@@ -467,14 +466,6 @@
   }
   @media (min-width: 1228px) { .js .reel-avance { margin: 0 auto; width: calc(1180px - 2 * var(--gouttiere)); } }
   .reel-avance span { position: absolute; inset: 0; background: #8cc8f5; transform: scaleX(0); transform-origin: 0 50%; }
-
-  /* Nom du projet dans le pied de page */
-  .pied .pied-marque {   /* .pied : passe devant la règle générale « .pied p » (taille et marge) */
-    margin: 0 0 22px; font-family: "Cinzel Decorative", "Cinzel", Georgia, serif; font-weight: 700;
-    font-size: clamp(1.9rem, 5vw, 3.2rem); line-height: 1; color: #efe9dc !important; text-transform: uppercase; max-width: none !important;
-    display: flex; align-items: center; gap: .32em;
-  }
-  .pied-logo { flex: none; width: 1.25em; height: 1.25em; border-radius: 22%; box-shadow: 0 0 0 1px rgba(242, 244, 240, .14); }
 
   @media print {
     .js .ouverture, .js .reel { height: auto !important; }
@@ -942,20 +933,53 @@
   }
 
   /* ---------- Pied de page ---------- */
-  .pied { margin-top: clamp(30px, 5vw, 64px); padding: clamp(30px, 5vw, 52px) 0 36px; background: var(--encre); color: var(--fond); }
-  .pied-int { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 20px 40px; }
-  .pied p { margin: 0 0 6px; max-width: 62ch; font-size: .88rem; color: rgba(242, 244, 240, .78); }
+  .pied { margin-top: clamp(30px, 5vw, 64px); padding: clamp(36px, 5vw, 60px) 0 26px; background: var(--encre); color: var(--fond); }
   .pied :focus-visible { outline-color: #fff; }
-  .pied-texte { flex: 1 1 560px; min-width: 0; }
-  .pied-donnees { margin: 0 0 18px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px 28px; max-width: 86ch; }
-  .pied-donnees dt { margin-top: 12px; font: 600 .7rem/1.4 var(--mono); letter-spacing: .07em; text-transform: uppercase; color: rgba(242, 244, 240, .6); }
-  .pied-donnees dd { margin: 0; font-size: .88rem; color: rgba(242, 244, 240, .82); }
-  @media (min-width: 700px) {
-    .pied-donnees { grid-template-columns: 130px minmax(0, 1fr); }
-    .pied-donnees dt, .pied-donnees dd { margin-top: 0; padding: 9px 0; border-top: 1px solid rgba(242, 244, 240, .16); }
-    .pied-donnees dt { padding-top: 11px; }
+  .pied p { margin: 0; }
+  .pied a { color: inherit; text-decoration-color: rgba(242, 244, 240, .4); text-underline-offset: 3px; }
+  @media (hover: hover) { .pied a:hover { text-decoration-color: currentColor; } }
+  .pied-tete { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 18px 40px; padding-bottom: 26px; border-bottom: 1px solid rgba(242, 244, 240, .16); }
+  .pied-devise { margin-top: 10px !important; max-width: 40ch; font-size: 1rem; color: rgba(242, 244, 240, .78); }
+  /* état du capteur, recopié de la pastille du bandeau (même forme selon l'état) */
+  .pied-statut { display: inline-flex; align-items: center; gap: 10px; padding: 8px 14px; border: 1px solid rgba(242, 244, 240, .3); border-radius: 999px; font: 600 .74rem/1.3 var(--mono); color: rgba(242, 244, 240, .9); }
+  .pied-statut .point { position: relative; width: 9px; height: 9px; flex: none; border-radius: 50%; background: #50f0e6; }
+  .pied-statut.alerte .point { border-radius: 0; background: #f0e641; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+  .pied-statut.erreur .point { border-radius: 1px; background: #ff5050; }
+  .pied-statut.ok .point::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 2px solid #50f0e6; animation: onde 2.2s ease-out infinite; }
+  html.mouvement-reduit .pied-statut .point::after { animation: none; }
+  .pied-colonnes { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 30px 40px; padding: 30px 0 32px; }
+  .pied-col h2 { margin: 0 0 12px; font: 600 .7rem/1.4 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: rgba(242, 244, 240, .58); }
+  .pied-col, .pied-col p, .pied-col li, .pied-col dd { font-size: .88rem; line-height: 1.5; color: rgba(242, 244, 240, .84); }
+  .pied-col b { color: var(--fond); font-weight: 700; }
+  @media (min-width: 1000px) { .pied-colonnes { grid-template-columns: 1.35fr 1fr 1fr 1fr; } }
+  /* le chemin d'une mesure : une étape par ligne, reliées par un filet */
+  .pied-chemin ol { list-style: none; margin: 0; padding: 0; counter-reset: etape; }
+  .pied-chemin li { position: relative; padding: 0 0 12px 30px; counter-increment: etape; }
+  .pied-chemin li::before {
+    content: counter(etape); position: absolute; left: 0; top: 1px; width: 20px; height: 20px; display: grid; place-items: center;
+    border: 1.5px solid rgba(242, 244, 240, .5); border-radius: 50%; font: 600 .66rem/1 var(--mono); color: var(--fond);
   }
+  .pied-chemin li:not(:last-child)::after { content: ""; position: absolute; left: 9.5px; top: 23px; bottom: 2px; width: 1.5px; background: rgba(242, 244, 240, .25); }
+  .pied .insecable { white-space: nowrap; }
+  .pied-donnees { margin: 0; display: grid; gap: 2px; }
+  .pied-donnees dt { margin-top: 8px; font: 600 .68rem/1.4 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: rgba(242, 244, 240, .55); }
+  .pied-donnees dt:first-child { margin-top: 0; }
+  .pied-donnees dd { margin: 0; }
+  .pied-liens { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 6px; }
+  .pied-avert, .pied-outils { font-size: .78rem !important; color: rgba(242, 244, 240, .6) !important; }
+  .pied-col > p + .pied-liens { margin-top: 10px; }
+  .pied-equipe { margin-top: 8px !important; }
+  .pied sup { line-height: 0; }
+  .pied-bas { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 22px; padding-top: 22px; border-top: 1px solid rgba(242, 244, 240, .16); }
+  .pied-annee { margin-left: auto !important; font: 500 .72rem/1 var(--mono); color: rgba(242, 244, 240, .55); }
+  .pied .pied-marque {   /* .pied : passe devant la règle générale « .pied p » (taille et marge) */
+    margin: 0; font-family: "Cinzel Decorative", "Cinzel", Georgia, serif; font-weight: 700;
+    font-size: clamp(1.9rem, 5vw, 3.2rem); line-height: 1; color: #efe9dc; text-transform: uppercase;
+    display: flex; align-items: center; gap: .32em;
+  }
+  .pied-logo { flex: none; width: 1.25em; height: 1.25em; border-radius: 22%; box-shadow: 0 0 0 1px rgba(242, 244, 240, .14); }
   .haut { font-size: .85rem; font-weight: 700; font-stretch: 115%; text-decoration: none; border-bottom: 2px solid currentColor; padding-bottom: 3px; }
+  @media (max-width: 560px) { .pied-annee { margin-left: 0 !important; flex-basis: 100%; order: 3; } }
 
   /* ---------- Petits écrans ---------- */
   @media (max-width: 640px) {
@@ -1532,33 +1556,65 @@
 </main>
 
 <footer class="pied">
-  <div class="conteneur pied-int">
-    <div class="pied-texte">
-      <p class="pied-marque"><img class="pied-logo" src="img/logo.svg" alt="" width="64" height="64" loading="lazy" decoding="async">La Bonne M’air</p>
-      <dl class="pied-donnees">
-        <dt data-i18n="pied.source.dt">Source</dt>
-        <dd data-i18n="pied.source.dd">Capteur de qualité de l'air, qui envoie ses mesures au serveur AirCarto (api.aircarto.fr), environ toutes les 10&nbsp;secondes.</dd>
-
-        <dt data-i18n="pied.mesures.dt">Mesures</dt>
-        <dd data-i18n="pied.mesures.dd">Particules fines PM1, PM2.5 et PM10 (µg/m³), température (°C), humidité relative (%) et CO₂ (ppm).</dd>
-
-        <dt data-i18n="pied.traitement.dt">Traitement</dt>
-        <dd data-i18n="pied.traitement.dd">Chaque mesure est replacée à son heure réelle : le serveur la date à sa réception, et après une coupure la carte indique l'âge des mesures gardées en mémoire. La page en fait ensuite la moyenne par tranche de temps (5&nbsp;min sur 6&nbsp;h, 15&nbsp;min sur 24&nbsp;h, 1&nbsp;h sur 7&nbsp;jours&nbsp;; pour une durée personnalisée, le pas est choisi pour garder environ 180 points au plus). Un trou dans une courbe signifie qu'aucune mesure n'a été reçue.</dd>
-
-        <dt data-i18n="pied.actualisation.dt">Actualisation</dt>
-        <dd data-i18n-html="pied.actualisation.dd">Automatique <span id="frequence">toutes les 5 minutes</span> (limite imposée par le serveur). Dernière actualisation de la page&nbsp;: <span id="pied-maj">—</span>.</dd>
-
-        <dt data-i18n="pied.niveaux.dt">Niveaux</dt>
-        <dd data-i18n="pied.niveaux.dd">Seuils de l'indice ATMO (Atmosud) pour les particules et du HCSP pour le CO₂, détaillés dans «&nbsp;Comprendre les mesures&nbsp;». Capteur à bas coût&nbsp;: les valeurs sont indicatives et n'ont pas de valeur réglementaire.</dd>
-
-        <dt data-i18n="pied.outils.dt">Outils</dt>
-        <dd data-i18n="pied.outils.dd">Graphes&nbsp;: Chart.js 4.4.1. Polices&nbsp;: Archivo et Chivo Mono (Google Fonts).</dd>
-      </dl>
-
-      <p data-i18n-html="pied.projet">Projet réalisé par <mark class="a-completer">[À COMPLÉTER : noms du groupe]</mark>.</p>
+  <div class="conteneur">
+    <!-- En-tête : nom, phrase, état du capteur en direct (recopié du bandeau) -->
+    <div class="pied-tete">
+      <div>
+        <p class="pied-marque"><img class="pied-logo" src="img/logo.svg" alt="" width="64" height="64" loading="lazy" decoding="async">La Bonne M’air</p>
+        <p class="pied-devise" data-i18n="pied.devise">Le capteur qui veille sur l’air que vous respirez, installé à Marseille.</p>
+      </div>
+      <p class="pied-statut" id="pied-statut" aria-hidden="true"><span class="point"></span><span id="pied-statut-texte">—</span></p>
     </div>
 
-    <div class="pied-droite">
+    <div class="pied-colonnes">
+      <!-- 1. Le chemin d'une mesure, du capteur à la page -->
+      <section class="pied-col pied-chemin" aria-labelledby="pied-chemin-titre">
+        <h2 id="pied-chemin-titre" data-i18n="pied.chemin.titre">D’où viennent les données</h2>
+        <ol>
+          <li data-i18n-html="pied.chemin.1"><b>Capteurs</b> NextPM (particules) et MH-Z19C (CO₂), lus chaque seconde.</li>
+          <li data-i18n-html="pied.chemin.2"><b>Carte ESP32</b> : moyenne et pic sur 10&nbsp;s, envoyés au serveur AirCarto. Sans réseau, les mesures sont gardées puis renvoyées.</li>
+          <li data-i18n-html="pied.chemin.3"><b>Relais Cloudflare</b> (<span class="insecable">mair-relais.astraor.workers.dev</span>)&nbsp;: protège la clé d'accès à l'API AirCarto. Elle reste cachée sur le relais au lieu d'être lisible dans cette page publique, et personne ne peut s'en servir pour envoyer de fausses mesures.</li>
+          <li data-i18n-html="pied.chemin.4"><b>Cette page</b> : remet chaque mesure à son heure réelle, puis en fait la moyenne par tranche de temps.</li>
+        </ol>
+      </section>
+
+      <!-- 2. Ce qui est mesuré, avec quelle incertitude, à quel rythme -->
+      <section class="pied-col" aria-labelledby="pied-mesures-titre">
+        <h2 id="pied-mesures-titre" data-i18n="pied.mesures.titre">Mesures</h2>
+        <dl class="pied-donnees">
+          <dt data-i18n="pied.grandeurs.dt">Grandeurs</dt>
+          <dd data-i18n="pied.grandeurs.dd">PM1, PM2.5 et PM10 (µg/m³) · CO₂ (ppm)</dd>
+          <dt data-i18n="pied.incert.dt">Incertitude</dt>
+          <dd data-i18n="pied.incert.dd">±(1 µg/m³ + 10 %) pour les particules, ±(50 ppm + 5 %) pour le CO₂ (fiches techniques)</dd>
+          <dt data-i18n="pied.actualisation.dt">Actualisation</dt>
+          <dd data-i18n-html="pied.actualisation.dd">Automatique, <span id="frequence">toutes les 5 minutes</span>. Dernière&nbsp;: <span id="pied-maj">—</span></dd>
+        </dl>
+      </section>
+
+      <!-- 3. Repères officiels -->
+      <section class="pied-col" aria-labelledby="pied-reperes-titre">
+        <h2 id="pied-reperes-titre" data-i18n="pied.reperes.titre">Repères</h2>
+        <ul class="pied-liens">
+          <li data-i18n-html="pied.reperes.atmo"><a href="https://www.atmo-france.org/article/lindice-atmo" target="_blank" rel="noopener">Atmo France · indice ATMO</a> pour les particules</li>
+          <li data-i18n-html="pied.reperes.hcsp"><a href="https://www.hcsp.fr/Explore.cgi/Telecharger?NomFichier=hcspa20210428_covaravenetmesducodanleserp.pdf" target="_blank" rel="noopener">HCSP · 800 ppm</a> pour le CO₂</li>
+        </ul>
+        <p class="pied-avert" data-i18n="pied.avert">Capteurs à bas coût : valeurs indicatives, sans valeur réglementaire.</p>
+      </section>
+
+      <!-- 4. Le projet -->
+      <section class="pied-col" aria-labelledby="pied-projet-titre">
+        <h2 id="pied-projet-titre" data-i18n="pied.projet.titre">Le projet</h2>
+        <p data-i18n-html="pied.projet">BUT Mesures physiques, 3<sup>e</sup>&nbsp;année<br>IUT Aix-Marseille</p>
+        <p class="pied-equipe" data-i18n="pied.equipe">Projet réalisé par Gabriel, Simon, Guillaume et Titouan.</p>
+        <ul class="pied-liens">
+          <li><a href="https://github.com/Astraor/0Capteur_Interne_Qualite_Air" target="_blank" rel="noopener" data-i18n="pied.code">Code source sur GitHub</a></li>
+        </ul>
+        <p class="pied-outils" data-i18n="pied.outils">Chart.js 4.4.1 · Archivo, Chivo Mono, Cinzel Decorative</p>
+      </section>
+    </div>
+
+    <!-- Bas de page : réglages et retour en haut -->
+    <div class="pied-bas">
       <!-- Sélecteur de langue n° 3 : pied de page (le bandeau d'accueil se range en défilant) -->
       <div class="langues" role="group" data-i18n-attr="aria-label:lang.groupe" aria-label="Langue">
         <button type="button" data-lang="fr" lang="fr" aria-label="Français" aria-pressed="true">FR</button>
@@ -1566,7 +1622,8 @@
         <button type="button" data-lang="ja" lang="ja" aria-label="日本語" aria-pressed="false">日本語</button>
       </div>
       <button type="button" class="bouton-anim" id="bouton-anim" aria-pressed="false">Animations : activées</button>
-      <a class="haut" href="#piste" data-i18n-html="pied.haut">Haut de page <span aria-hidden="true">↑</span></a>
+      <p class="pied-annee">© 2026 La Bonne M’air</p>
+      <a class="haut" href="#ouverture" data-i18n-html="pied.haut">Haut de page <span aria-hidden="true">↑</span></a>
     </div>
   </div>
 </footer>
@@ -1915,6 +1972,8 @@ let etatCourant = { classe: "etat", fabrique: () => trad("etat.chargement") };
 function ecrireStatut() {
   document.getElementById("statut").className = "statut " + statutCourant.classe;
   document.getElementById("statut-texte").textContent = statutCourant.fabrique();
+  const pied = document.getElementById("pied-statut");   // même état, recopié dans le pied de page
+  if (pied) { pied.className = "pied-statut " + statutCourant.classe; document.getElementById("pied-statut-texte").textContent = statutCourant.fabrique(); }
   // Le tampon « EN DIRECT » n'a de sens que si des mesures récentes arrivent
   const tampon = document.getElementById("tampon");
   if (tampon) tampon.hidden = (statutCourant.classe === "erreur");
