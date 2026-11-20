@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0d1418">
+<title>Console · La Bonne M'Air</title>
+<style>
+  :root {
+    --fond: #0d1418; --panneau: #142027; --bord: #22343e; --texte: #d7e4e8; --discret: #7f99a3;
+    --cyan: #3fe0d0; --or: #ffb547; --rouge: #ff6b6b; --vert: #4ade80; --orange: #fb923c;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--fond); color: var(--texte);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  button, input { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  .cache { display: none !important; }
+
+  /* connexion */
+  #connexion { min-height: 100%; display: grid; place-items: center; padding: 24px; }
+  #connexion form { width: min(360px, 100%); background: var(--panneau); border: 1px solid var(--bord);
+    border-radius: 14px; padding: 22px; display: grid; gap: 14px; }
+  #connexion h1 { margin: 0; font-size: 20px; }
+  #connexion p { margin: 0; color: var(--discret); font-size: 14px; }
+  #connexion input[type=password] { width: 100%; padding: 11px 12px; border-radius: 9px; border: 1px solid var(--bord);
+    background: var(--fond); }
+  #connexion label { display: flex; gap: 8px; align-items: center; color: var(--discret); font-size: 14px; }
+  .principal { padding: 11px 14px; border-radius: 9px; border: 0; background: var(--cyan); color: #04211e; font-weight: 650; }
+  .erreur { color: var(--rouge); font-size: 14px; min-height: 1em; }
+
+  /* console */
+  #console { display: flex; flex-direction: column; height: 100%; }
+  header { padding: 10px 14px calc(8px) ; border-bottom: 1px solid var(--bord); background: var(--panneau);
+    display: grid; gap: 4px; }
+  .ligne-titre { display: flex; align-items: center; gap: 10px; }
+  header h1 { margin: 0; font-size: 16px; font-weight: 650; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pastille { width: 10px; height: 10px; border-radius: 50%; background: var(--discret); flex: none; }
+  .pastille.ok { background: var(--vert); box-shadow: 0 0 8px var(--vert); }
+  .pastille.moyen { background: var(--orange); }
+  .pastille.ko { background: var(--rouge); }
+  #etat { color: var(--discret); font-size: 13px; }
+  .petit-bouton { padding: 5px 10px; border-radius: 8px; border: 1px solid var(--bord); background: transparent; font-size: 13px; }
+  #maj { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 13px; color: var(--discret); }
+  #maj strong { color: var(--texte); font-weight: 600; }
+  #maj .principal { padding: 5px 10px; font-size: 13px; }
+
+  .outils { display: flex; gap: 8px; padding: 8px 14px; align-items: center; border-bottom: 1px solid var(--bord); }
+  .outils input[type=search] { flex: 1; min-width: 0; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--bord);
+    background: var(--fond); font-size: 14px; }
+  .outils label { display: flex; gap: 5px; align-items: center; font-size: 13px; color: var(--discret); white-space: nowrap; }
+
+  #journal { flex: 1; overflow-y: auto; padding: 8px 0 12px; font: 12.5px/1.5 var(--mono); }
+  .l { display: grid; grid-template-columns: 62px 1fr; gap: 8px; padding: 0 14px; white-space: pre-wrap; word-break: break-word; }
+  .l time { color: #557079; }
+  .l.cmd span { color: var(--cyan); }
+  .l.err span { color: var(--rouge); }
+  .l.ok span { color: var(--vert); }
+  .l.sep span { color: var(--or); }
+  #vide { color: var(--discret); padding: 20px 14px; font: 14px/1.5 system-ui, sans-serif; }
+
+  footer { border-top: 1px solid var(--bord); background: var(--panneau); padding: 8px 10px calc(10px + env(safe-area-inset-bottom)); display: grid; gap: 8px; }
+  .raccourcis { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+  .raccourcis::-webkit-scrollbar { display: none; }
+  .raccourcis button { flex: none; padding: 5px 11px; border-radius: 999px; border: 1px solid var(--bord); background: var(--fond);
+    font: 12.5px var(--mono); }
+  .raccourcis button.prudence { border-color: #5a3b2a; color: var(--orange); }
+  form#saisie { display: flex; gap: 8px; }
+  #commande { flex: 1; min-width: 0; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--bord); background: var(--fond);
+    font: 14px var(--mono); }
+  #message { font-size: 13px; color: var(--discret); min-height: 1em; padding: 0 2px; }
+  #message.err { color: var(--rouge); }
+</style>
+</head>
+<body>
+
+<section id="connexion">
+  <form id="formConnexion" autocomplete="on">
+    <h1>Console de la carte</h1>
+    <p>Journal en direct et commandes sans danger. Wi-Fi, clé et jeton : seulement au câble USB.</p>
+    <input type="text" name="username" autocomplete="username" value="console" hidden>
+    <input id="mdp" type="password" placeholder="Mot de passe de la console" autocomplete="current-password" required>
+    <label><input id="souvenir" type="checkbox"> Rester connecté sur cet appareil</label>
+    <button class="principal" type="submit">Ouvrir</button>
+    <div class="erreur" id="erreurConnexion"></div>
+  </form>
+</section>
+
+<section id="console" class="cache">
+  <header>
+    <div class="ligne-titre">
+      <span class="pastille" id="pastille"></span>
+      <h1>La Bonne M'Air · console</h1>
+      <button class="petit-bouton" id="deconnexion" title="Oublier le mot de passe sur cet appareil">Quitter</button>
+    </div>
+    <div id="etat">Connexion…</div>
+    <div id="maj"></div>
+  </header>
+  <div class="outils">
+    <input type="search" id="filtre" placeholder="Filtrer le journal…">
+    <label><input type="checkbox" id="suivre" checked> Suivre</label>
+    <button class="petit-bouton" id="effacer" title="Vider le journal gardé par le relais">Vider</button>
+  </div>
+  <div id="journal"><div id="vide">Aucune ligne pour l'instant. La carte envoie son journal toutes les 30 s, puis toutes les 2 s tant que cette page est ouverte.</div></div>
+  <footer>
+    <div class="raccourcis" id="raccourcis">
+      <button data-c="status">status</button>
+      <button data-c="verbose on">verbose on</button>
+      <button data-c="verbose off">verbose off</button>
+      <button data-c="wifi scan">wifi scan</button>
+      <button data-c="wifi connect">wifi connect</button>
+      <button data-c="maj">maj</button>
+      <button data-c="aide">aide</button>
+      <button data-c="reboot" class="prudence">reboot</button>
+      <button data-c="calib oui" class="prudence">calib oui</button>
+    </div>
+    <form id="saisie" autocomplete="off">
+      <input id="commande" placeholder="Commande (aide, status…)" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send">
+      <button class="principal" type="submit">Envoyer</button>
+    </form>
+    <div id="message"></div>
+  </footer>
+</section>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const PRUDENCE = {
+  "reboot": "Redémarrer la carte ?",
+  "calib oui": "Calibrer le zéro du CO2 ? Seulement si la carte est à l'air extérieur depuis 20 minutes.",
+  "maj installer": "Installer la dernière version publiée ? La carte redémarrera (retour automatique à l'ancienne version en cas de problème).",
+};
+let motDePasse = localStorage.getItem("mdp") || sessionStorage.getItem("mdp") || "";
+let dernierId = 0, minuterie = null, echecs = 0, carte = {}, publiee = null;
+const historique = []; let posHistorique = -1;
+
+async function api(chemin, options = {}) {
+  const r = await fetch(chemin, { ...options, headers: { ...(options.headers || {}), Authorization: "Bearer " + motDePasse } });
+  let corps = {};
+  try { corps = await r.json(); } catch {}
+  if (r.status === 401) { deconnecter("Mot de passe refusé."); throw new Error("401"); }
+  if (!r.ok) throw new Error(corps.erreur || "erreur " + r.status);
+  return corps;
+}
+
+function deconnecter(msg) {
+  localStorage.removeItem("mdp"); sessionStorage.removeItem("mdp"); motDePasse = "";
+  clearTimeout(minuterie);
+  $("console").classList.add("cache"); $("connexion").classList.remove("cache");
+  $("erreurConnexion").textContent = msg || "";
+}
+
+$("formConnexion").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  motDePasse = $("mdp").value;
+  $("erreurConnexion").textContent = "";
+  try {
+    await api("/api/journal?apres=999999999");
+    (($("souvenir").checked) ? localStorage : sessionStorage).setItem("mdp", motDePasse);
+    demarrer();
+  } catch (err) { if (err.message !== "401") $("erreurConnexion").textContent = err.message; }
+});
+$("deconnexion").addEventListener("click", () => deconnecter(""));
+
+function demarrer() {
+  $("connexion").classList.add("cache"); $("console").classList.remove("cache");
+  dernierId = 0; $("journal").replaceChildren($("vide") || document.createElement("div"));
+  rafraichir(); verifierPubliee();
+  setTimeout(() => $("commande").focus(), 50);
+}
+
+// ----- journal
+function heure(t) {
+  return new Date(t).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+function classeLigne(txt) {
+  if (/^(>|»)/.test(txt)) return "cmd";
+  if (/^──/.test(txt)) return "sep";
+  if (/erreur|en échec|refusée?\b|REFUSÉE|ANNULÉE|impossible(?!s)|injoignable|perdue\(s\)/i.test(txt)) return "err";
+  if (/validée|installée|appairé|connecté à|à jour/i.test(txt)) return "ok";
+  return "";
+}
+function ajouterLignes(lignes) {
+  const j = $("journal"), vide = $("vide");
+  if (lignes.length && vide) vide.remove();
+  const enBas = j.scrollHeight - j.scrollTop - j.clientHeight < 40;
+  const f = $("filtre").value.trim().toLowerCase();
+  const frag = document.createDocumentFragment();
+  for (const l of lignes) {
+    const d = document.createElement("div");
+    d.className = "l " + classeLigne(l.txt);
+    const t = document.createElement("time"); t.textContent = heure(l.t);
+    const s = document.createElement("span"); s.textContent = l.txt;
+    d.append(t, s);
+    d.dataset.txt = l.txt.toLowerCase();
+    if (f && !d.dataset.txt.includes(f)) d.classList.add("cache");
+    frag.append(d);
+    dernierId = Math.max(dernierId, l.id);
+  }
+  j.append(frag);
+  while (j.children.length > 3000) j.firstElementChild.remove();
+  if ($("suivre").checked && (enBas || lignes.length)) j.scrollTop = j.scrollHeight;
+}
+$("filtre").addEventListener("input", () => {
+  const f = $("filtre").value.trim().toLowerCase();
+  for (const d of $("journal").querySelectorAll(".l")) d.classList.toggle("cache", !!f && !d.dataset.txt.includes(f));
+});
+$("effacer").addEventListener("click", async () => {
+  if (!confirm("Vider le journal gardé par le relais ?")) return;
+  try { await api("/api/effacer", { method: "POST" }); $("journal").replaceChildren(); dernierId = 0; } catch (e) { message(e.message, true); }
+});
+
+function duree(s) {
+  if (s < 60) return s + " s";
+  if (s < 3600) return Math.floor(s / 60) + " min";
+  if (s < 86400) return Math.floor(s / 3600) + " h " + String(Math.floor(s % 3600 / 60)).padStart(2, "0");
+  return Math.floor(s / 86400) + " j " + Math.floor(s % 86400 / 3600) + " h";
+}
+function afficherEtat(rep) {
+  carte = rep.carte || {};
+  const p = $("pastille");
+  p.className = "pastille";
+  if (!carte.vue) { $("etat").textContent = "La carte n'a encore jamais joint le relais (set relais / set jeton au câble USB)."; p.classList.add("ko"); return; }
+  const age = Math.max(0, Math.round((rep.maintenant - carte.vue) / 1000));
+  p.classList.add(age < 70 ? "ok" : age < 600 ? "moyen" : "ko");
+  const morceaux = [age < 70 ? "en ligne" : "silencieuse", "vue il y a " + duree(age)];
+  if (carte.version) morceaux.push("version " + carte.version);
+  if (carte.uptime) morceaux.push("allumée depuis " + duree(carte.uptime + age));
+  if (rep.commandesEnAttente) morceaux.push(rep.commandesEnAttente + " commande(s) en attente");
+  $("etat").textContent = morceaux.join(" · ");
+  afficherMaj();
+}
+
+async function rafraichir() {
+  clearTimeout(minuterie);
+  if (!motDePasse) return;
+  try {
+    const rep = await api("/api/journal?apres=" + dernierId);
+    ajouterLignes(rep.lignes || []);
+    afficherEtat(rep);
+    echecs = 0;
+  } catch (e) {
+    if (e.message === "401") return;
+    echecs++;
+    $("etat").textContent = "Relais injoignable (" + e.message + "), nouvel essai…";
+    $("pastille").className = "pastille ko";
+  }
+  if (!document.hidden) minuterie = setTimeout(rafraichir, Math.min(2000 * Math.pow(2, echecs), 30000));
+}
+// page cachée : on arrête de demander (la carte repasse à un envoi toutes les 30 s)
+document.addEventListener("visibilitychange", () => { if (!document.hidden && motDePasse) rafraichir(); });
+
+// ----- mise à jour
+async function verifierPubliee() {
+  try { publiee = await api("/api/manifeste"); } catch { publiee = null; }
+  afficherMaj();
+}
+function afficherMaj() {
+  const zone = $("maj");
+  zone.replaceChildren();
+  if (!publiee) { zone.textContent = "Mise à jour : aucune release avec firmware.json pour l'instant."; return; }
+  const installee = Number(carte.version) || 0;
+  const s = document.createElement("span");
+  s.append("Publiée : ");
+  const b = document.createElement("strong"); b.textContent = publiee.version; s.append(b);
+  s.append(installee ? (publiee.version > installee ? " (plus récente que la carte)" : " (la carte est à jour)") : "");
+  zone.append(s);
+  if (installee && publiee.version > installee) {
+    const bouton = document.createElement("button");
+    bouton.className = "principal"; bouton.textContent = "Installer sur la carte";
+    bouton.addEventListener("click", () => envoyer("maj installer"));
+    zone.append(bouton);
+  }
+}
+
+// ----- commandes
+function message(txt, erreur) { const m = $("message"); m.textContent = txt; m.className = erreur ? "err" : ""; }
+async function envoyer(texte) {
+  texte = texte.trim().replace(/\s+/g, " ");
+  if (!texte) return;
+  const q = PRUDENCE[texte.toLowerCase()];
+  if (q && !confirm(q)) return;
+  try {
+    await api("/api/commande", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ texte }) });
+    message("« " + texte + " » envoyée : la carte la reçoit à son prochain échange (2 s si elle est en ligne).");
+    historique.unshift(texte); posHistorique = -1;
+    rafraichir();
+  } catch (e) { if (e.message !== "401") message(e.message, true); }
+}
+$("saisie").addEventListener("submit", (e) => { e.preventDefault(); envoyer($("commande").value); $("commande").value = ""; });
+$("commande").addEventListener("keydown", (e) => {
+  if (e.key === "ArrowUp" && posHistorique < historique.length - 1) { posHistorique++; $("commande").value = historique[posHistorique]; e.preventDefault(); }
+  if (e.key === "ArrowDown") { posHistorique = Math.max(-1, posHistorique - 1); $("commande").value = posHistorique >= 0 ? historique[posHistorique] : ""; e.preventDefault(); }
+});
+$("raccourcis").addEventListener("click", (e) => { const c = e.target.closest("button")?.dataset.c; if (c) envoyer(c); });
+
+if (motDePasse) demarrer();
+</script>
+</body>
+</html>

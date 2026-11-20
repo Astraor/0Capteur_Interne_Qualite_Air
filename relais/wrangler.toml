@@ -1,0 +1,25 @@
+# Relais Cloudflare de La Bonne M'Air (offre gratuite). Mise en ligne : npx wrangler deploy (voir LISEZMOI.md)
+name = "mair-relais"
+main = "src/index.js"
+compatibility_date = "2025-10-01"
+
+# Le dépôt GitHub dont les releases contiennent firmware.bin + firmware.json
+[vars]
+DEPOT_GITHUB = "Astraor/0Capteur_Interne_Qualite_Air"
+# Site autorisé à lire les mesures par /donnees (plusieurs : séparés par des virgules ; localhost toujours accepté)
+ORIGINES_SITE = "https://astraor.github.io"
+
+# Mémoire du relais (journal, commandes en attente) : un Durable Object avec sa petite base SQLite (offre gratuite)
+[[durable_objects.bindings]]
+name = "RELAIS"
+class_name = "Relais"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Relais"]
+
+# Secrets (jamais dans ce fichier) :
+#   npx wrangler secret put JETON_CARTE            le même que « set jeton ... » sur la carte
+#   npx wrangler secret put MOT_DE_PASSE_CONSOLE   pour ouvrir la page console
+#   npx wrangler secret put AIRCARTO_CLE           clé du groupe AirCarto (le site la demande au relais, plus à GitHub)
+#   npx wrangler secret put GITHUB_TOKEN           seulement si le dépôt devient privé (lecture des releases)

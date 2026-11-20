@@ -1,0 +1,12 @@
+# PlatformIO
+Firmware/.pio/
+Firmware/.vscode/
+# Mises à jour à distance : la clé PRIVÉE ne doit JAMAIS être publiée ; fichiers fabriqués à chaque compilation
+Firmware/outils/cle_privee_ota.pem
+Firmware/src/version_fw.h
+Firmware/ota/
+Firmware/outils/__pycache__/
+# Relais Cloudflare
+relais/node_modules/
+relais/.wrangler/
+relais/.dev.vars
