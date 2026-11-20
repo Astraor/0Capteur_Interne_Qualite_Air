@@ -161,19 +161,25 @@
   // ---------- Application au document ----------
   // Applique les traductions à tout le document (ou à une partie : appliquer(element)).
   // Une seule recherche dans le DOM ; une écriture seulement si le texte change (pas de repeinture inutile).
+  const originaux = new WeakMap();   // contenu HTML d'origine de chaque élément traduit (secours)
   function appliquer(racine) {
     const r = racine || document;
     const noeuds = Array.from(r.querySelectorAll(SELECTEUR));
     if (r.matches && r.matches(SELECTEUR)) noeuds.unshift(r);
     for (let i = 0; i < noeuds.length; i++) {
       const e = noeuds[i];
+      // Clé absente du dictionnaire (fichier de langue encore en cache, ancienne version) : on garde le texte français
+      // écrit dans le HTML au lieu d'afficher le nom de la clé (« pied.devise »…).
+      if (!originaux.has(e)) originaux.set(e, e.innerHTML);
       let cle = e.getAttribute("data-i18n");
       if (cle !== null) {
-        const v = t(cle);
-        if (e.textContent !== v) e.textContent = v;
+        if (existe(cle)) {
+          const v = t(cle);
+          if (e.textContent !== v) e.textContent = v;
+        } else if (e.innerHTML !== originaux.get(e)) e.innerHTML = originaux.get(e);
       }
       cle = e.getAttribute("data-i18n-html");
-      if (cle !== null) e.innerHTML = t(cle);
+      if (cle !== null) e.innerHTML = existe(cle) ? t(cle) : originaux.get(e);
       const brut = e.getAttribute("data-i18n-attr");
       if (brut !== null) {
         let paires = attributs.get(e);

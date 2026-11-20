@@ -1628,11 +1628,13 @@
   </div>
 </footer>
 
-<!-- Traductions : un fichier par langue, puis le moteur. L'ordre compte (voir js/i18n.js). -->
-<script src="lang/fr.js"></script>
-<script src="lang/en.js"></script>
-<script src="lang/ja.js"></script>
-<script src="js/i18n.js"></script>
+<!-- Traductions : un fichier par langue, puis le moteur. L'ordre compte (voir js/i18n.js).
+     ?v=… : à changer à chaque modification de ces fichiers, sinon le navigateur peut garder l'ancienne version en cache
+     (la page affichait alors les noms des clés, « pied.devise »…). -->
+<script src="lang/fr.js?v=20261121"></script>
+<script src="lang/en.js?v=20261121"></script>
+<script src="lang/ja.js?v=20261121"></script>
+<script src="js/i18n.js?v=20261121"></script>
 
 <script>
 window.__pret = true;   // dit à la page que le script a bien démarré (voir le <head>)
