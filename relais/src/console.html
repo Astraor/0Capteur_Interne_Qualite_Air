@@ -79,7 +79,7 @@
 <section id="connexion">
   <form id="formConnexion" autocomplete="on">
     <h1>Console de la carte</h1>
-    <p>Journal en direct et commandes sans danger. Wi-Fi, clé et jeton : seulement au câble USB.</p>
+    <p>Journal en direct et commandes sans danger. Wi-Fi, clé et jeton : seulement au câble USB. Le mot de passe n’est pas gardé sur l’appareil : seulement une session (12 h, ou 30 jours si tu restes connecté).</p>
     <input type="text" name="username" autocomplete="username" value="console" hidden>
     <input id="mdp" type="password" placeholder="Mot de passe de la console" autocomplete="current-password" required>
     <label><input id="souvenir" type="checkbox"> Rester connecté sur cet appareil</label>
@@ -93,7 +93,8 @@
     <div class="ligne-titre">
       <span class="pastille" id="pastille"></span>
       <h1>La Bonne M'Air · console</h1>
-      <button class="petit-bouton" id="deconnexion" title="Oublier le mot de passe sur cet appareil">Quitter</button>
+      <button class="petit-bouton" id="partout" title="Déconnecter tous les appareils (téléphone perdu, mot de passe partagé…)">Partout</button>
+      <button class="petit-bouton" id="deconnexion" title="Fermer la session sur cet appareil">Quitter</button>
     </div>
     <div id="etat">Connexion…</div>
     <div id="maj"></div>
@@ -132,21 +133,30 @@ const PRUDENCE = {
   "calib oui": "Calibrer le zéro du CO2 ? Seulement si la carte est à l'air extérieur depuis 20 minutes.",
   "maj installer": "Installer la dernière version publiée ? La carte redémarrera (retour automatique à l'ancienne version en cas de problème).",
 };
-let motDePasse = localStorage.getItem("mdp") || sessionStorage.getItem("mdp") || "";
+// Ancienne version : le mot de passe était gardé en clair dans le navigateur. On l'efface.
+localStorage.removeItem("mdp"); sessionStorage.removeItem("mdp");
+// Le navigateur ne garde plus qu'un jeton de session (12 h, ou 30 jours avec « Rester connecté »),
+// révocable avec « Quitter » / « Partout », et annulé si le mot de passe change.
+let jeton = localStorage.getItem("jeton") || sessionStorage.getItem("jeton") || "";
 let dernierId = 0, minuterie = null, echecs = 0, carte = {}, publiee = null;
 const historique = []; let posHistorique = -1;
 
 async function api(chemin, options = {}) {
-  const r = await fetch(chemin, { ...options, headers: { ...(options.headers || {}), Authorization: "Bearer " + motDePasse } });
+  const entetes = { ...(options.headers || {}) };
+  if (jeton) entetes.Authorization = "Bearer " + jeton;
+  const r = await fetch(chemin, { ...options, headers: entetes });
   let corps = {};
   try { corps = await r.json(); } catch {}
-  if (r.status === 401) { deconnecter("Mot de passe refusé."); throw new Error("401"); }
+  if (r.status === 401) { oublierJeton(); deconnecter(corps.erreur || "Session expirée : reconnecte-toi."); throw new Error("401"); }
   if (!r.ok) throw new Error(corps.erreur || "erreur " + r.status);
   return corps;
 }
 
+function oublierJeton() {
+  localStorage.removeItem("jeton"); sessionStorage.removeItem("jeton"); jeton = "";
+}
 function deconnecter(msg) {
-  localStorage.removeItem("mdp"); sessionStorage.removeItem("mdp"); motDePasse = "";
+  oublierJeton();
   clearTimeout(minuterie);
   $("console").classList.add("cache"); $("connexion").classList.remove("cache");
   $("erreurConnexion").textContent = msg || "";
@@ -154,15 +164,27 @@ function deconnecter(msg) {
 
 $("formConnexion").addEventListener("submit", async (e) => {
   e.preventDefault();
-  motDePasse = $("mdp").value;
   $("erreurConnexion").textContent = "";
   try {
-    await api("/api/journal?apres=999999999");
-    (($("souvenir").checked) ? localStorage : sessionStorage).setItem("mdp", motDePasse);
+    const souvenir = $("souvenir").checked;
+    const r = await api("/api/connexion", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mdp: $("mdp").value, souvenir }) });
+    jeton = r.jeton;
+    (souvenir ? localStorage : sessionStorage).setItem("jeton", jeton);
+    $("mdp").value = "";
     demarrer();
-  } catch (err) { if (err.message !== "401") $("erreurConnexion").textContent = err.message; }
+  } catch (err) {
+    if (err.message === "401") $("erreurConnexion").textContent = "Mot de passe refusé.";
+    else $("erreurConnexion").textContent = err.message;
+  }
 });
-$("deconnexion").addEventListener("click", () => deconnecter(""));
+async function quitter(partout) {
+  if (partout && !confirm("Déconnecter TOUS les appareils (téléphone, ordinateur…) ?")) return;
+  try { await api("/api/deconnexion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ partout }) }); } catch {}
+  deconnecter(partout ? "Tous les appareils sont déconnectés." : "");
+}
+$("deconnexion").addEventListener("click", () => quitter(false));
+$("partout").addEventListener("click", () => quitter(true));
 
 function demarrer() {
   $("connexion").classList.add("cache"); $("console").classList.remove("cache");
@@ -178,6 +200,7 @@ function heure(t) {
 function classeLigne(txt) {
   if (/^(>|»)/.test(txt)) return "cmd";
   if (/^──/.test(txt)) return "sep";
+  if (/^\[sécurité\]/.test(txt)) return "err";
   if (/erreur|en échec|refusée?\b|REFUSÉE|ANNULÉE|impossible(?!s)|injoignable|perdue\(s\)/i.test(txt)) return "err";
   if (/validée|installée|appairé|connecté à|à jour/i.test(txt)) return "ok";
   return "";
@@ -235,7 +258,7 @@ function afficherEtat(rep) {
 
 async function rafraichir() {
   clearTimeout(minuterie);
-  if (!motDePasse) return;
+  if (!jeton) return;
   try {
     const rep = await api("/api/journal?apres=" + dernierId);
     ajouterLignes(rep.lignes || []);
@@ -250,7 +273,7 @@ async function rafraichir() {
   if (!document.hidden) minuterie = setTimeout(rafraichir, Math.min(2000 * Math.pow(2, echecs), 30000));
 }
 // page cachée : on arrête de demander (la carte repasse à un envoi toutes les 30 s)
-document.addEventListener("visibilitychange", () => { if (!document.hidden && motDePasse) rafraichir(); });
+document.addEventListener("visibilitychange", () => { if (!document.hidden && jeton) rafraichir(); });
 
 // ----- mise à jour
 async function verifierPubliee() {
@@ -296,7 +319,7 @@ $("commande").addEventListener("keydown", (e) => {
 });
 $("raccourcis").addEventListener("click", (e) => { const c = e.target.closest("button")?.dataset.c; if (c) envoyer(c); });
 
-if (motDePasse) demarrer();
+if (jeton) demarrer();
 </script>
 </body>
 </html>
