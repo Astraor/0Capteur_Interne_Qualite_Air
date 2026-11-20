@@ -33,14 +33,14 @@ flowchart LR
         ESP -. pas de réseau .-> FS[("Flash LittleFS<br/>~12 h de mesures")]
         FS -. renvoi automatique .-> ESP
     end
-    ESP -- "HTTP POST (JSON)<br/>toutes les 30 s" --> API[("Serveur AirCarto")]
+    ESP -- "HTTP POST (JSON)<br/>toutes les 10 s" --> API[("Serveur AirCarto")]
     API -- "API /data" --> SITE["Site web<br/>GitHub Pages + Chart.js"]
     API -- "toutes les 5 min" --> GHA["GitHub Actions<br/>surveillance"]
     GHA -- "issue → mail" --> MAIL["Propriétaire du dépôt"]
 ```
 
 **Le chemin d’une mesure :**
-capteurs lus toutes les **10 s** → moyenne + pic sur **30 s** → envoi JSON au serveur AirCarto → affichage sur le site.
+capteurs lus **chaque seconde** → moyenne + pic sur **10 s** → envoi JSON au serveur AirCarto → affichage sur le site.
 Sans réseau, la mesure est rangée en flash puis renvoyée plus tard avec son âge (`x_age_s`), ce qui permet au site de la remettre à sa **vraie heure**.
 
 ---
@@ -144,18 +144,31 @@ La carte se connecte seule au meilleur réseau connu visible, sans redémarrage.
 ### Écran LED
 
 - **Démarrage :** logo animé « LA BONNE M’AIR ».
-- **Pages (une mesure par écran, 5 s chacune) :** CO₂ · AÉRER (si CO₂ ≥ 1 000 ppm) · PM1 · PM2.5 · PM10 · indice ATMO · courbe du CO₂ (dernière heure) · Wi-Fi (seulement hors ligne).
+- **Pages (une mesure par écran, 5 s chacune) :** CO₂ · AÉRER (si CO₂ > 1 000 ppm) · PM1 · PM2.5 · PM10 · indice ATMO · courbe du CO₂ (dernière heure) · Wi-Fi (seulement hors ligne).
 - **Page de mesure :** nom et unité en haut, filet à la couleur du niveau, valeur en grand avec un visage qui change d’expression, puis la **jauge des niveaux ATMO** (6 segments pour les PM, 4 pour le CO₂) : le niveau atteint est allumé, les autres restent en sourdine, et un **curseur** ▲ indique la position exacte de la valeur dans son niveau.
 - **Page ÉTAT (toutes les 15 s, pendant 3 s) :** heure et date, puis trois grandes icônes colorées (vert = OK, orange = à surveiller, rouge = problème) : **Wi-Fi** (arcs selon le signal, en dBm), **serveur** (nuage : envoi OK, nombre de mesures en attente, clé refusée) et **capteurs** (ventilateur : OK, préchauffage, panne, à calibrer). Réglable avec `PERIODE_ETAT_MS` et `DUREE_ETAT_MS`.
 - **Couleurs :** chaque valeur prend la couleur de son niveau ATMO.
-- **Alerte hors norme :** dès qu’un polluant atteint son seuil d’alerte (PM : « Mauvais », CO₂ : ≥ 1 000 ppm), l’écran saute aussitôt sur sa page, clignote à la couleur du niveau, puis la valeur pulse ; la page revient une fois sur deux tant que l’alerte dure.
+- **Alerte hors norme :** dès qu’un polluant atteint son seuil d’alerte (PM : « Mauvais », CO₂ : > 1 000 ppm), l’écran saute aussitôt sur sa page, clignote à la couleur du niveau, puis la valeur pulse ; la page revient une fois sur deux tant que l’alerte dure.
 - **Luminosité adaptée :** jour, nuit et batterie.
 - **Préchauffage du CO₂ :** compte à rebours en minutes:secondes (« 2:18 ») les 3 premières minutes après une mise sous tension (pas après un redémarrage logiciel : le capteur est resté alimenté).
 - **CO₂ impossible :** une lecture sous 300 ppm est écartée (un capteur qui dérive a envoyé jusqu'à 37 ppm) ; si ça dure, la page CO₂ affiche « A CALIBRER » (commande `calib oui`, à l'air libre).
 
 ### Données envoyées
 
-Envoi JSON toutes les **30 s** (60 s sur batterie) à `http://api.aircarto.fr/iut-amu/push`.
+Les deux capteurs sont lus **chaque seconde** (ils mesurent eux-mêmes une fois par seconde : lire plus vite ne donnerait que des doublons). Chaque envoi contient la **moyenne et le pic de toutes les lectures de la période** :
+
+| Situation | Période d'une mesure |
+|---|---|
+| En direct (Wi-Fi + clé valide, rien en retard) | **10 s** — bouclée au moment exact où le serveur accepte l'envoi suivant (10 s + une petite marge), puis envoyée aussitôt |
+| Hors ligne (ou clé absente / refusée) | 30 s — la mémoire flash garde ainsi ~12 h (4 h seulement à 10 s) |
+| Quelques mesures en retard / plus de 10 en retard | 30 s / 60 s — laisse des créneaux au rattrapage (le serveur n'accepte qu'un envoi toutes les 10 s) |
+| Sur batterie | 60 s |
+
+Pourquoi « 10 s ou un peu plus » en direct : le serveur refuse deux envois à moins de 10 s d'écart. Une mesure produite toutes les 10 s pile arriverait un peu plus vite qu'il ne les accepte et elles s'empileraient. La carte boucle donc la mesure quand le créneau s'ouvre : elle couvre 10 s (parfois 10,5 s), aucune lecture n'est perdue, et `x_age_s` vaut 0 à 2 s. Vérifié en simulation : une mesure toutes les ~11 s en moyenne en direct, aucune perte.
+
+**CO₂ très élevé :** au-dessus de **3 000 ppm**, une lecture n'est prise en compte qu'une fois **confirmée par 5 lectures de suite** (5 s) au-dessus du seuil et proches les unes des autres (± 10 % de leur médiane). Un pic isolé ou des valeurs qui sautent sont ignorés (compteur dans `status`). Réglage : `CO2_CONFIRMATION_PPM`, `CO2_NB_CONFIRMATION`, `CO2_ECART_CONFIRMATION`.
+
+Adresse d'envoi : `http://api.aircarto.fr/iut-amu/push`.
 
 | Champ | Contenu |
 |---|---|
@@ -185,11 +198,11 @@ Envoi JSON toutes les **30 s** (60 s sur batterie) à `http://api.aircarto.fr/iu
 
 Le serveur AirCarto date chaque mesure à sa **réception** (champ `time`). Une mesure gardée en flash pendant une coupure arriverait donc à la mauvaise heure. La carte joint à chaque envoi `x_age_s`, le nombre de secondes écoulées entre la mesure et son envoi, et le site calcule : **heure réelle = `time` − `x_age_s`**.
 
-- À la fin de chaque période de 30 s, la mesure est notée avec trois repères internes, retirés avant l'envoi : `_u` (uptime en s), `_e` (heure Unix si l'heure NTP est connue, sinon 0) et `_b` (numéro aléatoire du démarrage).
+- À la fin de chaque période (10 s en direct, 30 s hors ligne), la mesure est notée avec trois repères internes, retirés avant l'envoi : `_u` (uptime en s), `_e` (heure Unix si l'heure NTP est connue, sinon 0) et `_b` (numéro aléatoire du démarrage).
 - Au moment de l'envoi, la carte calcule l'âge. Si c'est le même démarrage : uptime actuel − `_u` (marche même sans heure NTP). Sinon : heure actuelle − `_e`. Si `_e` vaut 0, la mesure ne peut pas être datée et elle est abandonnée.
 - L'heure survit à un redémarrage logiciel de l'ESP32 (minuterie RTC), pas à une coupure de courant : après une coupure de courant, la carte attend l'heure NTP (15 min au plus) avant de renvoyer les mesures du démarrage précédent.
 - Vues 6 h et 24 h, export CSV jusqu'à 7 jours : le site travaille sur les **mesures brutes** et corrige chacune.
-- Vue 7 jours, durées personnalisées de plus de 24 h et export au-delà de 7 jours : le site reçoit des moyennes calculées par le serveur **par heure de réception**, `x_age_s` compris, et datées à la fin de leur tranche. Pendant un rattrapage, une tranche mélange des mesures rejouées et des mesures fraîches. Le site repère ces tranches à leur `x_age_s` moyen (plus de 30 s, alors qu'un envoi en direct a 0 à 12 s), redemande pour elles seules les mesures brutes et remet chacune à son heure. Les autres moyennes sont ramenées au début de leur tranche.
+- Vue 7 jours, durées personnalisées de plus de 24 h et export au-delà de 7 jours : le site reçoit des moyennes calculées par le serveur **par heure de réception**, `x_age_s` compris, et datées à la fin de leur tranche. Pendant un rattrapage, une tranche mélange des mesures rejouées et des mesures fraîches. Le site repère ces tranches à leur `x_age_s` moyen (plus de 30 s, alors qu'un envoi en direct a 0 à 2 s), redemande pour elles seules les mesures brutes et remet chacune à son heure. Les autres moyennes sont ramenées au début de leur tranche.
 - Le site écarte aussi les mesures reçues deux fois (même heure réelle à ±5 s, mêmes valeurs).
 - Précision vérifiée en simulation : **±1 s**.
 
@@ -211,7 +224,7 @@ Page unique, sans framework, hébergée sur **GitHub Pages** (branche `main`, ra
 - **Mémoire du navigateur** (`localStorage`, rien n’est envoyé) : dernière période choisie (6 h, 24 h, 7 j ou durée personnalisée), pas des graphes, courbes cochées, langue. Une fois l’introduction vue (barre des mesures atteinte), les visites suivantes s’ouvrent directement sur les mesures ; on la revoit avec **00** dans le sommaire (ordinateur) ou **Introduction** (téléphone).
 - **Barre des réglages** collée en haut ; sur téléphone, elle se range quand on descend et revient dès qu’on remonte.
 - **Confort :** écran d’entrée plein écran, bouton flottant « Aller aux mesures » pour sauter l’introduction, animations réductibles, mise à jour automatique toutes les 5 min.
-- **Mise à jour légère :** toutes les 5 min, le site ne redemande que les mesures arrivées depuis la requête précédente (quelques Ko au lieu de ~800 Ko pour 24 h : l'API n'est pas compressée) ; le résultat est identique à un rechargement complet.
+- **Mise à jour légère :** toutes les 5 min, le site ne redemande que les mesures arrivées depuis la requête précédente (quelques Ko au lieu de ~2,4 Mo pour 24 h : l'API n'est pas compressée) ; le résultat est identique à un rechargement complet.
 - **Valeurs impossibles écartées :** CO₂ hors 300-5 000 ppm, etc. (le serveur garde d'anciennes valeurs fausses d'un capteur qui dérivait).
 
 ### Réglages (`index.html`, section « 1) RÉGLAGES »)
@@ -256,10 +269,12 @@ Les mêmes seuils sont codés dans la carte (`SEUILS_PM25`, `SEUILS_PM10`, `SEUI
 
 | Niveau | CO₂ |
 |---|---|
-| Bon | < 800 |
-| Moyen | 800 – 999 |
-| Dégradé (page « AÉRER ») | 1 000 – 1 499 |
-| Mauvais (buzzer si câblé) | ≥ 1 500 |
+| Bon | 0 – 800 |
+| Moyen | 801 – 1 000 |
+| Dégradé (page « AÉRER ») | 1 001 – 1 500 |
+| Mauvais (buzzer si câblé) | > 1 500 |
+
+**Règle aux limites (carte et site) :** une valeur pile sur un seuil reste dans le niveau le plus **bas** (PM2.5 = 10 → Bon, CO₂ = 800 → Bon), et la valeur est comparée **arrondie à l'unité** (PM2.5 = 10,4 → 10 → Bon ; 10,5 → 11 → Moyen).
 
 ### Calcul du verdict
 
