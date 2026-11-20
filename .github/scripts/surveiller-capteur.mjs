@@ -4,8 +4,9 @@
 // 2. Regarde l'heure de RÉCEPTION de la plus récente (champ "time" : c'est l'heure à laquelle le serveur l'a reçue,
 //    donc exactement « la carte envoie-t-elle encore ? »).
 // 3. Plus de SEUIL_MIN minutes sans rien : ouvre une issue « Capteur muet » -> GitHub envoie un MAIL au propriétaire
-//    du dépôt (notification d'issue). Une seule issue tant que la panne dure (pas de mail toutes les 5 min).
-// 4. Les mesures reviennent : commentaire « Capteur revenu » + fermeture de l'issue (-> second mail).
+//    du dépôt (mention @propriétaire, sans assignation : UN seul mail). Une seule issue tant que la panne dure.
+// 4. Les mesures reviennent : titre/corps complétés par « Capteur revenu » et fermeture dans la même requête
+//    (UN seul mail, pas de commentaire séparé).
 // 5. CO2 : la carte envoie bien ses mesures (particules) mais aucun CO2 valable depuis SEUIL_CO2_MIN minutes
 //    -> issue « CO2 à vérifier » (capteur débranché, en panne, ou qui dérive vers des valeurs impossibles, < 300 ppm).
 //    Fermée toute seule dès qu'un CO2 valable revient. Pas évaluée quand la carte est muette (une seule alerte).
@@ -80,16 +81,25 @@ async function majAlerte(label, couleur, description, probleme, texte) {
   const issue = (ouvertes || []).find(i => !i.pull_request);
   if (probleme && !issue) {
     await github("POST", "/labels", { name: label, color: couleur, description });
+    // Pas d'« assignees » : l'assignation est un événement à part qui envoyait un 2e mail (« assigned #N »).
+    // La mention @PROPRIO dans le corps suffit à déclencher UN mail.
     const cree = await github("POST", "/issues", {
       title: texte.titre(),
       labels: [label],
-      assignees: PROPRIO ? [PROPRIO] : [],
       body: texte.corps(),
     });
     console.log(`[${label}] issue d'alerte ouverte : ` + (cree && cree.html_url));
   } else if (!probleme && issue) {
-    await github("POST", `/issues/${issue.number}/comments`, { body: texte.retour() });
-    await github("PATCH", `/issues/${issue.number}`, { state: "closed", state_reason: "completed" });
+    // Un seul appel : le message de retour est ajouté au titre et au corps (modifications silencieuses) et l'issue
+    // est fermée dans la même requête -> un seul mail « Closed », dont l'objet contient le titre « ✅ ... ».
+    // (Avant : commentaire + fermeture = 2 mails.)
+    const retour = texte.retour();
+    await github("PATCH", `/issues/${issue.number}`, {
+      title: retour.split(" : ")[0] + " — " + issue.title.replace(/^⚠️\s*/, ""),
+      body: (issue.body || "") + "\n\n---\n" + retour,
+      state: "closed",
+      state_reason: "completed",
+    });
     console.log(`[${label}] retour à la normale : issue #${issue.number} fermée.`);
   } else {
     console.log(`[${label}] ` + (probleme ? `alerte déjà ouverte (issue #${issue.number}) : pas de nouveau mail.` : "rien à faire."));
