@@ -4251,7 +4251,8 @@ function initStoryScrolling() {
   function allerA(cible) {
     const depart = window.scrollY, ecart = cible - depart;
     if (Math.abs(ecart) < 1) return;
-    const duree = Math.min(1000, 380 + Math.abs(ecart) / window.innerHeight * 320);
+    // ~0,4 s pour un petit pas, 0,6 s au plus pour un long trajet (avant : jusqu’à 1 s, trop lent)
+    const duree = Math.min(600, 340 + Math.abs(ecart) / window.innerHeight * 110);
     const t0 = performance.now();
     if (animCran) cancelAnimationFrame(animCran);
     const pas = t => {
