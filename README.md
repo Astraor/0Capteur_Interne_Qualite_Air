@@ -34,13 +34,14 @@ flowchart LR
         FS -. renvoi automatique .-> ESP
     end
     ESP -- "HTTP POST (JSON)<br/>toutes les 10 s" --> API[("Serveur AirCarto")]
-    API -- "API /data" --> SITE["Site web<br/>GitHub Pages + Chart.js"]
-    API -- "toutes les 5 min" --> GHA["GitHub Actions<br/>surveillance"]
+    API -- "API /data<br/>(avec la clé du groupe)" --> RELAIS["Relais Cloudflare<br/>mair-relais.astraor.workers.dev"]
+    RELAIS -- "/donnees<br/>(lecture seule, sans clé)" --> SITE["Site web<br/>GitHub Pages + Chart.js"]
+    RELAIS -- "toutes les 5 min" --> GHA["GitHub Actions<br/>surveillance"]
     GHA -- "issue → mail" --> MAIL["Propriétaire du dépôt"]
 ```
 
 **Le chemin d’une mesure :**
-capteurs lus **chaque seconde** → moyenne + pic sur **10 s** → envoi JSON au serveur AirCarto → affichage sur le site.
+capteurs lus **chaque seconde** → moyenne + pic sur **10 s** → envoi JSON au serveur AirCarto → relais Cloudflare (qui ajoute la clé du groupe, voir `relais/LISEZMOI.md`) → affichage sur le site.
 Sans réseau, la mesure est rangée en flash puis renvoyée plus tard avec son âge (`x_age_s`), ce qui permet au site de la remettre à sa **vraie heure**.
 
 ---
@@ -214,14 +215,16 @@ Page unique, sans framework, hébergée sur **GitHub Pages** (branche `main`, ra
 
 ### Fonctionnalités
 
-- **Verdict en direct** « L’air est… » avec bandeau qui prend la couleur du niveau ATMO.
-- **Cartes de mesure** PM1, PM2.5, PM10, CO₂, température, humidité : dernière valeur, jauge colorée, min / max de la période.
-- **Graphiques interactifs :** périodes 6 h / 24 h / 7 j ou **durée personnalisée** (5 min à 31 jours), choix du **pas de moyenne**, séries à cocher, **seuils en pointillés**, lecture au survol ou au doigt.
+- **Plan de la page (00 à 04)** : 00 introduction (nom, affiche de la Bonne Mère, manifeste, points forts) · 01 accueil, verdict « L’air est… » · 02 dernière mesure · 03 graphiques · 04 comprendre les mesures.
+- **Défilement par crans** dans l’introduction (molette et clavier, ordinateur) : un cran mène à l’étape suivante de la scène, on ne s’arrête jamais au milieu d’un fondu. Au doigt, le défilement reste libre.
+- **Verdict en direct** « L’air est… » avec bandeau qui prend la couleur du niveau ATMO ; **mode jeu** avec les particules (plein écran, boutons − / + pour leur nombre et leur vitesse).
+- **Cartes de mesure** PM1, PM2.5, PM10, CO₂, température, humidité : dernière valeur, **incertitude du capteur** (fiches techniques du NextPM et du MH-Z19C, bande hachurée sur la jauge), jauge colorée, min / max de la période.
+- **Graphiques interactifs :** périodes 6 h / 24 h / 7 j ou **durée personnalisée** (5 min à 31 jours), choix du **pas de moyenne**, séries à cocher, **seuils en pointillés** (l’axe s’étire pour montrer un seuil proche ; un seuil trop loin est signalé par « ↑ » ou « ↓ »), lecture au survol ou au doigt.
 - **Heure réelle des mesures :** les mesures renvoyées après une coupure sont replacées à leur heure grâce à `x_age_s`.
 - **Export CSV** (dans la barre collante, qui suit le défilement) : période affichée, dernière heure, 6 h, 24 h, 7 j, 30 j, **tout l'historique** ou **dates choisies dans un calendrier** (jours blancs = mesures disponibles, jours noirs = aucune mesure) ; mesures brutes (31 jours au plus par fichier) ou moyennées (5 min, 15 min, 1 h, 1 j) ; format Excel France (`;`) ou standard (`,`). Les longues périodes sont téléchargées par tranches (le serveur limite chaque requête à 7 jours en brut et 31 jours en moyennes).
-- **Section « Comprendre les mesures »** : tableau des seuils et explication du calcul de l’indice.
+- **Section « Comprendre les mesures »** : tailles des particules à l’échelle (avec barre d’échelle), incertitude des mesures, tableau des seuils, explication du calcul de l’indice et sources.
 - **3 langues** : français, anglais, japonais (choix mémorisé).
-- **Mémoire du navigateur** (`localStorage`, rien n’est envoyé) : dernière période choisie (6 h, 24 h, 7 j ou durée personnalisée), pas des graphes, courbes cochées, langue. Une fois l’introduction vue (barre des mesures atteinte), les visites suivantes s’ouvrent directement sur les mesures ; on la revoit avec **00** dans le sommaire (ordinateur) ou **Introduction** (téléphone).
+- **Mémoire du navigateur** (`localStorage`, rien n’est envoyé) : dernière période choisie (6 h, 24 h, 7 j ou durée personnalisée), pas des graphes, courbes cochées, langue. Une fois l’introduction vue (barre des mesures atteinte), les visites suivantes s’ouvrent directement sur l’accueil (01) ; on la revoit avec **00** dans le sommaire (ordinateur) ou **Introduction** (téléphone).
 - **Barre des réglages** collée en haut ; sur téléphone, elle se range quand on descend et revient dès qu’on remonte.
 - **Confort :** écran d’entrée plein écran, bouton flottant « Aller aux mesures » pour sauter l’introduction, animations réductibles, mise à jour automatique toutes les 5 min.
 - **Mise à jour légère :** toutes les 5 min, le site ne redemande que les mesures arrivées depuis la requête précédente (quelques Ko au lieu de ~2,4 Mo pour 24 h : l'API n'est pas compressée) ; le résultat est identique à un rechargement complet.
@@ -231,7 +234,7 @@ Page unique, sans framework, hébergée sur **GitHub Pages** (branche `main`, ra
 
 | Constante | Rôle |
 |---|---|
-| `CLE` | Clé du groupe AirCarto (32 caractères) |
+| `URL_API` | Adresse du relais Cloudflare (`…/donnees`) : la clé AirCarto n’est plus dans la page |
 | `DEVICE_ID` | Adresse MAC d’une carte précise, ou `""` pour toutes |
 | `RAFRAICHISSEMENT_MS` | Intervalle de mise à jour (5 min) |
 
@@ -289,7 +292,7 @@ On applique la règle officielle de l’indice ATMO : chaque polluant reçoit un
 ## Alertes mail « capteur muet » et « CO₂ à vérifier »
 
 Le workflow `.github/workflows/surveillance-capteur.yml` interroge le serveur AirCarto **toutes les 5 minutes**.
-Si aucune mesure n’est arrivée depuis `SEUIL_MIN` minutes (10 par défaut), il ouvre une issue **« Capteur muet »** assignée au propriétaire du dépôt → GitHub envoie un **mail**. Quand les mesures reviennent, l’issue se ferme toute seule (second mail).
+Si aucune mesure n’est arrivée depuis `SEUIL_MIN` minutes (10 par défaut), il ouvre une issue **« Capteur muet »** qui mentionne le propriétaire du dépôt → GitHub envoie **un mail**. Quand les mesures reviennent, l’issue se ferme toute seule, titre complété par « ✅ … revenu » (**un** second mail).
 
 Si la carte envoie bien ses mesures (particules) mais **aucun CO₂ valable** (300 à 5 000 ppm) depuis `SEUIL_CO2_MIN` minutes (60 par défaut), il ouvre de la même façon une issue **« CO₂ à vérifier »** : « CO₂ absent » si le capteur ne répond plus, « CO₂ à recalibrer » s’il ne donne que des valeurs impossibles. L’issue indique quoi vérifier (commande `status`, câblage du MH-Z19C, `calib oui` à l’air libre) et se ferme toute seule dès qu’un CO₂ valable revient. Pas d’alerte CO₂ juste après un démarrage, ni quand la carte est déjà muette (une seule alerte à la fois).
 
@@ -297,7 +300,7 @@ Réglages dans **Settings → Secrets and variables → Actions** :
 
 | Nom | Type | Rôle |
 |---|---|---|
-| `AIRCARTO_CLE` | secret | Clé du groupe (sinon lue dans `index.html`) |
+| `AIRCARTO_CLE` | secret | Clé du groupe (facultatif : sinon les mesures sont lues par le relais Cloudflare) |
 | `SEUIL_MIN` | variable | Minutes sans mesure avant l’alerte (défaut 10) |
 | `DEVICE_ID` | variable | Surveiller une seule carte (défaut : toutes) |
 | `SEUIL_CO2_MIN` | variable | Minutes sans CO₂ valable avant l’alerte CO₂ (défaut 60) |
@@ -322,5 +325,8 @@ GitHub peut retarder les tâches planifiées de quelques minutes, et les met en 
 - Atmo France — [L’indice ATMO](https://www.atmo-france.org/article/lindice-atmo) (seuils et couleurs des particules)
 - Arrêté du 10 juillet 2020 relatif à l’indice de la qualité de l’air ambiant
 - HCSP — recommandations sur l’aération et la ventilation (repères CO₂)
-- Tera Sensor — fiche technique NextPM · Winsen — fiche technique MH-Z19C
-- AirCarto — serveur de collecte des mesures (`api.aircarto.fr`)
+- Atmo France — [guide de calcul de l’indice ATMO](https://www.airpl.org/sites/default/files/reports/guide_calcul_nouvel_indice_ATMO_VF_version14decembre2020%281%29.pdf) (décembre 2020) · [texte de l’arrêté](https://aida.ineris.fr/reglementation/arrete-100720-relatif-a-lindice-qualite-lair-ambiant)
+- HCSP — [avis du 28 avril 2021](https://www.hcsp.fr/Explore.cgi/Telecharger?NomFichier=hcspa20210428_covaravenetmesducodanleserp.pdf) (aération, ventilation, mesure du CO₂ ; 800 ppm)
+- Tera Sensor — [fiche technique NextPM](https://tera-sensor.gitbook.io/tera-sensor/sensors/nextpm/nextpm-datasheet) (limite de détection < 1 µg/m³, linéarité < 5 %, répétabilité < 3 %) · [évaluation AQ-SPEC](https://www.aqmd.gov/aq-spec/sensordetail/tera-sensor---nextpm)
+- Winsen — [fiche technique MH-Z19C](https://www.winsen-sensor.com/product/mh-z19c.html) (±(50 ppm + 5 % de la valeur lue))
+- AirCarto — serveur de collecte des mesures (`api.aircarto.fr`), lu par le site via le relais Cloudflare `mair-relais.astraor.workers.dev`
