@@ -4248,7 +4248,9 @@ function initStoryScrolling() {
     return liste.map(Math.round).filter((v, i, t) => i === 0 || v > t[i - 1] + 4);
   }
 
-  let animCran = 0, dernierCran = 0, cibleCran = 0;
+  let animCran = 0, cibleCran = 0;
+  // Suivi de la molette : dernier événement, dernier cran accepté, force maximale du geste en cours, sens du dernier cran
+  let dernierEvt = -1e9, dernierAccept = -1e9, picGeste = 0, dernierSens = 0, derniereTouche = -1e9;
   const adoucir = t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
   function allerA(cible) {
     const depart = window.scrollY, ecart = cible - depart;
@@ -4289,14 +4291,23 @@ function initStoryScrolling() {
     const y = window.scrollY, liste = arrets(), fin = liste[liste.length - 1];
     if (y > fin + 3 || (e.deltaY > 0 && y >= fin - 3 && !animCran)) return;   // hors de l'introduction : rien ne change
     e.preventDefault();
-    // Pavé tactile ou molette lancée : un seul geste envoie des dizaines d'événements (et leur inertie). On n'avance
-    // que d'un cran par geste : un événement ne compte que s'il suit une pause d'au moins 160 ms et qu'aucun mouvement
-    // n'est en cours. Une molette tournée cran par cran avance donc d'une étape à chaque cran.
+    // Un seul geste envoie des dizaines d'événements. Avant, tout événement arrivé moins de 160 ms après le précédent
+    // était ignoré : en tournant la molette sans s'arrêter, AUCUN cran n'était pris en compte avant une pause.
+    // Désormais :
+    //  - un événement après une pause (≥ 160 ms) ou dans l'autre sens = un nouveau cran, tout de suite (même si le
+    //    mouvement précédent n'est pas fini : on enchaîne vers l'étape suivante) ;
+    //  - pendant un défilement continu, un cran de plus toutes les 420 ms, tant que la force reste au moins à 60 %
+    //    de celle du geste. L'inertie d'un pavé tactile (force qui retombe vite) n'ajoute donc pas de crans en trop,
+    //    alors qu'une molette tournée en continu (force constante) avance d'étape en étape.
     const t = performance.now();
-    const continu = t - dernierCran < 160;
-    dernierCran = t;
-    if (animCran || continu) return;
-    cran(e.deltaY > 0 ? 1 : -1);
+    const force = Math.abs(e.deltaY) * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight : 1);
+    const sens = e.deltaY > 0 ? 1 : -1;
+    const pause = t - dernierEvt >= 160;
+    dernierEvt = t;
+    const depuis = t - dernierAccept;
+    const accepter = pause || (sens !== dernierSens && depuis >= 120) || (depuis >= 420 && force >= picGeste * 0.6);
+    picGeste = pause ? force : Math.max(picGeste, force);
+    if (accepter && cran(sens)) { dernierAccept = t; dernierSens = sens; picGeste = force; }
   }, { passive: false });
   window.addEventListener("keydown", e => {
     if (!cransPossibles() || e.altKey || e.ctrlKey || e.metaKey) return;
@@ -4309,7 +4320,10 @@ function initStoryScrolling() {
     else if (e.key === "ArrowUp" || e.key === "PageUp" || ((e.key === " " || e.key === "Spacebar") && e.shiftKey)) sens = -1;
     if (!sens) return;
     if (cibleTouche && cibleTouche.closest && cibleTouche.closest("input, select, textarea, [contenteditable]")) return;
-    if (cran(sens)) e.preventDefault();
+    // Touche maintenue enfoncée : une étape toutes les 420 ms (sinon la répétition du clavier sautait toutes les étapes)
+    const t = performance.now();
+    if (e.repeat && t - derniereTouche < 420) { if (window.scrollY <= (arrets().pop() || 0) - 3) e.preventDefault(); return; }
+    if (cran(sens)) { e.preventDefault(); derniereTouche = t; }
   });
   // Un geste de la personne (clic, doigt, barre de défilement) interrompt le mouvement en cours.
   ["mousedown", "touchstart"].forEach(t => window.addEventListener(t, arreterCran, { passive: true }));
