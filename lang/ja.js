@@ -152,7 +152,7 @@ window.I18N_DICT.ja = {
   "err.reseau": "サーバーに接続できません(インターネット接続を確認してください)。",
   "err.illisible": "サーバーの応答を読み取れません(コード {code})。",
   "err.serveur": "サーバーエラー。",
-  "err.cle": "グループのキーが設定されていません(スクリプトの「const CLE」の行)。",
+  "err.cle": "中継サーバーのアドレスが設定されていません(スクリプトの「const URL_API」の行)。",
   "note.aucune": "この期間に受信した値はありません。",
   "note.mesure": "{quand}の測定({depuis})。",
 

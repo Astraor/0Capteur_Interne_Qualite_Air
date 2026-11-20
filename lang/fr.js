@@ -158,7 +158,7 @@ window.I18N_DICT.fr = {
   "err.reseau": "impossible de joindre le serveur (connexion internet ?).",
   "err.illisible": "réponse du serveur illisible (code {code}).",
   "err.serveur": "erreur du serveur.",
-  "err.cle": "la clé du groupe n'est pas renseignée (ligne « const CLE » du script).",
+  "err.cle": "l'adresse du relais n'est pas renseignée (ligne « const URL_API » du script).",
   "note.aucune": "Aucune valeur reçue sur cette période.",
   "note.mesure": "Mesure du {quand} ({depuis}).",
 

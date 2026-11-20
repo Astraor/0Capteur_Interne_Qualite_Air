@@ -7,7 +7,7 @@
 # Même principe pour le CO2 : issue « CO2 à vérifier » (capteur débranché, en panne ou à recalibrer).
 #
 # Réglages, dans GitHub : Settings > Secrets and variables > Actions
-#   - secret  AIRCARTO_CLE : clé du groupe (facultatif : sinon elle est lue dans index.html)
+#   - secret  AIRCARTO_CLE : clé du groupe (facultatif : sinon les mesures sont lues par le relais Cloudflare du site)
 #   - variable SEUIL_MIN   : minutes sans mesure avant l'alerte (défaut 10 ; 5 possible, mais voir la note ci-dessous)
 #   - variable DEVICE_ID   : adresse MAC d'une carte précise (défaut : toutes les cartes du groupe)
 #   - variable SEUIL_CO2_MIN : minutes sans CO2 valable avant l'alerte CO2 (défaut 60)

@@ -153,7 +153,7 @@ window.I18N_DICT.en = {
   "err.reseau": "unable to reach the server (internet connection?).",
   "err.illisible": "unreadable server response (code {code}).",
   "err.serveur": "server error.",
-  "err.cle": "the group key is not set (line “const CLE” in the script).",
+  "err.cle": "the relay address is not set (line “const URL_API” in the script).",
   "note.aucune": "No value received for this period.",
   "note.mesure": "Reading from {quand} ({depuis}).",
 
