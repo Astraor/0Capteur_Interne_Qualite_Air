@@ -90,8 +90,8 @@ window.I18N_DICT.ja = {
   "reel.1.t": "部屋の空気で大切なものを、すべて。",
   "reel.1.p": "微小粒子PM1・PM2.5・PM10とCO₂。健康的な室内空気の重要な指標です。",
   "reel.2.u": "秒",
-  "reel.2.t": "30秒ごとに1回の測定。",
-  "reel.2.p": "センサーは10秒ごとに読み取られ、送信のたびにその期間の平均値とピーク値を届けます。",
+  "reel.2.t": "10秒ごとに1回の測定。",
+  "reel.2.p": "センサーは毎秒読み取られ、送信のたびにその10秒間の平均値とピーク値を届けます。",
   "reel.3.u": "センサー",
   "reel.3.t": "粒子にはレーザー、CO₂には赤外線。",
   "reel.3.p": "NextPMはレーザー散乱で粒子を数え、MH-Z19Cは赤外線吸収(NDIR)でCO₂を測定します。",
@@ -222,7 +222,7 @@ window.I18N_DICT.ja = {
 
   /* ---------- フッター ---------- */
   "pied.source.dt": "データ元",
-  "pied.source.dd": "空気質センサー。約30秒ごとに、測定値をAirCartoサーバー(api.aircarto.fr)へ送信します。",
+  "pied.source.dd": "空気質センサー。約10秒ごとに、測定値をAirCartoサーバー(api.aircarto.fr)へ送信します。",
   "pied.mesures.dt": "測定項目",
   "pied.mesures.dd": "微小粒子PM1、PM2.5、PM10(µg/m³)、温度(°C)、相対湿度(%)、CO₂(ppm)。",
   "pied.traitement.dt": "データ処理",
