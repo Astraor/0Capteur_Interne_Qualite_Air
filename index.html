@@ -20,7 +20,8 @@
      désactivés). La personne peut les réduire avec le bouton « Animations » du pied de page : choix mémorisé. */
   try { if (localStorage.getItem("animations") === "reduites") document.documentElement.classList.add("mouvement-reduit"); } catch (e) {}
   /* Introduction déjà vue lors d'une visite précédente : la page s'ouvre directement sur les mesures.
-     On la revoit en cliquant sur « 00 » (ordinateur) ou sur « Introduction » (téléphone) dans le sommaire. */
+     On la revoit en cliquant sur « 00 » (ordinateur) ou sur « Introduction » (téléphone) dans le sommaire.
+     L'accueil (01, verdict « L'air est… ») reste affiché : la page s'ouvre dessus. */
   try { if (localStorage.getItem("intro-vue") === "1") document.documentElement.classList.add("intro-masquee"); } catch (e) {}
   setTimeout(function () {
     if (!window.__pret) document.documentElement.classList.remove("js");
@@ -120,6 +121,10 @@
   .hero :focus-visible { outline-color: currentColor; }
   /* Un clic ou un geste sur les particules ne sélectionne plus le titre ni les textes du bandeau. */
   .hero { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  /* Pages d'introduction (écran d'entrée, ouverture, manifeste, points forts) et raccourci : aucun texte sélectionnable. */
+  .entree-plein, .ouverture, .manifeste, .reel, .aller-mesures, .bascule-plein, .sommaire-story {
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  }
   .hero-disque {
     position: absolute; z-index: 0;
     right: -14vmin; top: -20vmin;
@@ -152,21 +157,35 @@
     min-height: 32px; padding: 5px 11px; gap: 6px; font-size: .68rem; border-width: 1.5px;
   }
   .hero.jeu .jeu-poussiere::after { content: ""; position: absolute; inset: -8px; }   /* zone tactile plus grande que le bouton */
-  /* Bouton « + Particules » : n'existe qu'en mode jeu, en haut à gauche (le bouton de sortie est en haut à droite) */
-  .jeu-plus { display: none; }
-  .hero.jeu .jeu-plus {
-    position: absolute; z-index: 5; top: 0; left: 0;
-    display: inline-flex; align-items: center; gap: 6px;
-    min-height: 32px; padding: 5px 12px;
+  /* Réglages du mode jeu (nombre et vitesse des particules) : n'existent qu'en mode jeu, en haut à gauche
+     (le bouton de sortie est en haut à droite). Chaque réglage : [ − ] valeur [ + ]. */
+  .jeu-outils { display: none; }
+  .hero.jeu .jeu-outils {
+    position: absolute; z-index: 5; top: 0; left: 0; right: 190px;
+    display: flex; flex-wrap: wrap; gap: 8px 10px;
+  }
+  .jeu-reglage {
+    display: inline-flex; align-items: center;
     border: 1.5px solid currentColor; border-radius: 999px;
-    background: transparent; color: inherit; cursor: pointer;
-    font: 600 .68rem/1.1 var(--mono); letter-spacing: .02em;
+    font: 600 .68rem/1.1 var(--mono); letter-spacing: .02em; white-space: nowrap;
     -webkit-user-select: none; user-select: none;
   }
-  .hero.jeu .jeu-plus::after { content: ""; position: absolute; inset: -8px; }
-  .hero.jeu .jeu-plus > span:first-child { font-size: 1.1rem; line-height: 1; }
-  .hero.jeu .jeu-plus:disabled { opacity: .45; cursor: default; }
-  @media (hover: hover) { .hero.jeu .jeu-plus:not(:disabled):hover { background: rgba(127, 127, 127, .18); } }
+  .jeu-valeur { padding: 0 4px; min-width: 9.5ch; text-align: center; font-variant-numeric: tabular-nums; }
+  .jeu-reglage button {
+    position: relative; display: grid; place-items: center; width: 32px; height: 30px; padding: 0;
+    border: 0; border-radius: 999px; background: transparent; color: inherit; cursor: pointer;
+    font: 600 1.05rem/1 var(--mono);
+  }
+  .jeu-reglage button::after { content: ""; position: absolute; inset: -6px -2px; }   /* zone tactile plus grande */
+  .jeu-reglage button:disabled { opacity: .35; cursor: default; }
+  @media (hover: hover) { .jeu-reglage button:not(:disabled):hover { background: rgba(127, 127, 127, .2); } }
+  @media (pointer: coarse) { .jeu-reglage button { width: 40px; height: 38px; } }
+  /* Le bandeau sort du flux pendant le jeu : il couvre tout l'écran quel que soit l'endroit où l'on était dans la page
+     (avant, il restait à moitié plus bas si l'on lançait le jeu alors que le bandeau n'était pas encore en haut). */
+  .js .hero.jeu {
+    position: fixed !important; z-index: 90; inset: 0; width: auto; height: 100vh; height: 100dvh;
+    scale: none !important; border-radius: 0 !important;
+  }
   /* Plein écran « de secours » (iPhone, anciens navigateurs) : la barre de chapitres et la barre de progression s'effacent aussi. */
   html.jeu-actif, html.jeu-actif body { overflow: hidden; }
   html.jeu-actif .sommaire-story, html.jeu-actif .progression-lecture { opacity: 0; pointer-events: none; transition: opacity .3s; }
@@ -380,7 +399,7 @@
     font-size: clamp(1.6rem, min(9.6vw, (100vw - 2 * var(--gouttiere)) / 9.2), 9rem); line-height: 1; letter-spacing: .01em; white-space: nowrap; text-transform: uppercase;   /* en capitales, comme sur l'affiche */
     /* La jambe du R final (et le A initial) dépassent de la boîte de la lettre : avec background-clip: text, tout ce qui
        sort de la boîte n'est pas peint (R coupé net). Les marges intérieures agrandissent la zone peinte. */
-    padding: .06em .16em .1em;
+    padding: .08em .42em .14em; margin: 0 -.42em;   /* marge négative : même place dans la mise en page, mais zone peinte assez large pour la jambe du R */
     background: linear-gradient(180deg, #ffffff 0%, #f1ece2 48%, #cbc3b2 100%);   /* ivoire : la pierre claire de la basilique */
     -webkit-background-clip: text; background-clip: text; color: transparent;
     filter: drop-shadow(0 0 30px rgba(255, 236, 200, .16));
@@ -404,7 +423,7 @@
     position: absolute; left: 0; right: 0; bottom: calc(22px + env(safe-area-inset-bottom, 0px)); margin: 0;
     text-align: center; font: 600 .75rem/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: rgba(242, 244, 240, .6);
   }
-  .ouv-fleche { display: inline-block; margin-left: 6px; animation: rebond 1.8s ease-in-out infinite; }
+  .ouv-fleche { display: inline-block; margin-left: 6px; animation: rebond 1.8s ease-in-out infinite; will-change: transform; }
   /* pendant l'ouverture et les points forts (scènes noires plein écran), les barres de la page s'effacent */
   .sommaire-story, .progression-lecture, .bascule-plein { transition: opacity .4s ease; }
   html.scene-libre .sommaire-story, html.scene-libre .progression-lecture, html.scene-libre .bascule-plein { opacity: 0; pointer-events: none; }
@@ -473,7 +492,8 @@
   html.js.mouvement-reduit .reel-avance, html.mouvement-reduit .ouv-defiler { display: none; }
 
   /* ---------- Introduction masquée (déjà vue) : ouverture, bandeau, manifeste et points forts ---------- */
-  html.intro-masquee #ouverture, html.intro-masquee #piste, html.intro-masquee #manifeste, html.intro-masquee #atouts,
+  /* L'accueil (01, verdict « L'air est… ») reste affiché : la page s'ouvre dessus. */
+  html.intro-masquee #ouverture, html.intro-masquee #manifeste, html.intro-masquee #atouts,
   html.intro-masquee .aller-mesures { display: none !important; }
 
   /* ---------- Barre de contrôle (reste collée en haut) ---------- */
@@ -592,15 +612,19 @@
 
   /* Raccourci flottant vers les mesures (après l'écran d'entrée) */
   .aller-mesures {
-    position: fixed; z-index: 75; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
+    /* centré sans translate(-50 %) : une position au demi-pixel rendait le texte et la flèche flous et saccadés */
+    position: fixed; z-index: 75; left: 0; right: 0; width: max-content; margin: 0 auto; bottom: calc(20px + env(safe-area-inset-bottom, 0px));
     display: inline-flex; align-items: center; gap: 10px; min-height: 44px; padding: 10px 20px;
     border: 2px solid var(--encre); border-radius: 999px; background: var(--fond); color: var(--encre);
     font: 700 .85rem/1 var(--sans); font-stretch: 112%; white-space: nowrap;
     box-shadow: 0 4px 18px rgba(14, 27, 36, .28); cursor: pointer;
     animation: aller-apparait .45s var(--courbe) both;
   }
-  .aller-mesures .fleche { display: inline-block; animation: rebond 1.8s ease-in-out infinite; }
-  @keyframes aller-apparait { from { opacity: 0; transform: translate(-50%, 12px); } }
+  /* flèche sur sa propre couche (animée par le processeur graphique, sans repeindre le bouton à chaque image),
+     mouvement continu (sinusoïde) au lieu de deux arrêts nets en haut et en bas */
+  .aller-mesures .fleche { display: inline-block; will-change: transform; animation: flotte 1.6s cubic-bezier(.37, 0, .63, 1) infinite alternate; }
+  @keyframes flotte { from { transform: translate3d(0, -2px, 0); } to { transform: translate3d(0, 3px, 0); } }
+  @keyframes aller-apparait { from { opacity: 0; transform: translateY(12px); } }
   @media (hover: hover) { .aller-mesures:hover { background: var(--encre); color: var(--fond); } }
   .aller-mesures:focus-visible { outline: 3px solid var(--cobalt); outline-offset: 3px; }
   @media (max-width: 899px) { .aller-mesures { bottom: calc(82px + env(safe-area-inset-bottom, 0px)); } }
@@ -633,6 +657,10 @@
   .option input:focus-visible + .interrupteur { outline: 3px solid var(--cobalt); outline-offset: 3px; }
 
   .etat { margin: 14px 0 0; font: 500 .8rem/1.4 var(--mono); color: var(--doux); }
+  /* dans la barre des plages de mesures : une ligne discrète sous les boutons */
+  .barre .etat { flex: 1 1 100%; margin: -2px 0 0; font-size: .72rem; line-height: 1.35; }
+  .barre .etat.erreur { margin: 0; padding: 8px 12px; font-size: .85rem; }
+  .barre .etat:empty { display: none; }
   .etat.erreur {
     padding: 12px 16px; border-left: 4px solid #9c1f17; background: #f6d3cf; color: #7a1812;
     font-family: var(--sans); font-size: .92rem;
@@ -779,7 +807,10 @@
   .echelle-barre i:not(:last-child) { border-right: 3px solid var(--fond); }
   .graduation { position: absolute; top: 60px; transform: translateX(-50%); font: 500 .68rem/1 var(--mono); color: var(--doux); white-space: nowrap; }
   .graduation::before { content: ""; position: absolute; left: 50%; top: -8px; height: 5px; width: 1px; background: var(--doux); }
-  .repere { position: absolute; top: 28px; left: var(--pos, 0%); width: 4px; height: 32px; margin-left: -2px; background: var(--encre); border-radius: 1px; transition: left 1.7s var(--courbe); }
+  /* Repère de la dernière mesure : un point de largeur nulle placé à la valeur ; le trait et la pastille sont tous deux
+     centrés dessus par le même translate(-50 %), ils restent donc alignés quel que soit l'arrondi des pixels. */
+  .repere { position: absolute; top: 28px; left: var(--pos, 0%); width: 0; height: 32px; transition: left 1.7s var(--courbe); }
+  .repere::after { content: ""; position: absolute; left: 0; top: 0; width: 4px; height: 100%; transform: translateX(-50%); background: var(--encre); border-radius: 1px; }
   .js .bloc:not(.vu) .repere { left: 0%; }
   /* Minimum et maximum de la période : un trait avec deux butées au-dessus de la jauge, et leurs valeurs.
      L'étiquette glisse de --c (centre du trait) tout en restant dans la jauge : translateX(-c %) de sa propre largeur. */
@@ -797,7 +828,17 @@
     transition: left 1.7s var(--courbe), transform 1.7s var(--courbe);
   }
   .js .bloc:not(.vu) .plage { left: 0%; width: 0%; }
-  .repere::before { content: ""; position: absolute; top: -6px; left: 50%; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: var(--encre); border: 2px solid var(--fond); }
+  .repere::before { content: ""; position: absolute; z-index: 1; top: -6px; left: 0; width: 12px; height: 12px; transform: translateX(-50%); border-radius: 50%; background: var(--encre); border: 2px solid var(--fond); }
+  /* Incertitude du capteur (fiche technique) : bande hachurée sur la jauge, de (valeur − u) à (valeur + u) */
+  .incert-bande {
+    position: absolute; top: 34px; height: 22px; left: var(--a, 0%); width: calc(var(--b, 0%) - var(--a, 0%));
+    border: 1.5px solid var(--encre); border-radius: 2px;
+    background: repeating-linear-gradient(135deg, rgba(14, 27, 36, .28) 0 2px, transparent 2px 5px);
+    transition: left 1.7s var(--courbe), width 1.7s var(--courbe);
+  }
+  .js .bloc:not(.vu) .incert-bande { left: 0%; width: 0%; }
+  .incert { display: block; margin: -2px 0 6px; font: 500 .74rem/1.3 var(--mono); color: var(--doux); }
+  .incert b { font-weight: 700; color: var(--encre); }
 
   .autres { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 26px 32px; padding-top: 26px; border-top: 1px solid var(--filet); }
   .autres:empty { display: none; }
@@ -890,6 +931,15 @@
       radial-gradient(circle at calc(100% - 8px) 50%, #e0261d 8px, transparent 8.5px);
   }
   .tailles figcaption { flex-basis: 100%; font-size: .78rem; color: var(--doux); }
+  /* Barre d'échelle de la figure, sur sa propre ligne sous les ronds : 100 px = 50 µm, un cran tous les 10 µm */
+  .tailles .echelle-figure { flex-basis: 100%; display: flex; align-items: center; justify-items: start; gap: 12px; text-align: left; }
+  .echelle-figure .zone { height: auto; min-width: 0; display: block; }
+  .echelle-figure b { order: -1; }
+  .echelle-trait {
+    display: block; width: 100px; height: 10px;
+    border: solid var(--encre); border-width: 0 2px 2px;
+    background: repeating-linear-gradient(90deg, transparent 0 18px, var(--encre) 18px 20px) bottom / 100% 5px no-repeat;
+  }
 
   /* ---------- Pied de page ---------- */
   .pied { margin-top: clamp(30px, 5vw, 64px); padding: clamp(30px, 5vw, 52px) 0 36px; background: var(--encre); color: var(--fond); }
@@ -1016,7 +1066,7 @@
   html.js.mouvement-reduit .bloc::before { transform: none; transition: none; }
   html.js.mouvement-reduit .bloc:not(.vu) .zone-graphe { clip-path: none; opacity: 0; }
   html.mouvement-reduit .zone-graphe { transition: opacity .7s ease; }
-  html.mouvement-reduit :is(.plage, .plage-texte, .repere) { transition: none; }
+  html.mouvement-reduit :is(.plage, .plage-texte, .repere, .incert-bande) { transition: none; }
   html.mouvement-reduit :is(.point-story, .p-titre) { transition: none; }
   html.mouvement-reduit .point-story::before { transition: none; }
 
@@ -1082,7 +1132,7 @@
   </p>
 </noscript>
 
-<section class="ouverture" id="ouverture" aria-labelledby="ouverture-titre">
+<section class="ouverture" id="ouverture" aria-labelledby="ouverture-titre" data-titre="Introduction" data-i18n-attr="data-titre:chap.intro">
   <div class="ouv-scene">
     <canvas class="ouv-etoiles" id="ouv-etoiles" aria-hidden="true"></canvas>
 
@@ -1106,69 +1156,6 @@
     <p class="ouv-defiler" id="ouv-defiler"><span data-i18n="ouv.defiler">Faites défiler</span><span class="ouv-fleche" aria-hidden="true">↓</span></p>
   </div>
 </section>
-
-<div class="piste" id="piste">
-<header class="hero" id="hero" data-titre="Introduction" data-i18n-attr="data-titre:chap.intro">
-  <div class="hero-disque" aria-hidden="true"></div>
-  <canvas id="poussieres" aria-hidden="true"></canvas>
-  <div class="hero-grain" aria-hidden="true"></div>
-  <div class="tampon" id="tampon" aria-hidden="true"></div>
-
-  <div class="conteneur hero-contenu">
-    <div class="hero-haut">
-      <p class="marque" data-i18n="hero.marque">BUT Mesures physiques · IUT Aix-Marseille</p>
-
-      <p id="statut" class="statut">
-        <span class="point"></span>
-        <span id="statut-texte">Chargement…</span>
-      </p>
-
-      <!-- Sélecteur de langue n° 2 : bandeau d'accueil -->
-      <div class="langues" role="group" data-i18n-attr="aria-label:lang.groupe" aria-label="Langue">
-        <button type="button" data-lang="fr" lang="fr" aria-label="Français" aria-pressed="true">FR</button>
-        <button type="button" data-lang="en" lang="en" aria-label="English" aria-pressed="false">EN</button>
-        <button type="button" data-lang="ja" lang="ja" aria-label="日本語" aria-pressed="false">日本語</button>
-      </div>
-
-      <!-- Visible seulement en mode jeu : ajoute des particules, retirées dès qu'on quitte le mode jeu -->
-      <button type="button" class="jeu-plus" id="jeu-plus">
-        <span aria-hidden="true">+</span> <span id="jeu-plus-texte">Particules</span>
-      </button>
-
-      <button type="button" class="jeu-poussiere" id="jeu-poussiere" aria-pressed="false">
-        <span id="jeu-texte">Jouer avec les particules</span>
-      </button>
-    </div>
-
-    <h1 class="titre">
-      <span class="question apparait" style="--d:0" data-i18n-html="hero.question">Quelle est la qualité de l'air <em>ici</em>&nbsp;?</span>
-
-      <span class="reponse" aria-live="polite">
-        <span class="prefixe apparait" style="--d:1" id="verdict-prefixe" data-i18n="verdict.air_est">L'air est</span>
-
-        <span class="mot s1 attente" id="verdict">
-          <span class="sr" id="verdict-sr">…</span>
-          <span id="verdict-lettres" aria-hidden="true">…</span>
-
-          <svg class="souligne" viewBox="0 0 300 22" preserveAspectRatio="none" aria-hidden="true" focusable="false">
-            <path d="M3 14 C 38 5, 71 18, 108 10 S 176 4, 214 12 S 270 16, 297 7" pathLength="1"></path>
-          </svg>
-        </span>
-      </span>
-    </h1>
-
-    <div class="hero-bas">
-      <div class="hero-gauche apparait" style="--d:3">
-        <p class="intro" data-i18n-html="hero.intro">Cette page affiche les mesures de notre capteur : particules fines, température, humidité et CO₂. Le capteur est installé <mark class="a-completer">[À COMPLÉTER : lieu]</mark>.</p>
-
-        <a class="descendre" href="#mesures" data-i18n-html="hero.voir">Voir les mesures <span aria-hidden="true">↓</span></a>
-      </div>
-
-      <dl class="lecture" id="lecture" hidden></dl>
-    </div>
-  </div>
-</header>
-</div>
 
 <section class="manifeste" id="manifeste" aria-label="Présentation du capteur" data-i18n-attr="aria-label:manifeste.aria">
   <div class="manifeste-scene conteneur">
@@ -1227,6 +1214,79 @@
   </div>
 </section>
 
+<!-- 01 · Accueil : le verdict « L'air est… » (après l'ouverture, le manifeste et les points forts) -->
+<div class="piste" id="piste">
+<header class="hero" id="hero" data-titre="Accueil" data-i18n-attr="data-titre:chap.accueil">
+  <div class="hero-disque" aria-hidden="true"></div>
+  <canvas id="poussieres" aria-hidden="true"></canvas>
+  <div class="hero-grain" aria-hidden="true"></div>
+  <div class="tampon" id="tampon" aria-hidden="true"></div>
+
+  <div class="conteneur hero-contenu">
+    <div class="hero-haut">
+      <p class="marque" data-i18n="hero.marque">BUT Mesures physiques · IUT Aix-Marseille</p>
+
+      <p id="statut" class="statut">
+        <span class="point"></span>
+        <span id="statut-texte">Chargement…</span>
+      </p>
+
+      <!-- Sélecteur de langue n° 2 : bandeau d'accueil -->
+      <div class="langues" role="group" data-i18n-attr="aria-label:lang.groupe" aria-label="Langue">
+        <button type="button" data-lang="fr" lang="fr" aria-label="Français" aria-pressed="true">FR</button>
+        <button type="button" data-lang="en" lang="en" aria-label="English" aria-pressed="false">EN</button>
+        <button type="button" data-lang="ja" lang="ja" aria-label="日本語" aria-pressed="false">日本語</button>
+      </div>
+
+      <!-- Visibles seulement en mode jeu : nombre et vitesse des particules (tout revient à la normale en quittant le jeu) -->
+      <div class="jeu-outils" id="jeu-outils">
+        <div class="jeu-reglage" role="group" aria-labelledby="jeu-nb-texte">
+          <button type="button" class="jeu-moins" id="jeu-nb-moins" aria-label="Retirer des particules"><span aria-hidden="true">−</span></button>
+          <span class="jeu-valeur" id="jeu-nb-texte">Particules</span>
+          <button type="button" class="jeu-plus" id="jeu-nb-plus" aria-label="Ajouter des particules"><span aria-hidden="true">+</span></button>
+        </div>
+        <div class="jeu-reglage" role="group" aria-labelledby="jeu-vit-texte">
+          <button type="button" class="jeu-moins" id="jeu-vit-moins" aria-label="Ralentir les particules"><span aria-hidden="true">−</span></button>
+          <span class="jeu-valeur" id="jeu-vit-texte">Vitesse ×1</span>
+          <button type="button" class="jeu-plus" id="jeu-vit-plus" aria-label="Accélérer les particules"><span aria-hidden="true">+</span></button>
+        </div>
+      </div>
+
+      <button type="button" class="jeu-poussiere" id="jeu-poussiere" aria-pressed="false">
+        <span id="jeu-texte">Jouer avec les particules</span>
+      </button>
+    </div>
+
+    <h1 class="titre">
+      <span class="question apparait" style="--d:0" data-i18n-html="hero.question">Quelle est la qualité de l'air <em>ici</em>&nbsp;?</span>
+
+      <span class="reponse" aria-live="polite">
+        <span class="prefixe apparait" style="--d:1" id="verdict-prefixe" data-i18n="verdict.air_est">L'air est</span>
+
+        <span class="mot s1 attente" id="verdict">
+          <span class="sr" id="verdict-sr">…</span>
+          <span id="verdict-lettres" aria-hidden="true">…</span>
+
+          <svg class="souligne" viewBox="0 0 300 22" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+            <path d="M3 14 C 38 5, 71 18, 108 10 S 176 4, 214 12 S 270 16, 297 7" pathLength="1"></path>
+          </svg>
+        </span>
+      </span>
+    </h1>
+
+    <div class="hero-bas">
+      <div class="hero-gauche apparait" style="--d:3">
+        <p class="intro" data-i18n-html="hero.intro">Cette page affiche les mesures de notre capteur : particules fines, température, humidité et CO₂. Le capteur est installé à Marseille.</p>
+
+        <a class="descendre" href="#mesures" data-i18n-html="hero.voir">Voir les mesures <span aria-hidden="true">↓</span></a>
+      </div>
+
+      <dl class="lecture" id="lecture" hidden></dl>
+    </div>
+  </div>
+</header>
+</div>
+
 <div class="barre" id="mesures">
   <div class="conteneur barre-int">
     <div class="periodes" role="group" aria-label="Période affichée" data-i18n-attr="aria-label:p.aria">
@@ -1257,6 +1317,9 @@
     </label>
 
     <button type="button" class="bouton-export" id="bouton-export" aria-expanded="false" aria-controls="export" aria-label="Exporter les mesures en CSV" title="Exporter les mesures en CSV" data-i18n-attr="aria-label:export.aria;title:export.aria"><span aria-hidden="true">⤓</span> <span class="long" data-i18n="export.bouton">Export CSV</span><span class="court">CSV</span></button>
+
+    <!-- Nombre de points, pas de la moyenne et mesures rejouées : rangés avec les plages de mesures -->
+    <p id="etat" class="etat" role="status">Chargement…</p>
   </div>
 
   <form class="perso" id="perso" aria-label="Durée personnalisée" data-i18n-attr="aria-label:perso.aria" novalidate hidden>
@@ -1328,7 +1391,6 @@
 </div>
 
 <main class="conteneur">
-  <p id="etat" class="etat" role="status">Chargement…</p>
 
   <section class="bloc chapitre" id="chapitre-mesures" data-titre="Dernière mesure" data-i18n-attr="data-titre:chap.mesures" aria-labelledby="titre-derniere">
     <div class="bloc-tete revele">
@@ -1394,7 +1456,7 @@
       <div class="texte-ligne revele">
         <h3 data-i18n="comp.projet.h3">Le projet</h3>
         <div>
-          <p data-i18n-html="comp.projet.p"><mark class="a-completer">[À COMPLÉTER : en 2 ou 3 phrases, le but du projet, le modèle de carte utilisé et la date de mise en service.]</mark></p>
+          <p data-i18n-html="comp.projet.p">Projet du BUT Mesures physiques de l'IUT Aix-Marseille&nbsp;: un boîtier installé à Marseille mesure en continu les particules fines (PM1, PM2.5, PM10) et le CO₂ d'une pièce, les affiche sur un écran LED de 64&nbsp;×&nbsp;32 points et les publie sur cette page. Il est construit autour d'une carte ESP32 (WROOM-32U), d'un capteur de particules NextPM (Tera Sensor, diffusion laser) et d'un capteur de CO₂ MH-Z19C (Winsen, infrarouge NDIR).</p>
         </div>
       </div>
 
@@ -1408,6 +1470,8 @@
             <div class="taille"><div class="zone"><span class="rond pm25"></span></div><b>PM2.5</b><small data-i18n="comp.t25">2,5 µm</small></div>
             <div class="taille"><div class="zone"><span class="rond pm1"></span></div><b>PM1</b><small>1 µm</small></div>
             <div class="taille"><div class="zone"><span class="rond co2"></span></div><b>CO₂</b><small data-i18n="comp.tco2">≈ 0,3 nm · agrandie</small></div>
+            <!-- Barre d'échelle : 100 px = 50 µm (1 µm = 2 px, comme les ronds) -->
+            <div class="taille echelle-figure" aria-hidden="true"><div class="zone"><span class="echelle-trait"></span></div><small>50 µm</small><b data-i18n="comp.echelle">Échelle</b></div>
             <figcaption data-i18n="comp.caption">Diamètres comparés, à l'échelle, sauf la molécule de CO₂ : 3 000 fois plus petite qu'une PM1, elle serait invisible. Les trajets sont illustratifs : plus c'est petit, plus ça s'agite.</figcaption>
           </figure>
         </div>
@@ -1417,6 +1481,13 @@
         <h3>CO₂</h3>
         <div>
           <p data-i18n="comp.co2.p">À l'intérieur, le CO₂ vient surtout de notre respiration. Aux niveaux mesurés en salle, ce n'est pas lui qui est dangereux&nbsp;: il sert d'indicateur de confinement. Plus il monte, moins l'air est renouvelé. Le Haut Conseil de la santé publique (HCSP) fixe un objectif sous 800&nbsp;ppm dans les lieux clos et recommande d'aérer au-delà. L'air extérieur est autour de 400&nbsp;ppm.</p>
+        </div>
+      </div>
+
+      <div class="texte-ligne revele">
+        <h3 data-i18n="comp.incert.h3">Incertitude des mesures</h3>
+        <div>
+          <p data-i18n="comp.incert.p">Chaque valeur de «&nbsp;Dernière mesure&nbsp;» est suivie de son incertitude, tirée de la fiche technique du capteur&nbsp;; la bande hachurée de la jauge montre l'intervalle correspondant. CO₂ (MH-Z19C, Winsen)&nbsp;: ±(50&nbsp;ppm + 5&nbsp;% de la valeur lue), soit ±71&nbsp;ppm à 420&nbsp;ppm et ±100&nbsp;ppm à 1&nbsp;000&nbsp;ppm. Particules (NextPM, Tera Sensor)&nbsp;: la fiche donne une limite de détection inférieure à 1&nbsp;µg/m³, une erreur de linéarité inférieure à 5&nbsp;% et une répétabilité meilleure que 3&nbsp;%, et le distributeur annonce une exactitude de ±10&nbsp;%&nbsp;: on affiche donc ±(1&nbsp;µg/m³ + 10&nbsp;% de la valeur). Ces chiffres viennent du laboratoire&nbsp;; comparé à des appareils de référence, le NextPM a montré des écarts plus grands (évaluation AQ-SPEC). Une valeur proche d'un seuil peut donc se trouver de l'autre côté.</p>
         </div>
       </div>
 
@@ -1441,7 +1512,7 @@
             </table>
           </div>
           <p class="petit" style="margin-top:14px" data-i18n="comp.seuils.p1">Particules&nbsp;: seuils de l'indice ATMO publiés par Atmosud (arrêté du 10 juillet 2020). Ces seuils portent sur des moyennes journalières&nbsp;: ici ils servent de repère pour la dernière mesure, à titre indicatif. CO₂&nbsp;: 800&nbsp;ppm est l'objectif du HCSP&nbsp;; 1&nbsp;000 et 1&nbsp;500&nbsp;ppm sont des repères usuels pour l'aération des salles. PM1&nbsp;: l'indice ATMO ne fixe pas de seuil, on applique ici les mêmes limites que pour les PM2.5.</p>
-          <p class="petit" data-i18n-html="comp.seuils.p2">Sources&nbsp;: Atmosud, <em>L'indice ATMO de la qualité de l'air</em> (atmosud.org)&nbsp;; arrêté du 10 juillet 2020 relatif à l'indice de la qualité de l'air ambiant&nbsp;; HCSP, recommandations sur l'aération et la ventilation des établissements. <mark class="a-completer">[À COMPLÉTER : ajoutez ici les liens de vos propres sources.]</mark></p>
+          <p class="petit" data-i18n-html="comp.seuils.p2">Sources&nbsp;: Atmo France, <em>L'indice ATMO</em> (<a href='https://www.atmo-france.org/article/lindice-atmo' target='_blank' rel='noopener'>atmo-france.org</a>) et son <em>guide de calcul</em> (<a href='https://www.airpl.org/sites/default/files/reports/guide_calcul_nouvel_indice_ATMO_VF_version14decembre2020%281%29.pdf' target='_blank' rel='noopener'>PDF, décembre 2020</a>)&nbsp;; arrêté du 10 juillet 2020 relatif à l'indice de la qualité de l'air ambiant (<a href='https://aida.ineris.fr/reglementation/arrete-100720-relatif-a-lindice-qualite-lair-ambiant' target='_blank' rel='noopener'>texte sur aida.ineris.fr</a>)&nbsp;; HCSP, avis du 28 avril 2021 sur l'aération, la ventilation et la mesure du CO₂ (<a href='https://www.hcsp.fr/Explore.cgi/Telecharger?NomFichier=hcspa20210428_covaravenetmesducodanleserp.pdf' target='_blank' rel='noopener'>hcsp.fr</a>)&nbsp;; fiches techniques du MH-Z19C (<a href='https://www.winsen-sensor.com/product/mh-z19c.html' target='_blank' rel='noopener'>Winsen</a>) et du NextPM (<a href='https://tera-sensor.gitbook.io/tera-sensor/sensors/nextpm/nextpm-datasheet' target='_blank' rel='noopener'>Tera Sensor</a>)&nbsp;; évaluation du NextPM par AQ-SPEC (<a href='https://www.aqmd.gov/aq-spec/sensordetail/tera-sensor---nextpm' target='_blank' rel='noopener'>aqmd.gov</a>).</p>
         </div>
       </div>
 
@@ -1596,6 +1667,18 @@ const SEUILS = {
   pm10: { limites: [20, 40, 50, 100, 150], tracer: [1, 3], atmo: true,  plancher: 0,   plafond: 200 },
   co2:  { limites: [800, 1000, 1500],      tracer: [0, 1], atmo: false, plancher: 400, plafond: 2500 },
 };
+
+// Incertitude de chaque mesure, d'après la fiche technique du capteur : u = abs + rel × valeur.
+//  - CO₂ : MH-Z19C (Winsen) : ±(50 ppm + 5 % de la valeur lue).
+//  - Particules : NextPM (Tera Sensor) : limite de détection < 1 µg/m³, erreur de linéarité < 5 %, répétabilité < 3 % ;
+//    le distributeur (RS) annonce ±10 %. On retient ±(1 µg/m³ + 10 % de la valeur).
+const INCERTITUDES = {
+  pm1:  { abs: 1,  rel: 0.10, cle: "pm" },
+  pm25: { abs: 1,  rel: 0.10, cle: "pm" },
+  pm10: { abs: 1,  rel: 0.10, cle: "pm" },
+  co2:  { abs: 50, rel: 0.05, cle: "co2" },
+};
+const incertitude = (champ, v) => (INCERTITUDES[champ] ? INCERTITUDES[champ].abs + INCERTITUDES[champ].rel * Math.abs(v) : 0);
 
 // Couleurs officielles de l'indice ATMO (ciel : bandeau et jauge). couleur / fond : texte et fond des pastilles,
 // assombris ou éclaircis pour rester lisibles. texte : couleur du texte posé sur « ciel ».
@@ -2174,20 +2257,57 @@ function majMenuPas() {
 
 // Plugin Chart.js maison : trace des lignes horizontales en pointillés (les seuils), chacune sur l'axe de sa mesure
 // (particules à gauche, CO₂ à droite). Une ligne n'est tracée que si l'une de ses courbes est cochée.
+// - Échelle : si un seuil est juste au-dessus (ou au-dessous) des courbes, l'axe s'étire pour le montrer (au plus
+//   +120 % de l'étendue des valeurs, sinon les courbes seraient écrasées en bas du graphe).
+// - Seuil trop loin : il n'est plus simplement caché ; une petite étiquette « ↑ seuil » est posée en haut (ou « ↓ » en
+//   bas) du graphe, pour savoir de quel côté il se trouve.
+// - Étiquettes : posées sur un fond (le pointillé ne les barre plus), jamais coupées par le haut du graphe, et
+//   décalées quand deux seuils sont trop proches pour ne pas se chevaucher.
 function creerPluginSeuils(lignes) {
+  const ETIRE_MAX = 1.2;
+  const visibleSur = (chart, l) => chart.data.datasets.some((d, i) => l.champs.includes(d.champ) && chart.isDatasetVisible(i));
   return {
     id: "seuils",
+    afterDataLimits(chart, args) {
+      const echelle = args.scale;
+      if (!echelle || !lignes.length) return;
+      const min = echelle.min, max = echelle.max;
+      if (!Number.isFinite(min) || !Number.isFinite(max)) return;
+      const etendue = Math.max(max - min, 1e-6);
+      let haut = max, bas = min;
+      lignes.forEach(l => {
+        if (l.axe !== echelle.id || !visibleSur(chart, l)) return;
+        if (l.valeur > max && l.valeur <= max + etendue * ETIRE_MAX) haut = Math.max(haut, l.valeur + etendue * 0.12);
+        if (l.valeur < min && l.valeur >= min - etendue * ETIRE_MAX) bas = Math.min(bas, l.valeur - etendue * 0.12);
+      });
+      if (haut !== max) echelle.max = haut;
+      if (bas !== min) echelle.min = Math.max(bas, min >= 0 && bas < 0 ? 0 : bas);
+    },
     afterDatasetsDraw(chart) {
       const { ctx, chartArea } = chart;
+      const taille = chart.width < 480 ? 10 : 11;
+      const H = taille + 6;                     // hauteur d'une étiquette
+      const occupees = { gauche: [], droite: [] };
+      const horsHaut = [], horsBas = [];
+      ctx.save();
+      ctx.font = "600 " + taille + "px " + POLICE_MONO;
+      ctx.textBaseline = "middle";
+      const etiquette = (texte, x, yCentre, couleur, alignDroite) => {
+        const w = ctx.measureText(texte).width + 8;
+        const gauche = alignDroite ? x - w : x;
+        ctx.fillStyle = "rgba(242, 244, 240, .92)";   // fond de la page : le pointillé passe derrière le texte
+        ctx.fillRect(gauche, yCentre - H / 2, w, H);
+        ctx.fillStyle = couleur;
+        ctx.textAlign = "left";
+        ctx.fillText(texte, gauche + 4, yCentre + 0.5);
+      };
+      // Seuils dans le graphe : ligne + étiquette
       lignes.forEach(l => {
         const echelle = chart.scales[l.axe];
-        if (!echelle) return;
-        const affichee = chart.data.datasets.some((d, i) => l.champs.includes(d.champ) && chart.isDatasetVisible(i));
-        if (!affichee) return;
-        const droite = l.axe !== "y";   // étiquettes de l'axe de droite à droite, celles de gauche à gauche
+        if (!echelle || !visibleSur(chart, l)) return;
         const y = echelle.getPixelForValue(l.valeur);
-        if (y < chartArea.top || y > chartArea.bottom) return;
-        ctx.save();
+        if (y < chartArea.top - 0.5) { horsHaut.push(l); return; }
+        if (y > chartArea.bottom + 0.5) { horsBas.push(l); return; }
         ctx.setLineDash([6, 4]);
         ctx.lineWidth = 1.5;
         ctx.strokeStyle = l.couleur;
@@ -2196,12 +2316,35 @@ function creerPluginSeuils(lignes) {
         ctx.lineTo(chartArea.right, y);
         ctx.stroke();
         ctx.setLineDash([]);
-        ctx.fillStyle = l.couleur;
-        ctx.font = "600 11px " + POLICE_MONO;
-        ctx.textAlign = droite ? "right" : "left";
-        ctx.fillText(l.texte, droite ? chartArea.right - 4 : chartArea.left + 4, y - 5);
-        ctx.restore();
+        // étiquette juste au-dessus de la ligne, ou en dessous si elle sortirait par le haut
+        const cote = l.axe !== "y" ? "droite" : "gauche";
+        let yc = y - H / 2 - 2;
+        if (yc - H / 2 < chartArea.top) yc = y + H / 2 + 2;
+        // pas de chevauchement avec une étiquette déjà posée du même côté
+        for (let essai = 0; essai < 6 && occupees[cote].some(o => Math.abs(o - yc) < H + 1); essai++) yc -= H + 1;
+        yc = Math.max(chartArea.top + H / 2, Math.min(chartArea.bottom - H / 2, yc));
+        occupees[cote].push(yc);
+        etiquette(l.texte, cote === "droite" ? chartArea.right - 2 : chartArea.left + 2, yc, l.couleur, cote === "droite");
       });
+      // Seuils hors de l'échelle : étiquettes empilées en haut (ou en bas) du graphe, du côté de leur axe
+      // seul le seuil le plus proche de chaque mesure est signalé (inutile d'annoncer 1 000 ppm si 800 est déjà hors échelle)
+      const empiler = (liste, enHaut) => {
+        const pile = { gauche: 0, droite: 0 };
+        const proche = {};
+        liste.forEach(l => {
+          const cle = l.champs.join();
+          if (!proche[cle] || (enHaut ? l.valeur < proche[cle].valeur : l.valeur > proche[cle].valeur)) proche[cle] = l;
+        });
+        Object.values(proche).forEach(l => {
+          const cote = l.axe !== "y" ? "droite" : "gauche";
+          const k = pile[cote]++;
+          const yc = enHaut ? chartArea.top + H / 2 + 2 + k * (H + 2) : chartArea.bottom - H / 2 - 2 - k * (H + 2);
+          etiquette((enHaut ? "↑ " : "↓ ") + l.texte, cote === "droite" ? chartArea.right - 2 : chartArea.left + 2, yc, l.couleur, cote === "droite");
+        });
+      };
+      empiler(horsHaut, true);
+      empiler(horsBas, false);
+      ctx.restore();
     },
   };
 }
@@ -2556,9 +2699,10 @@ function creerEchelle(champ) {
   });
   const plage = el("span", "plage");
   const plageTexte = el("span", "plage-texte");
+  const bande = el("span", "incert-bande");   // incertitude du capteur autour de la dernière mesure
   const repere = el("span", "repere");
-  echelle.append(plageTexte, plage, repere);
-  return { echelle, repere, graduations, plage, plageTexte };
+  echelle.append(plageTexte, plage, bande, repere);
+  return { echelle, repere, graduations, plage, plageTexte, bande };
 }
 
 function creerCarte(champ) {
@@ -2573,14 +2717,18 @@ function creerCarte(champ) {
 
   if (SEUILS[champ]) {
     carte.badgeEl = el("span", "badge");
+    carte.incertEl = INCERTITUDES[champ] ? el("span", "incert") : null;
     const tete = el("div", "rangee-tete");
-    tete.append(nom, chiffre, carte.badgeEl, carte.detailEl);
+    tete.append(nom, chiffre);
+    if (carte.incertEl) tete.append(carte.incertEl);
+    tete.append(carte.badgeEl, carte.detailEl);
     const jauge = creerEchelle(champ);
     carte.echelleEl = jauge.echelle;
     carte.repereEl = jauge.repere;
     carte.graduationsEls = jauge.graduations;
     carte.plageEl = jauge.plage;
     carte.plageTexteEl = jauge.plageTexte;
+    carte.bandeEl = jauge.bande;
     carte.racine = el("div", "rangee");
     carte.racine.append(tete, jauge.echelle);
   } else {
@@ -2611,6 +2759,16 @@ function majCarte(carte, s, perime) {
       nom: nomChamp(carte.champ), val: nb(d.valeur, info.decimales), unite: info.unite, niveau: niv.nom.toLowerCase() })
       + " " + trad("carte.aria_plage", { min: valMin, max: valMax, unite: info.unite }));
     SEUILS[carte.champ].limites.forEach((limite, i) => { carte.graduationsEls[i].textContent = nb(limite); });
+    const inc = INCERTITUDES[carte.champ];
+    if (inc && carte.incertEl) {
+      const u = incertitude(carte.champ, d.valeur);
+      carte.incertEl.textContent = trad("carte.incert", { u: nb(u, info.decimales), unite: info.unite });
+      carte.incertEl.title = trad("carte.incert_titre." + inc.cle);
+      carte.bandeEl.style.setProperty("--a", positionJauge(carte.champ, d.valeur - u).toFixed(2) + "%");
+      carte.bandeEl.style.setProperty("--b", positionJauge(carte.champ, d.valeur + u).toFixed(2) + "%");
+      carte.bandeEl.title = carte.incertEl.title;
+      carte.echelleEl.setAttribute("aria-label", carte.echelleEl.getAttribute("aria-label") + " " + carte.incertEl.textContent + ".");
+    }
   }
   carte.nomEl.textContent = nomChamp(carte.champ);
   carte.detailEl.textContent = perime ? trad("carte.derniere", { depuis: depuis(Date.now() - d.t) }) : detailChamp(carte.champ);
@@ -3346,7 +3504,11 @@ function creerNuage() {
     const dt = precedent ? Math.min(3, (temps - precedent) / 16.667) : 1;
     precedent = temps;
     if (++compte % 20 === 1) lireCouleur();
-    avancer(dt);
+    // vitesse ≠ 1 (mode jeu) : le temps de la simulation est accéléré ou ralenti ; au-delà de 1,5 image d'un coup,
+    // il est découpé en petits pas pour que les chocs restent justes.
+    const tps = dt * vitesse;
+    const n = Math.max(1, Math.ceil(tps / 1.5));
+    for (let k = 0; k < n; k++) avancer(tps / n);
     dessiner();
     image = requestAnimationFrame(boucle);
   }
@@ -3397,19 +3559,36 @@ function creerNuage() {
     if (!tourne) poserSansAnimation();
   }
 
-  // ---------- Particules en plus (mode jeu) ----------
-  // Chaque appui sur « + Particules » ajoute BONUS_PAS grains (jusqu'à BONUS_MAX, moins sur téléphone pour rester fluide).
-  // Ils apparaissent en fondu, éparpillés et lancés dans tous les sens. En quittant le mode jeu, le surplus s'efface aussitôt.
-  const BONUS_PAS = 150;
-  function bonusMax() {
-    return (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) ? 600 : 1200;
+  // ---------- Réglages du mode jeu : nombre et vitesse des particules ----------
+  // « − / + Particules » retire ou ajoute PAS_GRAINS grains (au moins MIN_GRAINS, au plus bonusMax() en plus, moins sur
+  // téléphone pour rester fluide). Les grains ajoutés apparaissent en fondu, lancés dans tous les sens ; ceux qu'on
+  // retire s'effacent. « − / + Vitesse » accélère ou ralentit le temps de la simulation. En quittant le jeu, tout
+  // revient à la normale.
+  const PAS_GRAINS = 100;
+  const MIN_GRAINS = 30;
+  const VITESSES = [0.25, 0.5, 0.75, 1, 1.5, 2, 3];
+  let vitesse = 1;
+  const tactile = () => !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+  function bonusMax() { return tactile() ? 600 : 1200; }
+  const vitesseMax = () => (tactile() ? 2 : 3);   // au-delà, le téléphone ne suivrait plus (calcul fait plusieurs fois par image)
+  function eteindre(n) {
+    // d'abord les grains ajoutés, puis n'importe lesquels
+    for (const prioritaire of [true, false]) {
+      for (let i = 0; i < grains.length && n > 0; i++) {
+        const g = grains[i];
+        if (g.vivant && (!prioritaire || g.bonus)) { g.vivant = false; vivants--; n--; }
+      }
+    }
   }
-  function ajouterGrains() {
-    const n = Math.min(BONUS_PAS, bonusMax() - bonus);
-    if (n <= 0) return;
-    bonus += n;
+  function changerNombre(sens) {
+    const sansBonus = cible - bonus;
+    const voulu = Math.max(MIN_GRAINS - sansBonus, Math.min(bonusMax(), bonus + sens * PAS_GRAINS));
+    const delta = voulu - bonus;
+    if (!delta) return;
+    bonus = voulu;
     ajusterCible();
-    for (let k = 0; k < n; k++) {
+    if (delta < 0) { eteindre(Math.max(0, vivants - cible)); return; }
+    for (let k = 0; k < delta; k++) {
       const g = nouveau();
       const angle = Math.random() * 6.2832, elan = (0.5 + Math.random() * 2) * echelle;
       g.vx = Math.cos(angle) * elan;
@@ -3420,28 +3599,32 @@ function creerNuage() {
       vivants++;
     }
   }
-  function retirerBonus() {
+  function changerVitesse(sens) {
+    const i = VITESSES.indexOf(vitesse);
+    const j = Math.max(0, Math.min(VITESSES.length - 1, i + sens));
+    if (VITESSES[j] <= vitesseMax()) vitesse = VITESSES[j];
+  }
+  function reinitialiserJeu() {
+    vitesse = 1;
     if (!bonus) return;
     bonus = 0;
     ajusterCible();
-    let surplus = vivants - cible;
-    // d'abord les grains ajoutés, puis (si certains se sont déposés et ont été remplacés) n'importe lesquels
-    for (const prioritaire of [true, false]) {
-      for (let i = 0; i < grains.length && surplus > 0; i++) {
-        const g = grains[i];
-        if (g.vivant && (!prioritaire || g.bonus)) { g.vivant = false; vivants--; surplus--; }
-      }
-    }
+    eteindre(Math.max(0, vivants - cible));   // s'il en manque (bonus négatif), avancer() les fait renaître peu à peu
   }
 
-  // Texte des boutons du mode jeu, selon l'état et la langue.
-  const boutonPlus = document.getElementById("jeu-plus");
-  const textePlus = document.getElementById("jeu-plus-texte");
-  function ecrireBoutonPlus() {
-    if (!boutonPlus) return;
-    if (textePlus) textePlus.textContent = trad("jeu.plus");
-    boutonPlus.setAttribute("aria-label", trad("jeu.plus_aria"));
-    boutonPlus.disabled = bonus >= bonusMax();
+  // Textes et états des boutons du mode jeu, selon les réglages et la langue.
+  const ids = n => document.getElementById(n);
+  const reglages = { nbMoins: ids("jeu-nb-moins"), nbPlus: ids("jeu-nb-plus"), nb: ids("jeu-nb-texte"),
+                     vitMoins: ids("jeu-vit-moins"), vitPlus: ids("jeu-vit-plus"), vit: ids("jeu-vit-texte") };
+  function ecrireReglages() {
+    const r = reglages;
+    if (r.nb) r.nb.textContent = trad("jeu.plus", { n: nb(cible, 0) });
+    if (r.vit) r.vit.textContent = trad("jeu.vit", { v: new Intl.NumberFormat(I18N.locale(), { maximumFractionDigits: 2 }).format(vitesse) });
+    if (r.nbPlus) { r.nbPlus.setAttribute("aria-label", trad("jeu.plus_aria")); r.nbPlus.disabled = bonus >= bonusMax(); }
+    if (r.nbMoins) { r.nbMoins.setAttribute("aria-label", trad("jeu.moins_aria")); r.nbMoins.disabled = cible <= MIN_GRAINS; }
+    const iv = VITESSES.indexOf(vitesse);
+    if (r.vitPlus) { r.vitPlus.setAttribute("aria-label", trad("jeu.vit_plus")); r.vitPlus.disabled = iv >= VITESSES.length - 1 || VITESSES[iv + 1] > vitesseMax(); }
+    if (r.vitMoins) { r.vitMoins.setAttribute("aria-label", trad("jeu.vit_moins")); r.vitMoins.disabled = iv <= 0; }
   }
   const boutonJeu = document.getElementById("jeu-poussiere");
   const texteJeu = document.getElementById("jeu-texte");
@@ -3498,6 +3681,9 @@ function creerNuage() {
         if (bouton) bouton.setAttribute("aria-pressed", String(actif));
         ecrireBoutonJeu(actif);
         if (actif) {
+          // L'accueil passe en position fixe (CSS .hero.jeu) et la page est ramenée au début de sa scène : en sortant du
+          // jeu, on le retrouve en entier, quel que soit l'endroit d'où l'on a lancé le jeu.
+          recaler();
           ouvertParJeu = !elementPlein();
           vuPlein = !ouvertParJeu;
           if (ouvertParJeu) entrerPleinEcran();
@@ -3506,16 +3692,25 @@ function creerNuage() {
           ouvertParJeu = false;
           vuPlein = false;
           oublier();
-          retirerBonus();
+          reinitialiserJeu();
+          // la sortie du plein écran change la hauteur de l'écran, donc la position de la scène : on s'y recale ensuite
+          setTimeout(recaler, 250);
         }
-        ecrireBoutonPlus();
+        ecrireReglages();
       };
-      if (boutonPlus) boutonPlus.addEventListener("click", () => { ajouterGrains(); ecrireBoutonPlus(); });
+      const recaler = () => {
+        try { window.scrollTo({ top: hautAccueil(), behavior: "instant" }); } catch (err) { window.scrollTo(0, hautAccueil()); }
+      };
+      const clic = (bouton, action) => { if (bouton) bouton.addEventListener("click", () => { action(); ecrireReglages(); }); };
+      clic(reglages.nbMoins, () => changerNombre(-1));
+      clic(reglages.nbPlus, () => changerNombre(1));
+      clic(reglages.vitMoins, () => changerVitesse(-1));
+      clic(reglages.vitPlus, () => changerVitesse(1));
       if (bouton) {
         bouton.addEventListener("click", () => jeu(!hero.classList.contains("jeu")));
         const finPlein = () => {
           if (!hero.classList.contains("jeu")) return;
-          if (elementPlein()) vuPlein = true;
+          if (elementPlein()) { vuPlein = true; recaler(); }   // l'écran a changé de hauteur : la page aussi
           else if (vuPlein) jeu(false);   // sortie du plein écran : fin du jeu
         };
         document.addEventListener("fullscreenchange", finPlein);
@@ -3528,12 +3723,14 @@ function creerNuage() {
       }
       actualiser();
     },
-    majLangue() { ecrireBoutonJeu(hero.classList.contains("jeu")); ecrireBoutonPlus(); },
+    majLangue() { ecrireBoutonJeu(hero.classList.contains("jeu")); ecrireReglages(); },
     // niveau : 0 (bon) à 3 (très élevé)
     regler(indice) {
       base = GRAINS[indice] || GRAINS[0];
       ajusterCible();
+      if (cible < MIN_GRAINS) { bonus += MIN_GRAINS - cible; ajusterCible(); }
       if (!tourne) poserSansAnimation();
+      ecrireReglages();
     },
   };
 }
@@ -3570,15 +3767,23 @@ function initTampon() {
 // =====================================================================
 // Story scrolling : chapitres numérotés, sommaire et sortie du bandeau
 // =====================================================================
-const sommaire = { signature: "", sections: [], liens: [], actif: "hero" };
+const sommaire = { signature: "", sections: [], liens: [], actif: "ouverture" };
 let majDefilement = function () {};
 let majEtoilesOuverture = function () {};
 
-// Le bandeau + les chapitres actuellement visibles (un chapitre sans données est masqué : il n'a pas de numéro).
+// 00 : l'introduction (ouverture, manifeste, points forts) ; 01 : l'accueil (verdict « L'air est… ») ;
+// puis les chapitres actuellement visibles (un chapitre sans données est masqué : il n'a pas de numéro).
 function listeChapitres() {
+  const intro = document.getElementById("ouverture");
   const hero = document.getElementById("hero");
   const chapitres = Array.from(document.querySelectorAll("main > .chapitre")).filter(s => !s.hidden);
-  return [hero].concat(chapitres);
+  return [intro, hero].filter(Boolean).concat(chapitres);
+}
+
+// Haut de la piste du bandeau (l'accueil y est épinglé) : c'est là qu'on l'arrive en entier à l'écran.
+function hautAccueil() {
+  const piste = document.getElementById("piste");
+  return piste ? piste.getBoundingClientRect().top + window.scrollY : 0;
 }
 
 function construireSommaire(sections) {
@@ -3589,14 +3794,18 @@ function construireSommaire(sections) {
   sommaire.liens = sections.map((section, i) => {
     const titre = section.dataset.titre || (i === 0 ? trad("chap.intro") : trad("nav.chapitre", { i, titre: "" }));
     const lien = el("a", "point-story");
-    lien.href = "#" + (i === 0 && document.getElementById("piste") ? "piste" : section.id);
+    const accueil = section.id === "hero";
+    lien.href = "#" + (accueil && document.getElementById("piste") ? "piste" : section.id);
     lien.dataset.cible = section.id;
-    if (i === 0) lien.addEventListener("click", e => {
+    if (i === 0 && section.id === "ouverture") lien.addEventListener("click", e => {
       e.preventDefault();
       if (document.documentElement.classList.contains("intro-masquee")) { revoirIntro(); return; }
-      const piste = document.getElementById("piste");
-      const haut = piste ? piste.getBoundingClientRect().top + window.scrollY : 0;
-      window.scrollTo({ top: haut, behavior: reduit() ? "auto" : "smooth" });
+      window.scrollTo({ top: 0, behavior: reduit() ? "auto" : "smooth" });
+    });
+    // l'accueil est épinglé (sticky) : l'ancre #hero ne mène pas au début de sa scène, on vise le haut de la piste
+    if (accueil) lien.addEventListener("click", e => {
+      e.preventDefault();
+      window.scrollTo({ top: hautAccueil(), behavior: reduit() ? "auto" : "smooth" });
     });
     lien.setAttribute("aria-label", i === 0 ? titre : trad("nav.chapitre", { i, titre }));
     lien.append(el("span", "p-num", String(i).padStart(2, "0")), el("span", "p-titre", titre));
@@ -3643,7 +3852,7 @@ function actualiserChapitres() {
   if (signature !== sommaire.signature) {
     sommaire.signature = signature;
     construireSommaire(sections);
-    if (!sections.some(s => s.id === sommaire.actif)) sommaire.actif = "hero";
+    if (!sections.some(s => s.id === sommaire.actif)) sommaire.actif = sections[0].id;
     appliquerActif(sommaire.actif);
   }
   majDefilement();
@@ -3774,10 +3983,16 @@ function initStoryScrolling() {
       manifH: manifeste ? manifeste.offsetHeight : 0,
       secs: sommaire.sections.map((s, i) => {
         const f = fiche(s);
-        if (i > 0) { f.top = hautDe(s); f.h = Math.max(1, s.offsetHeight); }
+        // l'accueil est épinglé dans sa piste : sa position à l'écran varie, celle de la piste non
+        const ref = (s === hero && piste) ? piste : s;
+        if (i > 0) { f.top = hautDe(ref); f.h = Math.max(1, ref.offsetHeight); }
         return f;
       }),
+      pasCartes: reelPiste && reelPiste.children.length > 1
+        ? Math.max(1, reelPiste.children[1].getBoundingClientRect().left - reelPiste.children[0].getBoundingClientRect().left) : 0,
     };
+    // la barre des mesures suit directement la piste ; elle est collante, sa position à l'écran ne dit donc rien
+    geo.mesuresTop = geo.pisteTop + geo.pisteH;
     largeurRef = window.innerWidth;
     hauteurRef = window.innerHeight;
   }
@@ -3920,7 +4135,7 @@ function initStoryScrolling() {
         if (i === 0) {
           // 00 : 100 % au moment exact où le chapitre 01 devient le chapitre en cours (juste avant d'y passer)
           const fin = secs[1].top - ligne;
-          p = borne((y - g.pisteTop) / Math.max(1, fin - g.pisteTop));
+          p = borne(y / Math.max(1, fin));
         } else {
           const haut = f.top - y;
           const dernier = i === secs.length - 1;
@@ -3942,6 +4157,100 @@ function initStoryScrolling() {
       }
     }
   }
+
+  // ---------- Défilement par crans dans l'introduction (molette et clavier, ordinateur) ----------
+  // Avant, chaque coup de molette avançait les scènes d'une distance quelconque : on s'arrêtait souvent au milieu d'un
+  // fondu (affiche encore floue, nom à moitié effacé). Désormais, de l'ouverture jusqu'à la barre des mesures, un cran
+  // de molette mène à l'étape suivante de la scène, en un mouvement continu et adouci : on ne s'arrête que sur des
+  // images nettes. Au-delà de la barre des mesures, le défilement redevient normal. Le doigt (téléphone, tablette)
+  // n'est pas touché : il garde son défilement libre.
+  function arrets() {
+    if (geoSale) { mesurer(); geoSale = false; }
+    const g = geo, vh = window.innerHeight, liste = [];
+    const visible = e => e && e.offsetHeight > 0;
+    if (visible(ouv) && g.ouvH > vh) {
+      const L = g.ouvH - vh;
+      // 0 : le nom seul ; 0,5 : l'affiche nette ; 0,68 : la phrase « Comme la Bonne Mère… »
+      [0, 0.5, 0.68].forEach(q => liste.push(g.ouvTop + q * L));
+    }
+    if (visible(manifeste) && g.manifH > vh) {
+      const L = g.manifH - vh;
+      [0, 0.425, 0.8].forEach(q => liste.push(g.manifTop + q * L));   // phrase éteinte, à moitié, entièrement allumée
+    }
+    if (visible(reel) && g.reelH > vh) {
+      const L = g.reelH - vh;
+      const n = g.reelDelta > 0 && g.pasCartes ? Math.max(1, Math.round(g.reelDelta / g.pasCartes)) : 1;
+      for (let k = 0; k <= n; k++) liste.push(g.reelTop + (0.06 + 0.88 * k / n) * L);   // une carte par cran
+    }
+    if (piste) liste.push(g.pisteTop);   // l'accueil en entier
+    liste.push(g.mesuresTop);            // la barre des mesures en haut : fin des crans
+    return liste.map(Math.round).filter((v, i, t) => i === 0 || v > t[i - 1] + 4);
+  }
+
+  let animCran = 0, dernierCran = 0, cibleCran = 0;
+  const adoucir = t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+  function allerA(cible) {
+    const depart = window.scrollY, ecart = cible - depart;
+    if (Math.abs(ecart) < 1) return;
+    const duree = Math.min(1000, 380 + Math.abs(ecart) / window.innerHeight * 320);
+    const t0 = performance.now();
+    if (animCran) cancelAnimationFrame(animCran);
+    const pas = t => {
+      const k = Math.min(1, (t - t0) / duree);
+      window.scrollTo({ top: Math.round(depart + ecart * adoucir(k)), behavior: "instant" });
+      if (k < 1) animCran = requestAnimationFrame(pas);
+      else animCran = 0;
+    };
+    animCran = requestAnimationFrame(pas);
+  }
+  const arreterCran = () => { if (animCran) { cancelAnimationFrame(animCran); animCran = 0; } };
+  const cransPossibles = () => {
+    const r = document.documentElement.classList;
+    return !reduit() && !r.contains("jeu-actif") && !r.contains("gate-ouvert");
+  };
+  // sens : +1 (descendre) ou -1 (monter). Renvoie vrai si le cran a été pris en charge.
+  function cran(sens) {
+    const y = window.scrollY, liste = arrets();
+    if (liste.length < 2) return false;
+    const fin = liste[liste.length - 1];
+    if (y > fin + 3) return false;                 // dans les chapitres : défilement normal
+    if (sens > 0 && y >= fin - 3) return false;    // sur la barre des mesures, en descendant : défilement normal
+    const reference = animCran ? cibleCran : y;
+    let cible = sens > 0 ? liste.find(v => v > reference + 3) : [...liste].reverse().find(v => v < reference - 3);
+    if (cible === undefined) cible = sens > 0 ? fin : 0;
+    cibleCran = cible;
+    allerA(cible);
+    return true;
+  }
+  window.addEventListener("wheel", e => {
+    if (!cransPossibles() || e.ctrlKey || Math.abs(e.deltaY) < Math.abs(e.deltaX) || !e.deltaY) return;
+    const y = window.scrollY, liste = arrets(), fin = liste[liste.length - 1];
+    if (y > fin + 3 || (e.deltaY > 0 && y >= fin - 3 && !animCran)) return;   // hors de l'introduction : rien ne change
+    e.preventDefault();
+    // Pavé tactile ou molette lancée : un seul geste envoie des dizaines d'événements (et leur inertie). On n'avance
+    // que d'un cran par geste : un événement ne compte que s'il suit une pause d'au moins 160 ms et qu'aucun mouvement
+    // n'est en cours. Une molette tournée cran par cran avance donc d'une étape à chaque cran.
+    const t = performance.now();
+    const continu = t - dernierCran < 160;
+    dernierCran = t;
+    if (animCran || continu) return;
+    cran(e.deltaY > 0 ? 1 : -1);
+  }, { passive: false });
+  window.addEventListener("keydown", e => {
+    if (!cransPossibles() || e.altKey || e.ctrlKey || e.metaKey) return;
+    const cibleTouche = e.target;
+    if (cibleTouche && cibleTouche.closest && cibleTouche.closest("input, select, textarea, [contenteditable], button, a")) {
+      if (e.key === " " || e.key === "Spacebar") return;   // espace sur un bouton : c'est un clic
+    }
+    let sens = 0;
+    if (e.key === "ArrowDown" || e.key === "PageDown" || ((e.key === " " || e.key === "Spacebar") && !e.shiftKey)) sens = 1;
+    else if (e.key === "ArrowUp" || e.key === "PageUp" || ((e.key === " " || e.key === "Spacebar") && e.shiftKey)) sens = -1;
+    if (!sens) return;
+    if (cibleTouche && cibleTouche.closest && cibleTouche.closest("input, select, textarea, [contenteditable]")) return;
+    if (cran(sens)) e.preventDefault();
+  });
+  // Un geste de la personne (clic, doigt, barre de défilement) interrompt le mouvement en cours.
+  ["mousedown", "touchstart"].forEach(t => window.addEventListener(t, arreterCran, { passive: true }));
 
   const planifier = () => { if (!enAttente) { enAttente = true; requestAnimationFrame(image); } };
   majDefilement = () => { geoSale = true; planifier(); };
