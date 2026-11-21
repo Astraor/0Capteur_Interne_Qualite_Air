@@ -327,6 +327,6 @@ GitHub peut retarder les tâches planifiées de quelques minutes, et les met en 
 - HCSP — recommandations sur l’aération et la ventilation (repères CO₂)
 - Atmo France — [guide de calcul de l’indice ATMO](https://www.airpl.org/sites/default/files/reports/guide_calcul_nouvel_indice_ATMO_VF_version14decembre2020%281%29.pdf) (décembre 2020) · [texte de l’arrêté](https://aida.ineris.fr/reglementation/arrete-100720-relatif-a-lindice-qualite-lair-ambiant)
 - HCSP — [avis du 28 avril 2021](https://www.hcsp.fr/Explore.cgi/Telecharger?NomFichier=hcspa20210428_covaravenetmesducodanleserp.pdf) (aération, ventilation, mesure du CO₂ ; 800 ppm)
-- Tera Sensor — [fiche technique NextPM](https://tera-sensor.gitbook.io/tera-sensor/sensors/nextpm/nextpm-datasheet) (limite de détection < 1 µg/m³, linéarité < 5 %, répétabilité < 3 %) · [évaluation AQ-SPEC](https://www.aqmd.gov/aq-spec/sensordetail/tera-sensor---nextpm)
+- Tera Sensor — [fiche technique NextPM](https://tera-sensor.gitbook.io/tera-sensor/sensors/nextpm/nextpm-datasheet) (limite de détection < 1 µg/m³, linéarité < 5 %, répétabilité < 3 %) · [évaluation AQ-SPEC, rapport de synthèse PDF](https://www.aqmd.gov/docs/default-source/aq-spec/summary/tera-sensor-nextpm---summary-report.pdf?sfvrsn=6)
 - Winsen — [fiche technique MH-Z19C](https://www.winsen-sensor.com/product/mh-z19c.html) (±(50 ppm + 5 % de la valeur lue))
 - AirCarto — serveur de collecte des mesures (`api.aircarto.fr`), lu par le site via le relais Cloudflare `mair-relais.astraor.workers.dev`

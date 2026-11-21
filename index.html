@@ -1533,7 +1533,7 @@
             </table>
           </div>
           <p class="petit" style="margin-top:14px" data-i18n="comp.seuils.p1">Particules&nbsp;: seuils de l'indice ATMO publiés par Atmosud (arrêté du 10 juillet 2020). Ces seuils portent sur des moyennes journalières&nbsp;: ici ils servent de repère pour la dernière mesure, à titre indicatif. CO₂&nbsp;: 800&nbsp;ppm est l'objectif du HCSP&nbsp;; 1&nbsp;000 et 1&nbsp;500&nbsp;ppm sont des repères usuels pour l'aération des salles. PM1&nbsp;: l'indice ATMO ne fixe pas de seuil, on applique ici les mêmes limites que pour les PM2.5.</p>
-          <p class="petit" data-i18n-html="comp.seuils.p2">Sources&nbsp;: Atmo France, <em>L'indice ATMO</em> (<a href='https://www.atmo-france.org/article/lindice-atmo' target='_blank' rel='noopener'>atmo-france.org</a>) et son <em>guide de calcul</em> (<a href='https://www.airpl.org/sites/default/files/reports/guide_calcul_nouvel_indice_ATMO_VF_version14decembre2020%281%29.pdf' target='_blank' rel='noopener'>PDF, décembre 2020</a>)&nbsp;; arrêté du 10 juillet 2020 relatif à l'indice de la qualité de l'air ambiant (<a href='https://aida.ineris.fr/reglementation/arrete-100720-relatif-a-lindice-qualite-lair-ambiant' target='_blank' rel='noopener'>texte sur aida.ineris.fr</a>)&nbsp;; HCSP, avis du 28 avril 2021 sur l'aération, la ventilation et la mesure du CO₂ (<a href='https://www.hcsp.fr/Explore.cgi/Telecharger?NomFichier=hcspa20210428_covaravenetmesducodanleserp.pdf' target='_blank' rel='noopener'>hcsp.fr</a>)&nbsp;; fiches techniques du MH-Z19C (<a href='https://www.winsen-sensor.com/product/mh-z19c.html' target='_blank' rel='noopener'>Winsen</a>) et du NextPM (<a href='https://tera-sensor.gitbook.io/tera-sensor/sensors/nextpm/nextpm-datasheet' target='_blank' rel='noopener'>Tera Sensor</a>)&nbsp;; évaluation du NextPM par AQ-SPEC (<a href='https://www.aqmd.gov/aq-spec/sensordetail/tera-sensor---nextpm' target='_blank' rel='noopener'>aqmd.gov</a>).</p>
+          <p class="petit" data-i18n-html="comp.seuils.p2">Sources&nbsp;: Atmo France, <em>L'indice ATMO</em> (<a href='https://www.atmo-france.org/article/lindice-atmo' target='_blank' rel='noopener'>atmo-france.org</a>) et son <em>guide de calcul</em> (<a href='https://www.airpl.org/sites/default/files/reports/guide_calcul_nouvel_indice_ATMO_VF_version14decembre2020%281%29.pdf' target='_blank' rel='noopener'>PDF, décembre 2020</a>)&nbsp;; arrêté du 10 juillet 2020 relatif à l'indice de la qualité de l'air ambiant (<a href='https://aida.ineris.fr/reglementation/arrete-100720-relatif-a-lindice-qualite-lair-ambiant' target='_blank' rel='noopener'>texte sur aida.ineris.fr</a>)&nbsp;; HCSP, avis du 28 avril 2021 sur l'aération, la ventilation et la mesure du CO₂ (<a href='https://www.hcsp.fr/Explore.cgi/Telecharger?NomFichier=hcspa20210428_covaravenetmesducodanleserp.pdf' target='_blank' rel='noopener'>hcsp.fr</a>)&nbsp;; fiches techniques du MH-Z19C (<a href='https://www.winsen-sensor.com/product/mh-z19c.html' target='_blank' rel='noopener'>Winsen</a>) et du NextPM (<a href='https://tera-sensor.gitbook.io/tera-sensor/sensors/nextpm/nextpm-datasheet' target='_blank' rel='noopener'>Tera Sensor</a>)&nbsp;; évaluation du NextPM par AQ-SPEC (<a href='https://www.aqmd.gov/docs/default-source/aq-spec/summary/tera-sensor-nextpm---summary-report.pdf?sfvrsn=6' target='_blank' rel='noopener'>rapport de synthèse, PDF</a>).</p>
         </div>
       </div>
 
@@ -1620,7 +1620,7 @@
       </div>
       <button type="button" class="bouton-anim" id="bouton-anim" aria-pressed="false">Animations : activées</button>
       <p class="pied-annee">© 2026 La Bonne M’air</p>
-      <a class="haut" href="#ouverture" data-i18n-html="pied.haut">Haut de page <span aria-hidden="true">↑</span></a>
+      <a class="haut" href="#piste" data-i18n-html="pied.haut">Haut de page <span aria-hidden="true">↑</span></a>
     </div>
   </div>
 </footer>
@@ -1628,10 +1628,10 @@
 <!-- Traductions : un fichier par langue, puis le moteur. L'ordre compte (voir js/i18n.js).
      ?v=… : à changer à chaque modification de ces fichiers, sinon le navigateur peut garder l'ancienne version en cache
      (la page affichait alors les noms des clés, « pied.devise »…). -->
-<script src="lang/fr.js?v=20261121"></script>
-<script src="lang/en.js?v=20261121"></script>
-<script src="lang/ja.js?v=20261121"></script>
-<script src="js/i18n.js?v=20261121"></script>
+<script src="lang/fr.js?v=20261122"></script>
+<script src="lang/en.js?v=20261122"></script>
+<script src="lang/ja.js?v=20261122"></script>
+<script src="js/i18n.js?v=20261122"></script>
 
 <script>
 window.__pret = true;   // dit à la page que le script a bien démarré (voir le <head>)
@@ -3230,10 +3230,80 @@ function pleinEcranDispo() {
   return !!(r.requestFullscreen || r.webkitRequestFullscreen) && document.fullscreenEnabled !== false && document.webkitFullscreenEnabled !== false;
 }
 function elementPlein() { return document.fullscreenElement || document.webkitFullscreenElement || null; }
+// Entrer ou sortir du plein écran change la hauteur de l'écran, donc celle de tout ce qui se mesure en svh (piste de l'accueil,
+// ouverture, chapitres). Le navigateur garde la même position en pixels : la page « sautait » vers le haut ou le bas.
+// On note donc où l'on lit (zone de défilement + avancement, ou chapitre + décalage) avant le changement et on y revient après.
+const ZONES_ECRAN = ["ouverture", "manifeste", "atouts", "piste"];   // zones dont la hauteur suit celle de l'écran
+let ancrePlein = null, finAncrePlein = 0, rattrapagesPlein = [];
+function lireAncre() {
+  const y = window.scrollY, vh = window.innerHeight;
+  const haut = e => e.getBoundingClientRect().top + y;
+  for (const id of ZONES_ECRAN) {
+    const e = document.getElementById(id);
+    if (!e || e.offsetHeight === 0) continue;
+    const t = haut(e), h = e.offsetHeight;
+    if (y >= t - 1 && y < t + h - 1) return { id, ratio: h - vh > 1 ? (y - t) / (h - vh) : 0 };
+  }
+  let ref = null;
+  document.querySelectorAll("main > section, footer.pied").forEach(e => { if (e.offsetHeight > 0 && haut(e) <= y + 1) ref = e; });
+  return ref ? { el: ref, decalage: y - haut(ref) } : null;
+}
+function poserAncre(a) {
+  if (!a) return;
+  const vh = window.innerHeight;
+  let cible = null;
+  if (a.el) {
+    if (a.el.offsetHeight > 0) cible = a.el.getBoundingClientRect().top + window.scrollY + a.decalage;
+  } else {
+    const e = document.getElementById(a.id);
+    if (e && e.offsetHeight > 0) cible = e.getBoundingClientRect().top + window.scrollY + a.ratio * Math.max(0, e.offsetHeight - vh);
+  }
+  if (cible === null || Math.abs(cible - window.scrollY) < 1) return;
+  try { window.scrollTo({ top: Math.round(cible), behavior: "instant" }); } catch (err) { window.scrollTo(0, Math.round(cible)); }
+}
+function armerAncre(a) {
+  ancrePlein = a;
+  rattrapagesPlein.forEach(clearTimeout);
+  // Le changement de taille n'est pas instantané (animation du navigateur, mesures de la page refaites à l'image suivante) :
+  // on se replace à plusieurs reprises, puis on lâche.
+  rattrapagesPlein = [0, 120, 300, 600].map(d => setTimeout(rattraperPosition, d));
+  clearTimeout(finAncrePlein);
+  finAncrePlein = setTimeout(() => { ancrePlein = null; }, 900);
+}
+function garderPosition() {
+  if (document.documentElement.classList.contains("jeu-actif")) return;   // le mode jeu se recale tout seul
+  const a = lireAncre();
+  if (a) armerAncre(a);
+}
+function rattraperPosition() { if (ancrePlein) poserAncre(ancrePlein); }
+function oublierPosition() { ancrePlein = null; rattrapagesPlein.forEach(clearTimeout); rattrapagesPlein = []; }
+// Dernier endroit de lecture connu, mis à jour quand le défilement s'arrête : sert quand le plein écran se termine sans
+// que la page l'ait demandé (Échap, geste du système), donc sans qu'on ait pu noter la position avant le changement.
+let ancreRepos = null, minuterieRepos = 0;
+const noterRepos = () => {
+  clearTimeout(minuterieRepos);
+  minuterieRepos = setTimeout(() => { if (!ancrePlein && !document.documentElement.classList.contains("jeu-actif")) ancreRepos = lireAncre(); }, 150);
+};
+window.addEventListener("scroll", noterRepos, { passive: true });
+window.addEventListener("load", () => setTimeout(noterRepos, 400));
+const surChangementPlein = () => {
+  if (!ancrePlein && ancreRepos && !document.documentElement.classList.contains("jeu-actif")) armerAncre(ancreRepos);
+  if (ancrePlein) { securise(majDefilement); requestAnimationFrame(rattraperPosition); }
+};
+document.addEventListener("fullscreenchange", surChangementPlein);
+document.addEventListener("webkitfullscreenchange", surChangementPlein);
+window.addEventListener("resize", () => { if (ancrePlein) { securise(majDefilement); requestAnimationFrame(rattraperPosition); } });
+["wheel", "touchmove"].forEach(t => window.addEventListener(t, oublierPosition, { passive: true }));   // la personne reprend la main
+window.addEventListener("keydown", e => {
+  if (e.key === "Escape") { if (elementPlein()) garderPosition(); }   // sortie par la touche Échap : gérée par le navigateur
+  else oublierPosition();
+}, true);
+
 function entrerPleinEcran() {
   const r = document.documentElement;
   const demande = r.requestFullscreen || r.webkitRequestFullscreen;
   if (!demande) return;
+  garderPosition();
   try {
     const p = demande.call(r, { navigationUI: "hide" });
     if (p && p.catch) p.catch(() => {});   // refusé par le navigateur : la page reste telle quelle
@@ -3243,6 +3313,7 @@ function sortirPleinEcran() {
   if (!elementPlein()) return;
   const quitter = document.exitFullscreen || document.webkitExitFullscreen;
   if (!quitter) return;
+  garderPosition();
   try {
     const p = quitter.call(document);
     if (p && p.catch) p.catch(() => {});
@@ -4026,19 +4097,25 @@ function initStoryScrolling() {
       reel.style.height = reduit() ? "" : Math.round(window.innerHeight + reelDelta * 1.2) + "px";
     }
     const y0 = window.scrollY;
-    const hautDe = e => e.getBoundingClientRect().top + y0;
+    // Un élément masqué (display: none, ex. introduction déjà vue) renvoie getBoundingClientRect().top = 0 : sa « position »
+    // devenait alors la position de défilement du moment de la mesure. L'ouverture semblait commencer là où l'on était, et
+    // la barre des chapitres (00, 01…) s'effaçait dès qu'on remontait de plus d'une demi-hauteur d'écran sous ce point,
+    // jusqu'à ce qu'on atteigne de nouveau le bas de la page. Un élément absent a donc une position et une hauteur nulles.
+    const present = e => !!e && e.offsetHeight > 0;
+    const hautDe = e => (present(e) ? e.getBoundingClientRect().top + y0 : 0);
+    const hauteurDe = e => (present(e) ? e.offsetHeight : 0);
     geo = {
       reelDelta,
-      reelTop: reel ? hautDe(reel) : 0,
-      reelH: reel ? reel.offsetHeight : 0,
-      ouvTop: ouv ? hautDe(ouv) : 0,
-      ouvH: ouv ? ouv.offsetHeight : 0,
+      reelTop: hautDe(reel),
+      reelH: hauteurDe(reel),
+      ouvTop: hautDe(ouv),
+      ouvH: hauteurDe(ouv),
       doc: document.documentElement.scrollHeight,
       pisteTop: piste ? hautDe(piste) : 0,
       pisteH: piste ? piste.offsetHeight : 0,
       heroH: hero ? hero.offsetHeight : 0,
-      manifTop: manifeste ? hautDe(manifeste) : 0,
-      manifH: manifeste ? manifeste.offsetHeight : 0,
+      manifTop: hautDe(manifeste),
+      manifH: hauteurDe(manifeste),
       secs: sommaire.sections.map((s, i) => {
         const f = fiche(s);
         // l'accueil est épinglé dans sa piste : sa position à l'écran varie, celle de la piste non
@@ -4145,7 +4222,7 @@ function initStoryScrolling() {
       if (qq !== memo.ouv) { memo.ouv = qq; ecrireOuverture(qq); }
     }
     // Scènes noires plein écran (ouverture, points forts) : les barres de la page s'effacent
-    const libre = !fixe && !!((ouvEl && y < g.ouvTop + g.ouvH - vh * 0.6) || (reel && y > g.reelTop - vh * 0.3 && y < g.reelTop + g.reelH - vh * 0.7));
+    const libre = !fixe && !!((ouvEl && g.ouvH > 0 && y < g.ouvTop + g.ouvH - vh * 0.6) || (reel && g.reelH > 0 && y > g.reelTop - vh * 0.3 && y < g.reelTop + g.reelH - vh * 0.7));
     if (libre !== memo.dansOuv) { memo.dansOuv = libre; document.documentElement.classList.toggle("scene-libre", libre); }
 
     // Points forts : la rangée de cartes glisse vers la gauche (petite pause au début et à la fin)
@@ -5383,11 +5460,12 @@ function demarrer() {
   securise(initIntroVue);
   securise(initBarreMobile);
   securise(ajusterHero);   // avant même les données : le bandeau tient dans l'écran dès l'arrivée
-  securise(() => {   // « Haut de page » : le bandeau est épinglé (sticky), l'ancre #hero ne menait donc pas tout en haut
+  securise(() => {   // « Haut de page » : remonte à l'écran d'accueil (le verdict « L'air est… »), pas tout en haut (00).
+    // Le bandeau est épinglé (sticky) dans sa piste : on vise le haut de la piste, comme le repère 01 du sommaire.
     const haut = document.querySelector(".haut");
     if (haut) haut.addEventListener("click", e => {
       e.preventDefault();
-      window.scrollTo({ top: 0, behavior: reduit() ? "auto" : "smooth" });
+      window.scrollTo({ top: hautAccueil(), behavior: reduit() ? "auto" : "smooth" });
     });
   });
   securise(() => { nuage = creerNuage(); if (nuage) nuage.init(); });
