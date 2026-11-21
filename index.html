@@ -3279,8 +3279,9 @@ function rattraperPosition() { if (ancrePlein) poserAncre(ancrePlein); }
 function oublierPosition() { ancrePlein = null; rattrapagesPlein.forEach(clearTimeout); rattrapagesPlein = []; }
 // Dernier endroit de lecture connu, mis à jour quand le défilement s'arrête : sert quand le plein écran se termine sans
 // que la page l'ait demandé (Échap, geste du système), donc sans qu'on ait pu noter la position avant le changement.
-let ancreRepos = null, minuterieRepos = 0;
+let ancreRepos = null, minuterieRepos = 0, dernierDefil = 0, hauteurConnue = window.innerHeight;
 const noterRepos = () => {
+  dernierDefil = performance.now();
   clearTimeout(minuterieRepos);
   minuterieRepos = setTimeout(() => { if (!ancrePlein && !document.documentElement.classList.contains("jeu-actif")) ancreRepos = lireAncre(); }, 150);
 };
@@ -3292,7 +3293,15 @@ const surChangementPlein = () => {
 };
 document.addEventListener("fullscreenchange", surChangementPlein);
 document.addEventListener("webkitfullscreenchange", surChangementPlein);
-window.addEventListener("resize", () => { if (ancrePlein) { securise(majDefilement); requestAnimationFrame(rattraperPosition); } });
+window.addEventListener("resize", () => {
+  // Plein écran du navigateur (F11, menu de Firefox…) : aucun événement « fullscreenchange », seulement un redimensionnement.
+  // Un grand changement de hauteur, alors qu'on ne défilait pas, est traité comme le plein écran : on revient à la dernière position connue.
+  // (Sur téléphone, la barre d'adresse ne change la hauteur que de quelques dizaines de pixels, et pendant le défilement : ignoré.)
+  const saut = Math.abs(window.innerHeight - hauteurConnue) > 160;
+  hauteurConnue = window.innerHeight;
+  if (saut && !ancrePlein && ancreRepos && performance.now() - dernierDefil > 300 && !document.documentElement.classList.contains("jeu-actif")) armerAncre(ancreRepos);
+  if (ancrePlein) { securise(majDefilement); requestAnimationFrame(rattraperPosition); }
+});
 ["wheel", "touchmove"].forEach(t => window.addEventListener(t, oublierPosition, { passive: true }));   // la personne reprend la main
 window.addEventListener("keydown", e => {
   if (e.key === "Escape") { if (elementPlein()) garderPosition(); }   // sortie par la touche Échap : gérée par le navigateur
