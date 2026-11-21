@@ -15,6 +15,7 @@ window.I18N_DICT.ja = {
   "ep.passer": "フルスクリーンにしないで続ける",
   "fs.entrer": "フルスクリーンにする",
   "fs.sortir": "フルスクリーンを終了",
+  "fs.manuel": "ブラウザのフルスクリーン:F11(またはEsc)で終了します。",
 
   /* ---------- 目次とチャプター ---------- */
   "nav.chapitres": "ページのチャプター",
@@ -307,5 +308,7 @@ window.I18N_DICT.ja = {
   "pied.code": "GitHubのソースコード",
   "pied.equipe": "制作:Gabriel、Simon、Guillaume、Titouan",
   "pied.outils": "Chart.js 4.4.1 · Archivo、Chivo Mono、Cinzel Decorative",
+  "pied.version": "公開中のバージョン:",
+  "pied.version_attente": "{sha} を公開中",
   "pied.haut": "ページの先頭へ <span aria-hidden='true'>↑</span>"
 };
