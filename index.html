@@ -212,6 +212,16 @@
     box-shadow: 0 2px 10px rgba(14, 27, 36, .18); cursor: pointer;
   }
   .bascule-plein svg { width: 20px; height: 20px; }
+  /* Plein écran lancé à la main (F11, menu du navigateur) : la page ne peut pas le quitter, le bouton l'explique */
+  .bascule-aide {
+    position: fixed; z-index: 71; right: 70px; bottom: 22px; max-width: min(320px, calc(100vw - 96px));
+    padding: 9px 13px; border-radius: 6px; background: var(--encre); color: var(--fond);
+    font-size: .82rem; font-weight: 600; line-height: 1.35;
+    opacity: 0; transform: translateX(6px); pointer-events: none; transition: opacity .25s, transform .3s var(--courbe);
+  }
+  .bascule-aide.visible { opacity: 1; transform: none; }
+  @media (max-width: 899px) { .bascule-aide { right: 64px; bottom: calc(98px + env(safe-area-inset-bottom, 0px)); } }
+  @media print { .bascule-aide { display: none !important; } }
   .bascule-plein .ic-sortir { display: none; }
   html.plein .bascule-plein .ic-entrer { display: none; }
   html.plein .bascule-plein .ic-sortir { display: block; }
@@ -963,7 +973,7 @@
   .pied-donnees dt:first-child { margin-top: 0; }
   .pied-donnees dd { margin: 0; }
   .pied-liens { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 6px; }
-  .pied-avert, .pied-outils { font-size: .78rem !important; color: rgba(242, 244, 240, .6) !important; }
+  .pied-avert, .pied-outils, .pied-version { font-size: .78rem !important; color: rgba(242, 244, 240, .6) !important; }
   .pied-col > p + .pied-liens { margin-top: 10px; }
   .pied-equipe { margin-top: 8px !important; }
   .pied sup { line-height: 0; }
@@ -1135,6 +1145,8 @@
   <svg class="ic-entrer" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
   <svg class="ic-sortir" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 4v5H4M15 4v5h5M20 15h-5v5M4 15h5v5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
 </button>
+
+<div class="bascule-aide" id="bascule-aide" role="status" aria-live="polite"></div>
 
 <!-- Raccourci vers les mesures : visible après l'écran d'entrée, tant que l'on n'est pas arrivé à la barre des mesures -->
 <button type="button" class="aller-mesures" id="aller-mesures" hidden><span data-i18n="mesures.aller">Aller aux mesures</span> <span class="fleche" aria-hidden="true">↓</span></button>
@@ -1607,6 +1619,8 @@
           <li><a href="https://github.com/Astraor/0Capteur_Interne_Qualite_Air" target="_blank" rel="noopener" data-i18n="pied.code">Code source sur GitHub</a></li>
         </ul>
         <p class="pied-outils" data-i18n="pied.outils">Chart.js 4.4.1 · Archivo, Chivo Mono, Cinzel Decorative</p>
+        <!-- Version mise en ligne : lue dans version.json (écrit à chaque mise à jour par .github/workflows/version-site.yml) -->
+        <p class="pied-version" id="pied-version" hidden></p>
       </section>
     </div>
 
@@ -1628,10 +1642,10 @@
 <!-- Traductions : un fichier par langue, puis le moteur. L'ordre compte (voir js/i18n.js).
      ?v=… : à changer à chaque modification de ces fichiers, sinon le navigateur peut garder l'ancienne version en cache
      (la page affichait alors les noms des clés, « pied.devise »…). -->
-<script src="lang/fr.js?v=20261122"></script>
-<script src="lang/en.js?v=20261122"></script>
-<script src="lang/ja.js?v=20261122"></script>
-<script src="js/i18n.js?v=20261122"></script>
+<script src="lang/fr.js?v=20261123"></script>
+<script src="lang/en.js?v=20261123"></script>
+<script src="lang/ja.js?v=20261123"></script>
+<script src="js/i18n.js?v=20261123"></script>
 
 <script>
 window.__pret = true;   // dit à la page que le script a bien démarré (voir le <head>)
@@ -3230,6 +3244,19 @@ function pleinEcranDispo() {
   return !!(r.requestFullscreen || r.webkitRequestFullscreen) && document.fullscreenEnabled !== false && document.webkitFullscreenEnabled !== false;
 }
 function elementPlein() { return document.fullscreenElement || document.webkitFullscreenElement || null; }
+// Plein écran lancé à la main (F11, menu du navigateur) : la page n'en sait rien par l'API plein écran (aucun fullscreenElement,
+// aucun événement), on le déduit de la taille : plus de barres du navigateur, la fenêtre fait la taille de l'écran.
+function pleinManuel() {
+  if (elementPlein()) return false;
+  try { if (window.matchMedia && window.matchMedia("(display-mode: fullscreen)").matches) return true; } catch (e) { /* ancien navigateur */ }
+  if (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) return false;   // téléphone, tablette : pas de F11
+  const sw = window.screen && screen.width, sh = window.screen && screen.height;
+  if (!sw || !sh) return false;
+  const proche = (a, b) => Math.abs(a - b) <= 2;
+  if (proche(window.innerWidth, sw) && proche(window.innerHeight, sh)) return true;
+  return proche(window.outerWidth, sw) && proche(window.outerHeight, sh) && window.innerHeight >= window.outerHeight - 4;
+}
+const enPleinEcran = () => !!elementPlein() || pleinManuel();
 // Entrer ou sortir du plein écran change la hauteur de l'écran, donc celle de tout ce qui se mesure en svh (piste de l'accueil,
 // ouverture, chapitres). Le navigateur garde la même position en pixels : la page « sautait » vers le haut ou le bas.
 // On note donc où l'on lit (zone de défilement + avancement, ou chapitre + décalage) avant le changement et on y revient après.
@@ -3340,7 +3367,7 @@ function initPleinEcran() {
   }
   racine.classList.add("plein-dispo");
   const maj = () => {
-    const plein = !!elementPlein();
+    const plein = enPleinEcran();
     racine.classList.toggle("plein", plein);
     if (bascule) {
       const t = trad(plein ? "fs.sortir" : "fs.entrer");
@@ -3352,12 +3379,30 @@ function initPleinEcran() {
   majPleinLangue = maj;
   document.addEventListener("fullscreenchange", maj);
   document.addEventListener("webkitfullscreenchange", maj);
-  if (bascule) bascule.addEventListener("click", () => { if (elementPlein()) sortirPleinEcran(); else entrerPleinEcran(); });
+  // F11 / menu du navigateur : seulement un redimensionnement de la fenêtre
+  let majAttente = 0;
+  window.addEventListener("resize", () => { cancelAnimationFrame(majAttente); majAttente = requestAnimationFrame(maj); });
+  // Même chose quand le plein écran du navigateur se fait sans événement de taille immédiat : on revérifie un peu plus tard
+  document.addEventListener("visibilitychange", maj);
+  const aide = document.getElementById("bascule-aide");
+  let minuterieAide = 0;
+  const direAide = () => {
+    if (!aide) return;
+    aide.textContent = trad("fs.manuel");
+    aide.classList.add("visible");
+    clearTimeout(minuterieAide);
+    minuterieAide = setTimeout(() => aide.classList.remove("visible"), 4500);
+  };
+  if (bascule) bascule.addEventListener("click", () => {
+    if (elementPlein()) sortirPleinEcran();
+    else if (pleinManuel()) direAide();   // plein écran du navigateur : seule la personne peut le quitter (F11)
+    else entrerPleinEcran();
+  });
 
   // Introduction déjà vue (visite précédente) : pas d'écran d'entrée, on arrive directement sur les mesures.
   // Le bouton en bas à droite permet toujours de passer en plein écran.
   if (porte && racine.classList.contains("intro-masquee")) { porte.remove(); return; }
-  if (!porte || elementPlein()) return;
+  if (!porte || enPleinEcran()) return;
   const fermer = () => {
     if (porte.hidden) return;
     porte.hidden = true;
@@ -5468,6 +5513,7 @@ function demarrer() {
   securise(initAllerMesures);
   securise(initIntroVue);
   securise(initBarreMobile);
+  securise(initVersion);
   securise(ajusterHero);   // avant même les données : le bandeau tient dans l'écran dès l'arrivée
   securise(() => {   // « Haut de page » : remonte à l'écran d'accueil (le verdict « L'air est… »), pas tout en haut (00).
     // Le bandeau est épinglé (sticky) dans sa piste : on vise le haut de la piste, comme le repère 01 du sommaire.
@@ -5527,6 +5573,7 @@ function demarrer() {
     securise(majCalendrierLangue);
     securise(majMenuPas);
     securise(majPleinLangue);
+    securise(ecrireVersion);
     securise(() => { if (nuage) nuage.majLangue(); });
     securise(majTampon);
     securise(majManifeste);
@@ -5544,6 +5591,52 @@ function demarrer() {
   rafraichir();
   setInterval(rafraichir, RAFRAICHISSEMENT_MS);
   setInterval(majTempsRelatif, 30000);
+}
+
+// ---------- Version mise en ligne (pied de page) ----------
+// version.json est réécrit à chaque mise à jour du dépôt (workflow version-site.yml) : il contient le commit réellement servi par
+// GitHub Pages. On le compare au dernier commit de GitHub : s'ils diffèrent, la mise en ligne est encore en cours.
+const DEPOT_GITHUB = "Astraor/0Capteur_Interne_Qualite_Air";
+const versionSite = { sha: "", date: "", attente: "" };
+function ecrireVersion() {
+  const p = document.getElementById("pied-version");
+  if (!p) return;
+  if (!versionSite.sha) { p.hidden = true; return; }
+  const court = versionSite.sha.slice(0, 7);
+  let quand = "";
+  const t = Date.parse(versionSite.date);
+  if (!isNaN(t)) {
+    try { quand = new Date(t).toLocaleString(I18N.locale(), { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }); }
+    catch (e) { quand = versionSite.date; }
+  }
+  p.textContent = "";
+  const lien = document.createElement("a");
+  lien.href = "https://github.com/" + DEPOT_GITHUB + "/commit/" + versionSite.sha;
+  lien.target = "_blank"; lien.rel = "noopener";
+  lien.textContent = court;
+  lien.style.fontFamily = "var(--mono)";
+  p.append(trad("pied.version") + " ", lien);
+  if (quand) p.append(" · " + quand);
+  if (versionSite.attente) p.append(" · " + trad("pied.version_attente", { sha: versionSite.attente.slice(0, 7) }));
+  p.hidden = false;
+}
+async function initVersion() {
+  try {
+    const r = await fetch("version.json?t=" + Date.now(), { cache: "no-store" });
+    if (!r.ok) return;
+    const j = await r.json();
+    if (!j || typeof j.sha !== "string" || !/^[0-9a-f]{7,40}$/.test(j.sha)) return;
+    versionSite.sha = j.sha; versionSite.date = j.date || "";
+    ecrireVersion();
+  } catch (e) { return; }
+  // Dernier vrai commit (hors commits automatiques de version.json) : différent de celui qui est servi = mise en ligne en cours.
+  try {
+    const r = await fetch("https://api.github.com/repos/" + DEPOT_GITHUB + "/commits?per_page=10");
+    if (!r.ok) return;
+    const liste = await r.json();
+    const dernier = (Array.isArray(liste) ? liste : []).find(c => c && c.commit && !/^version\s*:/i.test(c.commit.message || ""));
+    if (dernier && dernier.sha && !dernier.sha.startsWith(versionSite.sha.slice(0, 7))) { versionSite.attente = dernier.sha; ecrireVersion(); }
+  } catch (e) { /* hors ligne ou limite de l'API atteinte : on garde la version affichée */ }
 }
 
 // Chart.js arrive peut-être après les mesures : dans ce cas, les graphes se dessinent à son arrivée.

@@ -19,6 +19,7 @@ window.I18N_DICT.fr = {
   "ep.passer": "Continuer sans plein écran",
   "fs.entrer": "Passer en plein écran",
   "fs.sortir": "Quitter le plein écran",
+  "fs.manuel": "Plein écran du navigateur : appuyez sur F11 (ou Échap) pour le quitter.",
 
   /* ---------- Sommaire et chapitres ---------- */
   "nav.chapitres": "Chapitres de la page",
@@ -315,5 +316,7 @@ window.I18N_DICT.fr = {
   "pied.code": "Code source sur GitHub",
   "pied.equipe": "Projet réalisé par Gabriel, Simon, Guillaume et Titouan.",
   "pied.outils": "Chart.js 4.4.1 · Archivo, Chivo Mono, Cinzel Decorative",
+  "pied.version": "Version en ligne :",
+  "pied.version_attente": "mise en ligne de {sha} en cours",
   "pied.haut": "Haut de page <span aria-hidden='true'>↑</span>"
 };

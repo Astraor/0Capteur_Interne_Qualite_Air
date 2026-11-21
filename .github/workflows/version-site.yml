@@ -1,0 +1,41 @@
+# Écrit version.json (commit servi par GitHub Pages) pour que le pied de page du site affiche la version en ligne.
+#
+# Un commit ne peut pas contenir son propre numéro : à chaque mise à jour de main, ce workflow ajoute donc un second commit
+# « version : abc1234 » qui ne change que version.json. Quand le site affiche abc1234, c'est que la mise à jour est en ligne.
+# (Les commits qui ne touchent que version.json ne relancent pas ce workflow.)
+name: Version du site
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - version.json
+
+permissions:
+  contents: write
+
+concurrency:
+  group: version-site
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Écrire version.json
+        run: |
+          SHA="$GITHUB_SHA"
+          DATE="$(git show -s --format=%cI "$SHA")"
+          printf '{\n  "sha": "%s",\n  "date": "%s"\n}\n' "$SHA" "$DATE" > version.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add version.json
+          if git diff --cached --quiet; then echo "version.json déjà à jour"; exit 0; fi
+          git commit -m "version : ${SHA::7}"
+          git pull --rebase origin main
+          git push origin main

@@ -14,6 +14,7 @@ window.I18N_DICT.en = {
   "ep.passer": "Continue without full screen",
   "fs.entrer": "Enter full screen",
   "fs.sortir": "Exit full screen",
+  "fs.manuel": "Browser full screen: press F11 (or Esc) to exit.",
 
   /* ---------- Contents and chapters ---------- */
   "nav.chapitres": "Page chapters",
@@ -310,5 +311,7 @@ window.I18N_DICT.en = {
   "pied.code": "Source code on GitHub",
   "pied.equipe": "A project by Gabriel, Simon, Guillaume and Titouan.",
   "pied.outils": "Chart.js 4.4.1 · Archivo, Chivo Mono, Cinzel Decorative",
+  "pied.version": "Live version:",
+  "pied.version_attente": "{sha} is being published",
   "pied.haut": "Back to top <span aria-hidden='true'>↑</span>"
 };
