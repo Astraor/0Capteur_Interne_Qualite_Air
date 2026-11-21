@@ -1,0 +1,49 @@
+# Publie le site sur GitHub Pages à chaque mise à jour de main, et écrit dans version.json le numéro du commit publié
+# (lu par le pied de page : « Version en ligne : abc1234 »). Aucun commit automatique : le fichier n'existe que dans le site publié.
+#
+# À faire UNE fois dans GitHub : Settings > Pages > Build and deployment > Source = « GitHub Actions ».
+#
+# Sécurité : aucun secret utilisé ; le workflow ne peut pas écrire dans le dépôt (contents: read) ; actions officielles
+# « actions/* » uniquement ; seuls les fichiers du site sont publiés (pas Firmware/, relais/, .github/…).
+name: Publier le site
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:        # bouton « Run workflow » pour republier à la main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  construire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Assembler le site
+        run: |
+          mkdir _site
+          cp -r index.html js lang img _site/
+          printf '{\n  "sha": "%s",\n  "date": "%s"\n}\n' "$GITHUB_SHA" "$(git show -s --format=%cI "$GITHUB_SHA")" > _site/version.json
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+  publier:
+    needs: construire
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploiement.outputs.page_url }}
+    steps:
+      - id: deploiement
+        uses: actions/deploy-pages@v4

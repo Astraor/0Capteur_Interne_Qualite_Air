@@ -1619,7 +1619,7 @@
           <li><a href="https://github.com/Astraor/0Capteur_Interne_Qualite_Air" target="_blank" rel="noopener" data-i18n="pied.code">Code source sur GitHub</a></li>
         </ul>
         <p class="pied-outils" data-i18n="pied.outils">Chart.js 4.4.1 · Archivo, Chivo Mono, Cinzel Decorative</p>
-        <!-- Version mise en ligne : lue dans version.json (écrit à chaque mise à jour par .github/workflows/version-site.yml) -->
+        <!-- Version mise en ligne : lue dans version.json (généré à chaque publication par .github/workflows/pages.yml) -->
         <p class="pied-version" id="pied-version" hidden></p>
       </section>
     </div>
@@ -5594,7 +5594,7 @@ function demarrer() {
 }
 
 // ---------- Version mise en ligne (pied de page) ----------
-// version.json est réécrit à chaque mise à jour du dépôt (workflow version-site.yml) : il contient le commit réellement servi par
+// version.json est généré à chaque publication (workflow pages.yml) : il contient le commit réellement servi par
 // GitHub Pages. On le compare au dernier commit de GitHub : s'ils diffèrent, la mise en ligne est encore en cours.
 const DEPOT_GITHUB = "Astraor/0Capteur_Interne_Qualite_Air";
 const versionSite = { sha: "", date: "", attente: "" };
@@ -5629,7 +5629,7 @@ async function initVersion() {
     versionSite.sha = j.sha; versionSite.date = j.date || "";
     ecrireVersion();
   } catch (e) { return; }
-  // Dernier vrai commit (hors commits automatiques de version.json) : différent de celui qui est servi = mise en ligne en cours.
+  // Dernier commit de GitHub : différent de celui qui est servi = mise en ligne en cours.
   try {
     const r = await fetch("https://api.github.com/repos/" + DEPOT_GITHUB + "/commits?per_page=10");
     if (!r.ok) return;
