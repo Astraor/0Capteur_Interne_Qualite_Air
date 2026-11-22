@@ -263,10 +263,15 @@
   /* Onde autour du point : un cercle SVG dont on anime le rayon et l'épaisseur du trait (et non un rond agrandi par
      transform: scale). Firefox redessinait le rond agrandi à des échelles successives : il grossissait par à-coups et
      son trait clignotait. Un cercle vectoriel est retracé exactement à chaque image, au dixième de pixel près.
-     La zone de dessin fait 3,2 × le point (taille finale de l'onde) ; une unité = 1/10 du point. */
+     La zone de dessin fait 3,2 × le point (taille finale de l'onde) ; une unité = 1/10 du point.
+     En état « en ligne », le point lui-même est dessiné dans le même SVG (cercle .coeur) : point et onde partagent
+     le même repère, donc restent parfaitement concentriques. Avant, Firefox arrondissait au pixel séparément le point
+     (9 px dans le pied de page) et la zone de l'onde (28,8 px) : l'onde était décalée d'un demi-pixel à un pixel. */
   .point .onde { position: absolute; left: -110%; top: -110%; width: 320%; height: 320%; overflow: visible; pointer-events: none; display: none; }
-  .point .onde circle { fill: none; stroke: currentColor; stroke-width: 2px; opacity: 0; animation: onde 2.2s ease-out infinite; }
+  .point .onde .coeur { fill: currentColor; }
+  .point .onde .anneau { fill: none; stroke: currentColor; stroke-width: 2px; opacity: 0; animation: onde 2.2s ease-out infinite; }
   .statut.ok .point .onde, .pied-statut.ok .point .onde { display: block; }
+  .statut.ok .point, .pied-statut.ok .point { background: transparent; }
   .statut.alerte .point { border-radius: 0; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
   .statut.erreur .point { border-radius: 1px; }
 
@@ -963,7 +968,7 @@
   .pied-statut.alerte .point { border-radius: 0; background: #f0e641; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
   .pied-statut.erreur .point { border-radius: 1px; background: #ff5050; }
   .pied-statut .point .onde { color: #50f0e6; }
-  html.mouvement-reduit .pied-statut .point .onde { display: none; }
+  html.mouvement-reduit .pied-statut .point .onde .anneau { display: none; }
   .pied-colonnes { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 30px 40px; padding: 30px 0 32px; }
   .pied-col h2 { margin: 0 0 12px; font: 600 .7rem/1.4 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: rgba(242, 244, 240, .58); }
   .pied-col, .pied-col p, .pied-col li, .pied-col dd { font-size: .88rem; line-height: 1.5; color: rgba(242, 244, 240, .84); }
@@ -1099,7 +1104,7 @@
   html.mouvement-reduit { scroll-behavior: auto; }
   html.mouvement-reduit :is(.hero-disque, .tampon svg, .tampon-point, .descendre span,
     .squelette i, .mot.attente #verdict-lettres) { animation: none; }
-  html.mouvement-reduit .statut .point .onde { display: none; }
+  html.mouvement-reduit .statut .point .onde .anneau { display: none; }
   html.mouvement-reduit .tampon-point { transform: scale(.6667); }   /* point dessiné à 21 px : taille de repos (14 px) sans animation */
   html.mouvement-reduit .lettre { animation: fondu .6s ease both; animation-delay: calc(var(--i, 0) * 30ms + 100ms); }
   html.mouvement-reduit .apparait { animation: fondu .7s ease both; animation-delay: calc(var(--d, 0) * 90ms + 100ms); }
@@ -1271,7 +1276,7 @@
       <p class="marque" data-i18n="hero.marque">Qualité de l'air intérieur · Marseille</p>
 
       <p id="statut" class="statut">
-        <span class="point"><svg class="onde" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><circle cx="16" cy="16" r="4"></circle></svg></span>
+        <span class="point"><svg class="onde" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><circle class="coeur" cx="16" cy="16" r="5"></circle><circle class="anneau" cx="16" cy="16" r="4"></circle></svg></span>
         <span id="statut-texte">Chargement…</span>
       </p>
 
@@ -1583,7 +1588,7 @@
         <p class="pied-marque"><img class="pied-logo" src="img/logo.svg" alt="" width="64" height="64" loading="lazy" decoding="async">La Bonne M’air</p>
         <p class="pied-devise" data-i18n="pied.devise">Le capteur qui veille sur l’air que vous respirez, installé à Marseille.</p>
       </div>
-      <p class="pied-statut" id="pied-statut" aria-hidden="true"><span class="point"><svg class="onde" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><circle cx="16" cy="16" r="4"></circle></svg></span><span id="pied-statut-texte">—</span></p>
+      <p class="pied-statut" id="pied-statut" aria-hidden="true"><span class="point"><svg class="onde" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><circle class="coeur" cx="16" cy="16" r="5"></circle><circle class="anneau" cx="16" cy="16" r="4"></circle></svg></span><span id="pied-statut-texte">—</span></p>
     </div>
 
     <div class="pied-colonnes">
