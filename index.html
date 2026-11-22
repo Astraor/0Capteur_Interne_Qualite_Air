@@ -3881,6 +3881,15 @@ function capteurMuet(tDerniere, pasMs) {
   return tDerniere > 0 && Date.now() - tDerniere > pasMs + 2 * 3600000;
 }
 
+// Âge maximal de la dernière mesure pour dire « capteur en ligne ». Il dépend de la cadence réelle de la carte
+// (une mesure toutes les 10 à 60 s) et PAS du pas des graphes : avec un pas d'1 h ou de 6 h, le capteur restait « en
+// ligne » plus d'une heure après son arrêt. 10 min = même seuil que la surveillance GitHub (SEUIL_MIN). On y ajoute
+// la finesse des données reçues : une moyenne du serveur (5 ou 15 min) est datée du DÉBUT de sa tranche.
+const SEUIL_EN_LIGNE_MS = 10 * 60000;
+function seuilEnLigne() {
+  return SEUIL_EN_LIGNE_MS + (pointsBruts && pointsBruts.freq ? enMs(pointsBruts.freq) : 0);
+}
+
 // Pastille d'en-tête : capteur en ligne, en retard ou muet.
 function majStatut(tDerniere, pasMs) {
   if (!tDerniere) {
@@ -3891,7 +3900,7 @@ function majStatut(tDerniere, pasMs) {
   const depuisMaintenant = () => depuis(Date.now() - tDerniere);   // recalculé à chaque réécriture du message
   if (capteurMuet(tDerniere, pasMs)) {
     definirStatut("erreur", () => trad("statut.muet", { depuis: depuisMaintenant() }));
-  } else if (age <= pasMs + 15 * 60000) {
+  } else if (age <= seuilEnLigne()) {
     definirStatut("ok", () => trad("statut.ok", { depuis: depuisMaintenant() }));
   } else {
     definirStatut("alerte", () => trad("statut.retard", { depuis: depuisMaintenant() }));
