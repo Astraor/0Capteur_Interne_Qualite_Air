@@ -3188,11 +3188,9 @@ function initZoomGraphe(id) {
   canvas.addEventListener("wheel", e => {
     const chart = graphe();
     if (!chart) return;
-    // La molette zoome dès que la souris est sur le graphe (plus besoin de Ctrl). Deux cas où la page défile comme
-    // d'habitude : un geste surtout horizontal, et un dézoom alors que tout est déjà affiché (rien à dézoomer : sinon
-    // on ne pourrait plus faire défiler la page vers le bas en passant sur le graphe).
+    // La molette zoome dès que la souris est sur le graphe (plus besoin de Ctrl), jusqu'au bout : même quand tout est
+    // déjà affiché (ou au zoom maximal), la page ne défile pas. Seul un geste surtout horizontal est laissé au navigateur.
     if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
-    if (e.deltaY > 0 && !e.ctrlKey && !zooms[id]) return;
     e.preventDefault();
     // Cran de molette ≈ 13 % (avant : 65 %, trop brusque) ; le pincement du pavé tactile, qui envoie de petits deltas,
     // zoome en continu. deltaMode 1 / 2 : Firefox compte parfois en lignes ou en pages.
