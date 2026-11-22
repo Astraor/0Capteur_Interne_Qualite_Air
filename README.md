@@ -30,9 +30,12 @@ flowchart LR
         PM["NextPM<br/>PM1 · PM2.5 · PM10<br/>T° · HR"] -- Modbus / UART1 --> ESP((ESP32))
         CO2["MH-Z19C<br/>CO₂ (NDIR)"] -- UART2 --> ESP
         ESP -- HUB75 --> LED["Écran LED<br/>64 × 32"]
-        ESP -. pas de réseau .-> FS[("Flash LittleFS<br/>~12 h de mesures")]
+        ESP -. pas de réseau .-> FS[("Flash LittleFS<br/>~10 h de mesures")]
         FS -. renvoi automatique .-> ESP
     end
+    TEL["Téléphone<br/>(Bluetooth)"] <-. "console de dépannage" .-> ESP
+    ESP <-- "HTTPS : journal, commandes,<br/>mises à jour signées" --> RELAIS["Relais Cloudflare<br/>+ page console"]
+    GH["Release GitHub<br/>firmware signé"] --> RELAIS
     ESP -- "HTTP POST (JSON)<br/>toutes les 10 s" --> API[("Serveur AirCarto")]
     API -- "API /data<br/>(avec la clé du groupe)" --> RELAIS["Relais Cloudflare<br/>mair-relais.astraor.workers.dev"]
     RELAIS -- "/donnees<br/>(lecture seule, sans clé)" --> SITE["Site web<br/>GitHub Pages + Chart.js"]
@@ -88,7 +91,13 @@ Sans réseau, la mesure est rangée en flash puis renvoyée plus tard avec son �
 ├── patch-lang.js               # Outil : met à jour des clés de traduction dans les 3 langues
 ├── Firmware/
 │   ├── platformio.ini          # Configuration PlatformIO
-│   └── src/main.cpp            # Programme de la carte
+│   ├── partitions_mair.csv     # Mémoire : 2 × 1,5 Mo pour le programme (mise à jour à distance) + 896 Ko de mesures
+│   ├── outils/ota.py           # Version, signature des mises à jour, « pio run -t cles »
+│   └── src/
+│       ├── main.cpp            # Programme de la carte
+│       ├── racines_tls.h       # Certificats acceptés pour joindre le relais
+│       └── cle_ota.h           # Clé PUBLIQUE de signature (créée par « pio run -t cles »)
+├── relais/                     # Relais Cloudflare : console à distance + mises à jour (voir relais/LISEZMOI.md)
 └── .github/
     ├── workflows/surveillance-capteur.yml   # Tâche planifiée toutes les 5 min
     └── scripts/surveiller-capteur.mjs       # Vérifie que le capteur envoie encore
@@ -106,7 +115,9 @@ Sans réseau, la mesure est rangée en flash puis renvoyée plus tard avec son �
 4. Compiler et téléverser (`PlatformIO: Upload`), puis ouvrir le moniteur série à **115 200 bauds**.
 
 Bibliothèques (installées automatiquement par `lib_deps`) :
-`ModbusMaster 2.0.1`, `MH-Z19 ^1.5.4`, `PxMatrix 1.8.2`, `Adafruit GFX 1.11.11`, `ArduinoJson ^7.4.3`.
+`ModbusMaster 2.0.1`, `MH-Z19 ^1.5.4`, `PxMatrix 1.8.2`, `Adafruit GFX 1.11.11`, `ArduinoJson ^7.4.3`, `NimBLE-Arduino ^2.3.6` (Bluetooth).
+
+La mémoire flash est découpée par `partitions_mair.csv` : deux emplacements de 1,5 Mo pour le programme (la mise à jour à distance s'écrit dans celui qui ne tourne pas) et 896 Ko pour les mesures hors ligne.
 
 ### Configuration par le moniteur série
 
@@ -123,10 +134,23 @@ Aucun identifiant n’est écrit dans le code : tout est enregistré dans la mé
 | `verbose on` / `verbose off` | Active / coupe les logs automatiques (coupés par défaut) |
 | `calib oui` | Calibrage du zéro CO₂ (après 20 min à l’air extérieur, ~400 ppm) |
 | `vider_file` | Efface les mesures en attente d’envoi |
-| `oublier` | Efface Wi-Fi et clé — **à faire avant de prêter la carte** |
+| `oublier` | Efface Wi-Fi, clé, jeton du relais et téléphones Bluetooth — **à faire avant de prêter la carte** |
+| `set relais <url>` · `set jeton <jeton>` | Adresse du relais Cloudflare et jeton secret de la carte (console à distance) |
+| `maj` · `maj installer` | Cherche / installe la dernière version publiée (signée) |
+| `bt oublier` | Efface les téléphones Bluetooth appairés |
 | `aide` | Liste des commandes |
 
 La carte se connecte seule au meilleur réseau connu visible, sans redémarrage.
+
+### Console sans fil et mises à jour à distance
+
+Le moniteur série est aussi disponible **sans câble** (mode d'emploi complet : [`relais/LISEZMOI.md`](relais/LISEZMOI.md)) :
+
+- **par Internet**, via un petit relais gratuit chez Cloudflare (`relais/`) : la carte y envoie son journal en HTTPS (toutes les 30 s, toutes les 2 s quand la page console est ouverte) et y prend les commandes. Passe partout, eduroam compris ;
+- **par Bluetooth**, à côté de la carte : appairage avec le code à 6 chiffres affiché sur l'écran ;
+- **mises à jour** : `maj installer` télécharge la dernière release GitHub, vérifie sa **signature** (ECDSA, clé privée restée sur ton PC) et son empreinte, l'installe dans l'autre emplacement de la mémoire et revient tout seul à l'ancienne version si la nouvelle ne marche pas.
+
+Sans câble, seules les commandes **sans secret ni effacement** passent (`aide`, `status`, `verbose`, `calib`, `reboot`, `wifi scan`, `wifi connect`, `maj`). Wi-Fi, clé, jeton, relais, `oublier`, `vider_file` : **câble USB uniquement**, et ce qu'ils affichent ne quitte jamais le câble.
 
 ### Interrupteurs de compilation (début de `main.cpp`)
 
@@ -141,6 +165,8 @@ La carte se connecte seule au meilleur réseau connu visible, sans redémarrage.
 | `TRANSITION_FONDU` | 1 | Fondu entre les pages |
 | `ANIMATIONS` | 0 | Clignements, chiffres qui glissent |
 | `AFFICHER_ETAT` | 1 | Page ÉTAT (heure + icônes Wi-Fi / serveur / capteurs) toutes les 15 s, pendant 3 s |
+| `CONSOLE_DISTANTE` | 1 | Journal, commandes et mises à jour par le relais Cloudflare |
+| `BLUETOOTH_ACTIF` | 1 | Console Bluetooth (code d'appairage affiché sur l'écran) |
 
 ### Écran LED
 
@@ -152,6 +178,7 @@ La carte se connecte seule au meilleur réseau connu visible, sans redémarrage.
 - **Alerte hors norme :** dès qu’un polluant atteint son seuil d’alerte (PM : « Mauvais », CO₂ : > 1 000 ppm), l’écran saute aussitôt sur sa page, clignote à la couleur du niveau, puis la valeur pulse ; la page revient une fois sur deux tant que l’alerte dure.
 - **Luminosité adaptée :** jour, nuit et batterie.
 - **Préchauffage du CO₂ :** compte à rebours en minutes:secondes (« 2:18 ») les 3 premières minutes après une mise sous tension (pas après un redémarrage logiciel : le capteur est resté alimenté).
+- **Bluetooth / mise à jour :** pendant un appairage, l'écran affiche le code à 6 chiffres à taper sur le téléphone ; pendant une mise à jour, « MISE A JOUR » et le pourcentage téléchargé (même la nuit, écran éteint).
 - **CO₂ impossible :** une lecture sous 300 ppm est écartée (un capteur qui dérive a envoyé jusqu'à 37 ppm) ; si ça dure, la page CO₂ affiche « A CALIBRER » (commande `calib oui`, à l'air libre).
 
 ### Données envoyées
@@ -161,7 +188,7 @@ Les deux capteurs sont lus **chaque seconde** (ils mesurent eux-mêmes une fois 
 | Situation | Période d'une mesure |
 |---|---|
 | En direct (Wi-Fi + clé valide, rien en retard) | **10 s** — bouclée au moment exact où le serveur accepte l'envoi suivant (10 s + une petite marge), puis envoyée aussitôt |
-| Hors ligne (ou clé absente / refusée) | 30 s — la mémoire flash garde ainsi ~12 h (4 h seulement à 10 s) |
+| Hors ligne (ou clé absente / refusée) | 30 s — la mémoire flash garde ainsi ~10 h (3 h seulement à 10 s) |
 | Quelques mesures en retard / plus de 10 en retard | 30 s / 60 s — laisse des créneaux au rattrapage (le serveur n'accepte qu'un envoi toutes les 10 s) |
 | Sur batterie | 60 s |
 
@@ -186,7 +213,7 @@ Adresse d'envoi : `http://api.aircarto.fr/iut-amu/push`.
 
 ### Robustesse
 
-- **Mode hors ligne :** jusqu’à ~500 Ko (~12 h) de mesures stockées en flash, renvoyées automatiquement (le serveur impose 10 s entre deux envois : ~100 mesures en retard se rattrapent en ~20 min).
+- **Mode hors ligne :** jusqu’à ~400 Ko (~10 h) de mesures stockées en flash, renvoyées automatiquement (le serveur impose 10 s entre deux envois : ~100 mesures en retard se rattrapent en ~20 min).
 - **Tâches séparées :** l’envoi réseau tourne dans sa propre tâche, l’écran est rafraîchi sur le cœur 0 : l’affichage ne se fige jamais pendant un envoi.
 - **Sécurités :** watchdog (60 s), redémarrage si la mémoire libre passe sous 25 Ko ou si elle est trop morcelée (plus grand bloc sous 10 Ko), heure NTP avec passage heure d’été / d’hiver.
 - **Wi-Fi :** la carte ne redémarre que si un réseau connu est **visible** depuis 1 h sans que la connexion réussisse (pile Wi-Fi bloquée) ; une borne éteinte la nuit ne provoque plus de redémarrage toutes les heures.
@@ -227,7 +254,7 @@ Page unique, sans framework, hébergée sur **GitHub Pages** (branche `main`, ra
 - **Mémoire du navigateur** (`localStorage`, rien n’est envoyé) : dernière période choisie (6 h, 24 h, 7 j ou durée personnalisée), pas des graphes, courbes cochées, langue. Une fois l’introduction vue (barre des mesures atteinte), les visites suivantes s’ouvrent directement sur l’accueil (01) ; on la revoit avec **00** dans le sommaire (ordinateur) ou **Introduction** (téléphone).
 - **Barre des réglages** collée en haut ; sur téléphone, elle se range quand on descend et revient dès qu’on remonte.
 - **Confort :** écran d’entrée plein écran, bouton flottant « Aller aux mesures » pour sauter l’introduction, animations réductibles, mise à jour automatique toutes les 5 min.
-- **Mise à jour légère :** toutes les 5 min, le site ne redemande que les mesures arrivées depuis la requête précédente (quelques Ko au lieu de ~2,4 Mo pour 24 h : l'API n'est pas compressée) ; le résultat est identique à un rechargement complet.
+- **Mise à jour légère :** toutes les 5 min, le site ne redemande que les mesures arrivées depuis la requête précédente (quelques Ko au lieu de ~2,4 Mo pour 24 h ; Cloudflare compresse au passage ce que l'API AirCarto envoie brut) ; le résultat est identique à un rechargement complet.
 - **Valeurs impossibles écartées :** CO₂ hors 300-5 000 ppm, etc. (le serveur garde d'anciennes valeurs fausses d'un capteur qui dérivait).
 
 ### Réglages (`index.html`, section « 1) RÉGLAGES »)
@@ -317,6 +344,8 @@ GitHub peut retarder les tâches planifiées de quelques minutes, et les met en 
 - Température et humidité proviennent des capteurs internes du NextPM : elles reflètent l’air dans le boîtier, souvent un peu plus chaud que la pièce.
 - Le serveur n’accepte qu’**un envoi toutes les 10 s** : c’est lui qui limite la vitesse de rattrapage après une coupure.
 - Carte démarrée **sans Wi-Fi** (donc sans heure) puis coupure de courant avant le retour du Wi-Fi : les mesures de ce démarrage ne peuvent pas être datées et sont abandonnées (la commande `status` les compte). Une horloge à pile (module RTC DS3231) l'éviterait.
+- Mise à jour à distance : la toute première installation (clé publique + nouvelle table de partitions) se fait au câble USB. Une nouvelle version jamais validée (pas de relais joint) revient à l'ancienne après 3 redémarrages de suite, même si c'étaient de simples coupures de courant.
+- Console Bluetooth et HTTPS prennent de la mémoire vive : la commande `status` affiche la mémoire libre. En cas de manque, mettre `BLUETOOTH_ACTIF` à 0.
 
 ---
 
