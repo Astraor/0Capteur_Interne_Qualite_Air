@@ -128,7 +128,7 @@ Aucun identifiant n’est écrit dans le code : tout est enregistré dans la mé
 | `wifi ent eduroam prenom.nom@etu.univ-amu.fr MOT_DE_PASSE` | Ajoute un réseau WPA2-Entreprise (eduroam) |
 | `wifi add MaBox MotDePasse` | Ajoute un Wi-Fi classique |
 | `wifi add "iPhone de Paul" MotDePasse` | Nom avec espaces : entre guillemets |
-| `wifi list` · `wifi del <n>` · `wifi scan` · `wifi connect` | Gérer les réseaux (5 au maximum) |
+| `wifi list` · `wifi del <n>` ou `wifi del <nom>` · `wifi scan` · `wifi connect` | Gérer les réseaux (5 au maximum) ; `wifi del` en supprime **un seul**, par son numéro ou son nom exact |
 | `set cle <32 caractères>` | Clé du groupe AirCarto |
 | `status` | État complet (réseau, capteurs, file d’attente, temps de rattrapage) |
 | `verbose on` / `verbose off` | Active / coupe les logs automatiques (coupés par défaut) |
@@ -137,7 +137,11 @@ Aucun identifiant n’est écrit dans le code : tout est enregistré dans la mé
 | `oublier` | Efface Wi-Fi, clé, jeton du relais et téléphones Bluetooth — **à faire avant de prêter la carte** |
 | `set relais <url>` · `set jeton <jeton>` | Adresse du relais Cloudflare et jeton secret de la carte (console à distance) |
 | `maj` · `maj installer` | Cherche / installe la dernière version publiée (signée) |
-| `bt oublier` | Efface les téléphones Bluetooth appairés |
+| `maj oublier` | Réautorise une version qui a échoué sur la carte (câble USB) |
+| `bt appairer` | Autorise un **nouveau** téléphone Bluetooth pendant 2 min |
+| `bt demarrage on` / `off` | Autorise aussi un nouveau téléphone pendant 2 min après chaque mise sous tension (désactivé par défaut) |
+| `bt liste` · `bt oublier <n>` | Téléphones appairés ; en oublier **un seul** |
+| `bt oublier` | Efface tous les téléphones Bluetooth appairés |
 | `aide` | Liste des commandes |
 
 La carte se connecte seule au meilleur réseau connu visible, sans redémarrage.
@@ -147,16 +151,24 @@ La carte se connecte seule au meilleur réseau connu visible, sans redémarrage.
 Le moniteur série est aussi disponible **sans câble** (mode d'emploi complet : [`relais/LISEZMOI.md`](relais/LISEZMOI.md)) :
 
 - **par Internet**, via un petit relais gratuit chez Cloudflare (`relais/`) : la carte y envoie son journal en HTTPS (toutes les 30 s, toutes les 2 s quand la page console est ouverte) et y prend les commandes. Passe partout, eduroam compris ;
-- **par Bluetooth**, à côté de la carte : appairage avec le code à 6 chiffres affiché sur l'écran ;
+- **par Bluetooth**, à côté de la carte : appairage avec le code à 6 chiffres affiché sur l'écran. Un nouveau téléphone n'est accepté que dans les 2 min qui suivent un `bt appairer` (câble USB), ou une mise sous tension si tu as activé `bt demarrage on` : quelqu'un qui voit l'écran depuis la pièce ne peut pas s'appairer à ton insu ;
 - **mises à jour** : `maj installer` télécharge la dernière release GitHub, vérifie sa **signature** (ECDSA, clé privée restée sur ton PC) et son empreinte, l'installe dans l'autre emplacement de la mémoire et revient tout seul à l'ancienne version si la nouvelle ne marche pas.
 
-Sans câble, seules les commandes **sans secret ni effacement** passent (`aide`, `status`, `verbose`, `calib`, `reboot`, `wifi scan`, `wifi connect`, `maj`). Wi-Fi, clé, jeton, relais, `oublier`, `vider_file` : **câble USB uniquement**, et ce qu'ils affichent ne quitte jamais le câble.
+Sans câble, seules les commandes **sans secret, sans effacement et sans effet durable** passent (`aide`, `status`, `verbose`, `calib`, `reboot`, `wifi scan`, `wifi connect`, `maj`), une par seconde au plus (`wifi scan`, `wifi connect`, `maj` : une fois par 30 s ; `reboot` : une fois par 5 min). Wi-Fi, clé, jeton, relais, `calib oui`, `bt …`, `oublier`, `vider_file` : **câble USB uniquement**, et ce qu'ils affichent ne quitte jamais le câble.
+
+**eduroam :** pour que la carte refuse un faux point d'accès « eduroam » (qui récupérerait ton mot de passe ENT), ajoute le certificat de l'autorité du serveur de l'université : mode d'emploi dans [`Firmware/src/ca_eduroam.h.exemple`](Firmware/src/ca_eduroam.h.exemple). `status` indique si le serveur ENT est vérifié, et la carte prévient au démarrage tant qu'il ne l'est pas. Le plus sûr reste de ne pas mettre ton mot de passe ENT personnel dans la carte (réseau dédié aux objets, partage de connexion d'un téléphone).
+
+**Réseaux usurpés :** la carte ne se connecte qu'au **point d'accès précis** (adresse BSSID et canal) vu au scan **avec la même sécurité** que le réseau enregistré : un faux point d'accès ouvert nommé « eduroam » ou comme ta box est ignoré, même s'il émet plus fort.
+
+**eduroam, identité anonyme :** `anonymous@ton-domaine` circule en clair à la place de ton identifiant (`EDUROAM_IDENTITE_ANONYME`). Si l'université la refuse, la carte repasse toute seule à ton identifiant réel.
 
 ### Interrupteurs de compilation (début de `main.cpp`)
 
 | Constante | Défaut | Rôle |
 |---|---|---|
 | `WIFI_ACTIVE` | 1 | 0 = hors ligne (test du stockage) |
+| `AIRCARTO_HTTPS` | 1 | 1 = mesures envoyées en HTTPS (clé chiffrée) ; 0 = HTTP simple (clé lisible sur le réseau) |
+| `EDUROAM_IDENTITE_ANONYME` | 1 | eduroam : `anonymous@domaine` circule en clair à la place de ton identifiant ; 0 si l'université le refuse |
 | `MODE_DEMO` | 0 | 1 = fausses valeurs qui défilent, aucun envoi |
 | `MHZ_ACTIVE` / `MHZ_ABC` | 1 / 1 | Capteur CO₂ et auto-calibration |
 | `NEXTPM_MOYENNE_60S` | 0 | Moyennes NextPM sur 10 s (0) ou 60 s (1) |
@@ -196,11 +208,12 @@ Pourquoi « 10 s ou un peu plus » en direct : le serveur refuse deux envois à 
 
 **CO₂ très élevé :** au-dessus de **3 000 ppm**, une lecture n'est prise en compte qu'une fois **confirmée par 5 lectures de suite** (5 s) au-dessus du seuil et proches les unes des autres (± 10 % de leur médiane). Un pic isolé ou des valeurs qui sautent sont ignorés (compteur dans `status`). Réglage : `CO2_CONFIRMATION_PPM`, `CO2_NB_CONFIRMATION`, `CO2_ECART_CONFIRMATION`.
 
-Adresse d'envoi : `http://api.aircarto.fr/iut-amu/push`.
+Adresse d'envoi : `https://api.aircarto.fr/iut-amu/push` (HTTPS : la clé du groupe ne circule plus en clair ; seules les deux racines Let's Encrypt d'AirCarto sont acceptées, et la date de chaque certificat est vérifiée). En cas de souci, l'interrupteur `AIRCARTO_HTTPS 0` (début de `main.cpp`) revient au HTTP simple, que le serveur accepte aussi.
 
 | Champ | Contenu |
 |---|---|
 | `device_id`, `uptime`, `rssi`, `heap` | Identité et santé de la carte |
+| `npm_status` | Octet d’état du NextPM (champ officiel d'AirCarto) |
 | `co2`, `pm1`, `pm25`, `pm10` | Moyennes sur la période |
 | `x_age_s` | Secondes entre la mesure et son envoi (mesures rejouées) |
 | `x_co2_max`, `x_pm25_max` | Pics sur la période |
@@ -208,7 +221,6 @@ Adresse d'envoi : `http://api.aircarto.fr/iut-amu/push`.
 | `x_pct_co2_1000` | % du temps au-dessus de 1 000 ppm |
 | `x_reset` | Cause du dernier redémarrage |
 | `x_alim` | 1 = secteur, 0 = batterie (toujours 1 tant que la détection secteur est désactivée) |
-| `x_pm_statut` | Octet d’état du NextPM |
 | `x_temp_pm`, `x_hum_pm` | Température / humidité internes du NextPM |
 
 ### Robustesse

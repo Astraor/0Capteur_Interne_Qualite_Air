@@ -19,10 +19,22 @@
 import PAGE_CONSOLE from "./console.html";
 
 // Commandes acceptées à distance : même liste que sur la carte (commandeAutoriseeADistance dans main.cpp).
+// « calib oui » n'y est plus : il fausserait les mesures de CO2 jusqu'au prochain calibrage (câble USB seulement).
 export const COMMANDES_AUTORISEES = [
-  "aide", "help", "status", "verbose on", "verbose off", "calib", "calib oui", "reboot",
+  "aide", "help", "status", "verbose on", "verbose off", "calib", "reboot",
   "wifi scan", "wifi connect", "maj", "maj installer",
 ];
+// Lignes que seul le relais écrit (connexions, commandes de la console, séparateurs, alertes de sécurité). Une ligne
+// de la CARTE qui commencerait pareil (nom de Wi-Fi piégé, réponse de serveur...) est préfixée par « carte : »,
+// pour qu'elle ne puisse pas se faire passer pour une trace du relais.
+const MARQUES_RELAIS = /^\s*(»|──|\[sécurité\]|\[…)/;
+// Caractères invisibles qui peuvent faire passer un bout de ligne pour une autre ligne ou inverser le sens de
+// lecture (séparateurs de ligne Unicode, contrôles C0/C1, marques de direction) : remplacés par « ? ».
+const INVISIBLES = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069\ufeff]/g;
+export function ligneCarte(txt) {
+  txt = String(txt).replace(INVISIBLES, "?");
+  return MARQUES_RELAIS.test(txt) ? "carte : " + txt : txt;
+}
 export function normaliser(cmd) {
   return String(cmd).toLowerCase().trim().replace(/\s+/g, " ");
 }
@@ -35,6 +47,7 @@ const BLOCAGE_MS = 15 * 60000;             // ... de 15 min (par adresse IPv4, o
 const MAX_LIGNES_PAR_ENVOI = 400;
 const MAX_OCTETS_PAR_ENVOI = 256 * 1024;   // un paquet de journal de la carte ne dépasse jamais ça
 const MAX_COMMANDES_ATTENTE = 10;
+const ALERTE_ESSAIS_HEURE = 50;            // secrets refusés en 1 h (toutes adresses) avant une alerte dans le journal
 const SESSION_COURTE_MS = 12 * 3600000;    // « Rester connecté » décoché : 12 h
 const SESSION_LONGUE_MS = 30 * 86400000;   // coché : 30 jours
 const SESSIONS_MAX = 20;
@@ -205,9 +218,17 @@ async function donnees(request, env, url) {
   // et jamais un texte qui contiendrait la clé.
   if (!r.ok || corps.includes(env.AIRCARTO_CLE))
     return json({ ok: false, message: "AirCarto a répondu " + r.status }, 502, cors);
+  // Petite mémoire de 60 s : 30 réponses et 8 Mo au plus en tout (la mémoire d'une instance du Worker est limitée).
   if (corps.length < 2000000) {
+    memoireDonnees.delete(cle);
     memoireDonnees.set(cle, { t: maintenant, corps });
-    while (memoireDonnees.size > 30) memoireDonnees.delete(memoireDonnees.keys().next().value);
+    let total = 0;
+    for (const v of memoireDonnees.values()) total += v.corps.length;
+    while (memoireDonnees.size > 30 || total > 8000000) {
+      const plusVieille = memoireDonnees.keys().next().value;
+      total -= memoireDonnees.get(plusVieille).corps.length;
+      memoireDonnees.delete(plusVieille);
+    }
   }
   return new Response(corps, { status: 200, headers: { ...ENTETES_API, ...cors } });
 }
@@ -253,9 +274,12 @@ export default {
 
     if (p === "/donnees" && (request.method === "GET" || request.method === "OPTIONS")) return donnees(request, env, url);
 
-    // carte et console : tout passe par le Durable Object (blocage anti-devinette AVANT toute vérification de secret)
+    // carte et console : tout passe par le Durable Object. La carte qui présente le BON jeton n'est jamais freinée par
+    // la limite par adresse IP : sur eduroam, des centaines d'appareils partagent son adresse publique, et n'importe
+    // qui pourrait sinon épuiser cette limite pour la couper du relais.
     if (p.startsWith("/carte/") || p.startsWith("/api/")) {
-      if (await tropDeRequetes(env.LIMITE, ipClient(request)))
+      const carteAuthentifiee = p.startsWith("/carte/") && (await secretEgal(porteur(request), env.JETON_CARTE));
+      if (!carteAuthentifiee && await tropDeRequetes(env.LIMITE, ipClient(request)))
         return json({ erreur: "trop de requêtes : réessaie dans une minute" }, 429, { "Retry-After": "60" });
       return env.RELAIS.get(env.RELAIS.idFromName("carte")).fetch(request);
     }
@@ -302,6 +326,15 @@ export class Relais {
     else this.sql.exec("UPDATE echecs SET n = ? WHERE ip = ?", n, cle);
     this.sql.exec("DELETE FROM echecs WHERE depuis < ?", maintenant - BLOCAGE_MS);
     if (n === ESSAIS_MAX) this.ajouterLigne(maintenant, `[sécurité] ${ESSAIS_MAX} ${quoi} refusés depuis ${cle.split(" ")[1]} : accès bloqué 15 min`);
+    // Toutes adresses confondues : beaucoup d'essais en une heure = quelqu'un essaie depuis de nombreuses adresses
+    // (le blocage par adresse ne l'arrête pas). Une alerte par heure au plus dans le journal.
+    if (!this.alerte || maintenant - this.alerte.debut > 3600000) this.alerte = { debut: maintenant, n: 0, dit: false };
+    this.alerte.n++;
+    if (this.alerte.n >= ALERTE_ESSAIS_HEURE && !this.alerte.dit) {
+      this.alerte.dit = true;
+      this.ajouterLigne(maintenant, `[sécurité] ${this.alerte.n} secrets refusés en moins d'1 h, toutes adresses confondues : ` +
+        "attaque probable. Vérifie que ton mot de passe de console est long et aléatoire.");
+    }
   }
 
   // ---- sessions de la console
@@ -326,9 +359,12 @@ export class Relais {
 
     // ================= la carte
     if (p.startsWith("/carte/")) {
+      // Le jeton de la carte est testé AVANT le blocage : quelqu'un qui partage l'adresse IP de la carte (eduroam)
+      // et envoie 10 faux jetons bloque son adresse, mais pas la vraie carte. (Jeton de 16 caractères aléatoires ou
+      // plus : impossible à deviner, même sans blocage ; le blocage ne sert qu'à freiner les essais.)
       const cle = "carte " + ip;
-      if (this.estBloque(cle, maintenant)) return json({ erreur: "trop d'essais : réessaie dans 15 min" }, 429);
       if (!(await secretEgal(porteur(request), this.env.JETON_CARTE))) {
+        if (this.estBloque(cle, maintenant)) return json({ erreur: "trop d'essais : réessaie dans 15 min" }, 429);
         this.noterEchec(cle, maintenant, "jetons de carte");
         return json({ erreur: "jeton refusé" }, 401);
       }
@@ -354,14 +390,16 @@ export class Relais {
     // ================= la page console
     if (p.startsWith("/api/")) {
       const cle = "console " + ip;
-      if (this.estBloque(cle, maintenant)) return json({ erreur: "trop d'essais : réessaie dans 15 min" }, 429);
 
       // ---- connexion : le mot de passe ne sert qu'ici, la page reçoit un jeton de session
       if (p === "/api/connexion" && request.method === "POST") {
+        if (this.estBloque(cle, maintenant)) return json({ erreur: "trop d'essais : réessaie dans 15 min" }, 429);
+        // L'essai est compté AVANT toute attente (lecture du corps, calcul d'empreinte) : pendant ces attentes, d'autres
+        // requêtes peuvent passer ; comptées après, une rafale dépasserait les 10 essais. Effacé si c'est le bon.
+        this.noterEchec(cle, maintenant, "mots de passe");
         let corps = {};
         try { corps = await request.json(); } catch {}
         if (!(await secretEgal(corps && corps.mdp, this.env.MOT_DE_PASSE_CONSOLE))) {
-          this.noterEchec(cle, maintenant, "mots de passe");
           return json({ erreur: "mot de passe refusé" }, 401);
         }
         this.sql.exec("DELETE FROM echecs WHERE ip = ?", cle);
@@ -376,9 +414,12 @@ export class Relais {
         return json({ jeton, expire: maintenant + duree });
       }
 
+      // Session : jeton aléatoire de 256 bits, impossible à deviner. Une session VALIDE passe toujours, même depuis une
+      // adresse bloquée (adresse partagée avec quelqu'un qui essaie des mots de passe) ; les jetons faux sont comptés.
       const jeton = porteur(request);
       const s = await this.session(jeton, maintenant);
       if (!s) {
+        if (this.estBloque(cle, maintenant)) return json({ erreur: "trop d'essais : réessaie dans 15 min" }, 429);
         this.noterEchec(cle, maintenant, "jetons de session");
         return json({ erreur: "session expirée : reconnecte-toi" }, 401);
       }
@@ -428,7 +469,7 @@ export class Relais {
         const texte = normaliser((corps && corps.texte) || "");
         if (!texte || texte.length > 100) return json({ erreur: "commande vide ou trop longue" }, 400);
         if (!COMMANDES_AUTORISEES.includes(texte)) {
-          return json({ erreur: "Réservée au câble USB (ou inconnue). À distance : status, verbose on/off, calib, reboot, wifi scan, wifi connect, maj, maj installer, aide." }, 403);
+          return json({ erreur: "Réservée au câble USB (ou inconnue). À distance : status, verbose on/off, calib, reboot, wifi scan, wifi connect, maj, maj installer, aide (calib oui : câble USB)." }, 403);
         }
         const n = this.sql.exec("SELECT COUNT(*) AS n FROM commandes").one().n;
         if (n >= MAX_COMMANDES_ATTENTE) return json({ erreur: "déjà trop de commandes en attente" }, 429);
@@ -467,7 +508,7 @@ export class Relais {
       const tab = l.indexOf("\t");
       const ms = tab > 0 ? Number(l.slice(0, tab)) : NaN;
       const t = Number.isFinite(ms) && ms >= 0 && ms <= millis ? maintenant - (millis - ms) : maintenant;
-      this.ajouterLigne(t, tab > 0 ? l.slice(tab + 1) : l);
+      this.ajouterLigne(t, ligneCarte(tab > 0 ? l.slice(tab + 1) : l));
     }
     this.sql.exec("DELETE FROM lignes WHERE id <= (SELECT MAX(id) FROM lignes) - ? OR t < ?", LIGNES_GARDEES, maintenant - DUREE_GARDEE_MS);
     this.ecrire("vue", maintenant);

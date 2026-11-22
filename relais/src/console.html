@@ -115,7 +115,6 @@
       <button data-c="maj">maj</button>
       <button data-c="aide">aide</button>
       <button data-c="reboot" class="prudence">reboot</button>
-      <button data-c="calib oui" class="prudence">calib oui</button>
     </div>
     <form id="saisie" autocomplete="off">
       <input id="commande" placeholder="Commande (aide, status…)" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send">
@@ -130,7 +129,6 @@
 const $ = (id) => document.getElementById(id);
 const PRUDENCE = {
   "reboot": "Redémarrer la carte ?",
-  "calib oui": "Calibrer le zéro du CO2 ? Seulement si la carte est à l'air extérieur depuis 20 minutes.",
   "maj installer": "Installer la dernière version publiée ? La carte redémarrera (retour automatique à l'ancienne version en cas de problème).",
 };
 // Ancienne version : le mot de passe était gardé en clair dans le navigateur. On l'efface.

@@ -1,7 +1,8 @@
 # Mises à jour à distance (OTA) : script lancé par PlatformIO à chaque compilation (platformio.ini : extra_scripts).
 #
 #  1. NUMÉRO DE VERSION : écrit src/version_fw.h (FW_VERSION = AAMMJJhhmm, date de la dernière modification du code).
-#     La carte n'installe une mise à jour que si son numéro est plus grand que le sien.
+#     La carte n'installe une mise à jour que si son numéro est plus grand que le sien. Le numéro tient sur 32 bits :
+#     ce format fonctionne jusqu'à fin 2042 (au-delà, changer de format et reflasher au câble USB).
 #  2. SIGNATURE : après chaque compilation, si ta clé privée existe (outils/cle_privee_ota.pem), fabrique
 #     ota/firmware.bin + ota/firmware.json (version, taille, empreinte SHA-256, signature). Ce sont les DEUX fichiers
 #     à joindre à une release GitHub.
@@ -11,6 +12,7 @@
 # Signature : ECDSA P-256 + SHA-256, écrite ici en Python pur (aucun paquet à installer), vérifiée sur la carte par
 # mbedtls. Message signé : "MAIR-OTA|<version>|<taille>|<sha256>".
 import base64
+import datetime
 import hashlib
 import hmac
 import json
@@ -165,7 +167,15 @@ def ecrire_version_si_besoin(dossier_src):
         return lire_version(entete)
     version = int(time.strftime("%y%m%d%H%M"))
     if os.path.exists(entete):
-        version = max(version, lire_version(entete) + 1)   # toujours plus grand que le précédent
+        precedente = lire_version(entete)
+        if version <= precedente:
+            # toujours plus grand que le précédent, ET toujours une vraie date (minute suivante, pas « ...1960 ») :
+            # la carte se sert de cette date pour refuser les certificats HTTPS déjà expirés
+            try:
+                suivante = datetime.datetime.strptime("%010d" % precedente, "%y%m%d%H%M") + datetime.timedelta(minutes=1)
+                version = int(suivante.strftime("%y%m%d%H%M"))
+            except ValueError:
+                version = precedente + 1
     with open(entete, "w") as f:
         f.write("// Fichier fabriqué par outils/ota.py à chaque modification du code : ne pas modifier, ne pas mettre dans git.\n")
         f.write("#pragma once\n#define FW_VERSION %dUL\n" % version)
@@ -222,7 +232,9 @@ if env is not None:
         else:
             d, q = nouvelle_cle()
             os.makedirs(os.path.dirname(CLE_PRIVEE), exist_ok=True)
-            with open(CLE_PRIVEE, "w") as f:
+            # Lisible par toi seul (sous Linux / macOS ; sans effet sous Windows, où le dossier personnel est déjà privé)
+            fd = os.open(CLE_PRIVEE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as f:
                 f.write(pem_privee(d, q))
             print("Clé privée créée : %s" % CLE_PRIVEE)
             print("  -> NE LA METS PAS dans git (.gitignore s'en charge) et garde-en une copie (clé USB, gestionnaire de")
