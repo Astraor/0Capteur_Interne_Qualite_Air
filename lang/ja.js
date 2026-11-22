@@ -15,7 +15,7 @@ window.I18N_DICT.ja = {
   "ep.passer": "フルスクリーンにしないで続ける",
   "fs.entrer": "フルスクリーンにする",
   "fs.sortir": "フルスクリーンを終了",
-  "fs.manuel": "ブラウザのフルスクリーン:F11(またはEsc)で終了します。",
+  "fs.manuel": "ブラウザのフルスクリーン:サイトからは終了できません。F11(Mac は ⌃⌘F)かブラウザのメニューで終了してください。",
 
   /* ---------- 目次とチャプター ---------- */
   "nav.chapitres": "ページのチャプター",
@@ -183,7 +183,7 @@ window.I18N_DICT.ja = {
   "graphe.fenetre": "表示中の期間：矢印キーで移動、+ と − で拡大縮小、Esc で全体表示",
   "graphe.zoom_plus": "拡大",
   "graphe.zoom_moins": "縮小",
-  "graphe.zoom_tout": "全体を表示",
+  "graphe.zoom_tout": "表示をリセット",
   "graphe.zoom_tout_affiche": "期間全体",
   "graphe.zoom_etat": "拡大中：{de} → {a}",
   "graphe.echelle": "縦軸",

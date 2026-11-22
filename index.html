@@ -214,7 +214,7 @@
   .bascule-plein svg { width: 20px; height: 20px; }
   /* Plein écran lancé à la main (F11, menu du navigateur) : la page ne peut pas le quitter, le bouton l'explique */
   .bascule-aide {
-    position: fixed; z-index: 71; right: 70px; bottom: 22px; max-width: min(320px, calc(100vw - 96px));
+    position: fixed; z-index: 71; right: 70px; bottom: 22px; max-width: min(340px, calc(100vw - 96px));
     padding: 9px 13px; border-radius: 6px; background: var(--encre); color: var(--fond);
     font-size: .82rem; font-weight: 600; line-height: 1.35;
     opacity: 0; transform: translateX(6px); pointer-events: none; transition: opacity .25s, transform .3s var(--courbe);
@@ -852,24 +852,30 @@
   }
   .js .bloc:not(.vu) .incert-bande { left: 0%; width: 0%; }
   /* Loupe automatique (voir majLoupe) : seconde jauge, plus fine, sous la principale */
-  .loupe { position: relative; margin-top: 30px; padding: 22px 0 26px; }
+  /* Une ligne réservée au titre (« loupe ×11 ») tout en haut ; le trait min–max, la barre, le repère et les graduations
+     sont dessous : rien ne peut plus le recouvrir. Le titre a un fond : les pointillés qui relient la loupe à la jauge
+     passent derrière lui, jamais à travers les chiffres. */
+  .loupe { position: relative; margin-top: 30px; padding: 36px 0 26px; }
   .loupe[hidden] { display: none; }
   .loupe-barre { height: 10px; border-radius: 1px; }
-  .loupe .plage { top: 6px; }
-  .loupe .repere { top: 16px; height: 22px; }
-  .loupe .incert-bande { top: 18px; height: 18px; }
+  .loupe .plage { top: 21px; }
+  .loupe .repere { top: 30px; height: 22px; }
+  .loupe .incert-bande { top: 32px; height: 18px; }
   .loupe .incert-bande[hidden] { display: none; }
-  .loupe .graduation { top: 44px; }
+  .loupe .graduation { top: 58px; }
   .loupe .plage, .loupe .repere, .loupe .incert-bande { transition: none; }   /* l'échelle change à chaque mise à jour */
-  .loupe-titre { position: absolute; top: 0; right: 0; font: 600 .62rem/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--doux); }
+  .loupe-titre {
+    position: absolute; z-index: 3; top: 0; right: 0; padding: 2px 0 2px 8px; background: var(--fond);
+    font: 600 .66rem/1.2 var(--mono); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; color: var(--doux);
+  }
   .loupe-fenetre {
     position: absolute; top: 34px; height: 22px; box-sizing: border-box; pointer-events: none;
     left: var(--wa, 0%); width: max(6px, calc(var(--wb, 0%) - var(--wa, 0%)));
     border: 1.5px dashed var(--doux); border-radius: 2px;
   }
   .loupe-fenetre[hidden] { display: none; }
-  /* traits du cadre vers les bords de la loupe : du bas du cadre (56 px) au haut de la barre agrandie (52 + 30 + 22 px) */
-  .loupe-lien { position: absolute; left: 0; top: 56px; width: 100%; height: 48px; overflow: visible; pointer-events: none; }
+  /* traits du cadre vers les bords de la loupe : du bas du cadre (56 px) au haut de la barre agrandie (82 + 36 px) */
+  .loupe-lien { position: absolute; left: 0; top: 56px; width: 100%; height: 62px; overflow: visible; pointer-events: none; }
   .loupe-lien path { fill: none; stroke: var(--doux); stroke-width: 1; stroke-dasharray: 3 3; opacity: .55; vector-effect: non-scaling-stroke; }
   .js .bloc:not(.vu) .loupe, .js .bloc:not(.vu) .loupe-lien, .js .bloc:not(.vu) .loupe-fenetre { opacity: 0; }
   .loupe, .loupe-lien, .loupe-fenetre { transition: opacity .8s ease 1.2s; }
@@ -950,10 +956,15 @@
   @media (hover: hover) { .zb:not(:disabled):hover { background: var(--encre); color: var(--fond); } }
   .zb:focus-visible { outline: 3px solid var(--cobalt); outline-offset: 2px; }
   .zb[aria-expanded="true"] { background: var(--encre); color: var(--fond); }
-  .zb-mode { font: 500 .72rem/1 var(--mono); opacity: .75; }
   @media (pointer: coarse) { .zb { min-height: 44px; min-width: 44px; } }
-  .zoom-etat { flex: 1 1 auto; font: 500 .74rem/1.3 var(--mono); color: var(--doux); }
-  .zb-echelle { margin-left: auto; }
+  /* Hauteurs figées : le texte d'état et le bouton d'échelle ne changent jamais la taille de la zone, sinon tout ce qui
+     est dessous descend puis remonte à chaque clic. */
+  .graphe-boutons { min-height: 44px; }
+  .zoom-etat { margin: 6px 0 0; min-height: 1.3em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 .74rem/1.3 var(--mono); color: var(--doux); }
+  .zb-echelle { margin-left: auto; white-space: nowrap; }
+  .zb-mode { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: currentColor; opacity: 0; }   /* réservé : visible seulement hors Auto */
+  .zb-mode.actif { opacity: 1; background: var(--cobalt); }
+  .zb[aria-expanded="true"] .zb-mode.actif { background: #8cc8f5; }
   .panneau-echelle { display: grid; gap: 10px; margin-top: 10px; padding: 12px 14px; border: 2px solid var(--encre); border-radius: 3px; }
   .panneau-echelle[hidden] { display: none; }
   .ech-ligne { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
@@ -965,7 +976,7 @@
   .ech-modes button:focus-visible { outline: 3px solid var(--cobalt); outline-offset: -3px; }
   @media (pointer: coarse) { .ech-modes button { min-height: 40px; } }
   .ech-manuel { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; font: 500 .76rem/1 var(--mono); color: var(--doux); }
-  .ech-manuel[hidden] { display: none; }
+  .ech-manuel[hidden] { display: inline-flex; visibility: hidden; pointer-events: none; }   /* place gardée : la ligne ne change pas de hauteur */
   .ech-manuel input { width: 6.5em; min-height: 32px; padding: 0 8px; border: 2px solid var(--encre); border-radius: 3px; background: var(--fond); color: var(--encre); font: 500 .85rem/1 var(--mono); }
   .ech-manuel input[aria-invalid="true"] { border-color: #c0392b; }
   .aide-zoom { margin: 8px 0 0; font: 500 .72rem/1.4 var(--mono); color: var(--doux); }
@@ -1569,9 +1580,9 @@
             <button type="button" class="zb" data-zoom="plus" aria-label="Zoomer" title="Zoomer" data-i18n-attr="aria-label:graphe.zoom_plus;title:graphe.zoom_plus"><span aria-hidden="true">+</span></button>
             <button type="button" class="zb zb-texte" data-zoom="tout" data-i18n="graphe.zoom_tout">Tout voir</button>
           </span>
-          <span class="zoom-etat" aria-live="polite"></span>
-          <button type="button" class="zb zb-texte zb-echelle" aria-expanded="false" aria-controls="echelle-graphe-air"><span data-i18n="graphe.echelle">Échelle verticale</span> <span class="zb-mode"></span></button>
+          <button type="button" class="zb zb-texte zb-echelle" aria-expanded="false" aria-controls="echelle-graphe-air"><span data-i18n="graphe.echelle">Échelle verticale</span><i class="zb-mode" aria-hidden="true"></i></button>
         </div>
+        <p class="zoom-etat" aria-live="polite"></p>
         <div class="panneau-echelle" id="echelle-graphe-air" hidden></div>
         <p class="aide-zoom"></p>
       </div>
@@ -1757,10 +1768,10 @@
 <!-- Traductions : un fichier par langue, puis le moteur. L'ordre compte (voir js/i18n.js).
      ?v=… : à changer à chaque modification de ces fichiers, sinon le navigateur peut garder l'ancienne version en cache
      (la page affichait alors les noms des clés, « pied.devise »…). -->
-<script src="lang/fr.js?v=20261124"></script>
-<script src="lang/en.js?v=20261124"></script>
-<script src="lang/ja.js?v=20261124"></script>
-<script src="js/i18n.js?v=20261124"></script>
+<script src="lang/fr.js?v=20261125"></script>
+<script src="lang/en.js?v=20261125"></script>
+<script src="lang/ja.js?v=20261125"></script>
+<script src="js/i18n.js?v=20261125"></script>
 
 <script>
 window.__pret = true;   // dit à la page que le script a bien démarré (voir le <head>)
@@ -2553,6 +2564,30 @@ function lectureDe(canvas) {
   return cadre;
 }
 
+// Le cadre de lecture au-dessus du graphe change de contenu quand la souris le survole (aide → valeurs, avec les pastilles
+// de niveau) : plus haut de ~17 px, il poussait tout le graphe vers le bas à l'entrée de la souris, et le ramenait à la
+// sortie. On essaie donc tous les contenus possibles (aide + quelques mesures) et on réserve la hauteur du plus grand.
+function fixerHauteurLecture(chart) {
+  const cadre = chart.__lecture;
+  if (!cadre || !chart.data.labels.length) return;
+  const sauve = chart.__idx === undefined ? null : chart.__idx;
+  cadre.style.boxSizing = "border-box";
+  cadre.style.minHeight = "";
+  const n = chart.data.labels.length, pas = Math.max(1, Math.floor(n / 8));
+  const essais = [null];
+  for (let i = 0; i < n; i += pas) essais.push(i);
+  essais.push(n - 1);
+  let h = 0;
+  essais.forEach(i => {
+    chart.__idx = undefined;
+    ecrireLecture(chart, i);
+    h = Math.max(h, cadre.getBoundingClientRect().height);
+  });
+  chart.__idx = undefined;
+  ecrireLecture(chart, sauve);
+  cadre.style.minHeight = Math.ceil(h) + "px";
+}
+
 function ecrireLecture(chart, idx) {
   const cadre = chart.__lecture;
   if (!cadre || idx === chart.__idx) return;
@@ -2563,6 +2598,7 @@ function ecrireLecture(chart, idx) {
   if (!affiches.length) { cadre.textContent = trad("graphe.aucune_serie"); return; }
   if (idx == null) {
     cadre.textContent = trad(ecranTactile() ? "graphe.aide_tactile" : "graphe.aide_souris");
+    rehausserLecture(cadre);
     return;
   }
   cadre.append(el("div", "lg-titre", chart.data.labels[idx]));
@@ -2588,6 +2624,14 @@ function ecrireLecture(chart, idx) {
     liste.append(item);
   });
   cadre.append(liste);
+  rehausserLecture(cadre);
+}
+
+// Garde-fou : si un contenu dépasse la hauteur réservée (police arrivée après la mesure, ligne en plus…), on la relève
+// pour de bon : la page ne bouge au plus qu'une fois, jamais à chaque survol.
+function rehausserLecture(cadre) {
+  const h = cadre.getBoundingClientRect().height;
+  if (h > (parseFloat(cadre.style.minHeight) || 0) + 0.5) cadre.style.minHeight = Math.ceil(h) + "px";
 }
 
 // Trait vertical sur le point parcouru : utile au doigt, qui cache le point lui-même.
@@ -2678,6 +2722,7 @@ function construirePuces(idCanvas, utiles) {
       chart.setDatasetVisibility(i, caseC.checked);
       chart.update();
       chart.__idx = undefined;
+      fixerHauteurLecture(chart);
       ecrireLecture(chart, null);
       majNav(chart);
     });
@@ -2710,22 +2755,43 @@ function reglageAxe(id, axe) {
   return reglagesEchelle[id + ":" + axe] || { mode: "auto" };
 }
 
-// Numéros du premier et du dernier point affichés (null : toute la période).
-function bornesZoom(id, temps) {
+// Le zoom est gardé en HEURES et avec des fractions de point : un petit coup de molette qui ne change pas encore le
+// nombre de points affichés s'accumule quand même, au lieu d'être arrondi (et perdu) à chaque cran.
+function tempsDe(temps, i) {                  // numéro de point fractionnaire -> heure
+  const n = temps.length;
+  i = Math.max(0, Math.min(n - 1, i));
+  const k = Math.floor(i);
+  return k >= n - 1 ? temps[n - 1] : temps[k] + (temps[k + 1] - temps[k]) * (i - k);
+}
+function indiceDe(temps, t) {                 // heure -> numéro de point fractionnaire
+  const n = temps.length;
+  if (t <= temps[0]) return 0;
+  if (t >= temps[n - 1]) return n - 1;
+  let bas = 0, haut = n - 1;
+  while (haut - bas > 1) { const m = (bas + haut) >> 1; if (temps[m] <= t) bas = m; else haut = m; }
+  return bas + (t - temps[bas]) / ((temps[haut] - temps[bas]) || 1);
+}
+
+// Fenêtre affichée, en numéros de point fractionnaires [début, fin] (null : toute la période).
+function fenetreZoom(id, temps) {
   const z = zooms[id];
   const n = temps.length;
   if (!z || n < 4) return null;
   let t0 = z.t0, t1 = z.t1;
   if (z.direct) { t1 = temps[n - 1]; t0 = t1 - (z.t1 - z.t0); }
-  let i0 = 0;
-  while (i0 < n - 1 && temps[i0] < t0) i0++;
-  let i1 = n - 1;
-  while (i1 > 0 && temps[i1] > t1) i1--;
-  if (i1 - i0 < 2) {                       // au moins 3 points
-    const c = Math.round((i0 + i1) / 2);
-    i0 = Math.max(0, Math.min(n - 3, c - 1));
-    i1 = i0 + 2;
-  }
+  let a = indiceDe(temps, t0), b = indiceDe(temps, t1);
+  if (b - a < 2) { const c = (a + b) / 2; a = Math.max(0, Math.min(n - 3, c - 1)); b = a + 2; }   // au moins 3 points
+  if (a <= 1e-6 && b >= n - 1 - 1e-6) return null;
+  return [a, b];
+}
+
+// Numéros ENTIERS du premier et du dernier point affichés (null : toute la période) : l'axe du graphe est par catégories.
+function bornesZoom(id, temps) {
+  const f = fenetreZoom(id, temps);
+  if (!f) return null;
+  const n = temps.length;
+  let i0 = Math.round(f[0]), i1 = Math.round(f[1]);
+  if (i1 - i0 < 2) { i0 = Math.max(0, Math.min(n - 3, Math.round((f[0] + f[1]) / 2) - 1)); i1 = i0 + 2; }
   if (i0 <= 0 && i1 >= n - 1) return null;
   return [i0, i1];
 }
@@ -2748,25 +2814,36 @@ function appliquerVue(id, temps, echelles, zeros) {
 // Change le zoom d'un graphe à partir de numéros de points (i0, i1), puis redessine.
 function zoomerIndices(chart, i0, i1) {
   const temps = chart.__temps, n = temps.length;
-  i0 = Math.max(0, Math.round(i0)); i1 = Math.min(n - 1, Math.round(i1));
-  if (i1 - i0 < 2) { const c = (i0 + i1) / 2; i0 = Math.max(0, Math.min(n - 3, Math.round(c - 1))); i1 = i0 + 2; }
+  i0 = Math.max(0, i0); i1 = Math.min(n - 1, i1);
+  if (i1 - i0 < 2) { const c = (i0 + i1) / 2; i0 = Math.max(0, Math.min(n - 3, c - 1)); i1 = i0 + 2; }
   const id = chart.canvas.id;
-  if (i0 <= 0 && i1 >= n - 1) delete zooms[id];
-  else zooms[id] = { t0: temps[i0], t1: temps[i1], direct: i1 >= n - 1 };
+  if (i0 <= 1e-6 && i1 >= n - 1 - 1e-6) delete zooms[id];
+  else zooms[id] = { t0: tempsDe(temps, i0), t1: tempsDe(temps, i1), direct: i1 >= n - 1 - 1e-6 };
   rafraichirVue(chart);
 }
 
-// Zoom d'un facteur (< 1 : zoomer, > 1 : dézoomer) autour du point c (par défaut le milieu de la vue).
-function zoomerFacteur(chart, facteur, c) {
+// Zoom d'un facteur (< 1 : zoomer, > 1 : dézoomer). p : position du curseur dans le graphe (0 = bord gauche,
+// 1 = bord droit, 0,5 par défaut) : le point qui est sous le curseur reste sous le curseur.
+function zoomerFacteur(chart, facteur, p) {
   const n = chart.__temps.length;
-  const b = bornesZoom(chart.canvas.id, chart.__temps) || [0, n - 1];
-  if (c === undefined) c = (b[0] + b[1]) / 2;
-  const largeur = Math.max(2, (b[1] - b[0]) * facteur);
-  let i0 = c - (c - b[0]) * facteur;
-  let i1 = i0 + largeur;
+  const f = fenetreZoom(chart.canvas.id, chart.__temps) || [0, n - 1];
+  if (p === undefined) p = 0.5;
+  const largeur = f[1] - f[0];
+  const nouvelle = Math.min(n - 1, Math.max(2, largeur * facteur));
+  const c = f[0] + p * largeur;
+  let i0 = c - p * nouvelle, i1 = i0 + nouvelle;
   if (i0 < 0) { i1 -= i0; i0 = 0; }
   if (i1 > n - 1) { i0 -= i1 - (n - 1); i1 = n - 1; }
   zoomerIndices(chart, Math.max(0, i0), i1);
+}
+
+// « Réinitialiser la vue » : toute la période, échelles verticales en Auto.
+function reinitialiserVue(chart) {
+  const id = chart.canvas.id;
+  delete zooms[id];
+  ["y", "y1"].forEach(axe => { delete reglagesEchelle[id + ":" + axe]; });
+  ecrireMemoire("echelle-graphes", reglagesEchelle);
+  rafraichirVue(chart);
 }
 
 function rafraichirVue(chart) {
@@ -2788,7 +2865,8 @@ function majNav(chart) {
   nav.hidden = false;
   const temps = chart.__temps, n = temps.length;
   const b = bornesZoom(chart.canvas.id, temps);
-  const f0 = b ? b[0] / (n - 1) : 0, f1 = b ? b[1] / (n - 1) : 1;
+  const fl = fenetreZoom(chart.canvas.id, temps);
+  const f0 = fl ? fl[0] / (n - 1) : 0, f1 = fl ? fl[1] / (n - 1) : 1;
   const apercu = nav.querySelector(".apercu");
   apercu.style.setProperty("--f0", (f0 * 100).toFixed(3) + "%");
   apercu.style.setProperty("--f1", (f1 * 100).toFixed(3) + "%");
@@ -2798,8 +2876,10 @@ function majNav(chart) {
   const texte = b ? (courtes[b[0]] + " → " + courtes[b[1]]) : trad("graphe.zoom_tout_affiche");
   fenetre.setAttribute("aria-valuetext", texte);
   nav.querySelector(".zoom-etat").textContent = b ? trad("graphe.zoom_etat", { de: chart.data.labels[b[0]], a: chart.data.labels[b[1]] }) : "";
+  const id = chart.canvas.id;
+  const echelleChangee = ["y", "y1"].some(a => chart.options.scales[a] && reglageAxe(id, a).mode !== "auto");
   nav.querySelector('[data-zoom="moins"]').disabled = !b;
-  nav.querySelector('[data-zoom="tout"]').disabled = !b;
+  nav.querySelector('[data-zoom="tout"]').disabled = !zooms[id] && !echelleChangee;
   nav.querySelector('[data-zoom="plus"]').disabled = !!b && b[1] - b[0] <= 2;
   nav.querySelector(".aide-zoom").textContent = trad(ecranTactile() ? "graphe.aide_zoom_tactile" : "graphe.aide_zoom_souris");
   dessinerApercu(chart, nav);
@@ -2868,7 +2948,9 @@ function majPanneauEchelle(chart, nav) {
         bouton.dataset.mode = m;
         bouton.setAttribute("role", "radio");
         bouton.title = trad("graphe.ech_" + m + "_titre");
-        bouton.addEventListener("click", () => choisirModeEchelle(chart, axe, m));
+        // le graphe est retrouvé AU CLIC : il est détruit puis recréé (seuils, langue, largeur…) alors que ce panneau,
+        // lui, est gardé ; les boutons pointaient alors vers un graphe mort et ne répondaient plus.
+        bouton.addEventListener("click", () => { const c = graphes[id]; if (c) choisirModeEchelle(c, axe, m); });
         modes.append(bouton);
       });
       const manuel = el("span", "ech-manuel");
@@ -2879,7 +2961,7 @@ function majPanneauEchelle(chart, nav) {
         champ.step = "any";
         champ.inputMode = "decimal";
         champ.dataset.cote = cote;
-        champ.addEventListener("input", () => lireManuel(chart, axe, ligne));
+        champ.addEventListener("input", () => { const c = graphes[id]; if (c) lireManuel(c, axe, ligne); });
         etiquette.append(champ);
         manuel.append(etiquette);
       });
@@ -2902,7 +2984,12 @@ function majPanneauEchelle(chart, nav) {
     resume.push(trad("graphe.ech_" + r.mode));
   });
   resume = [...new Set(resume)];
-  nav.querySelector(".zb-mode").textContent = "· " + (resume.length === 1 ? resume[0] : resume.join(" / "));
+  // Le bouton garde toujours la même taille (sinon la page entière descend puis remonte quand on change de mode) :
+  // un simple point signale qu'une échelle n'est pas en Auto ; le détail est dans le panneau.
+  const point = nav.querySelector(".zb-mode");
+  const change = resume.some(m => m !== trad("graphe.ech_auto"));
+  point.classList.toggle("actif", change);
+  nav.querySelector(".zb-echelle").title = trad("graphe.echelle") + " : " + resume.join(" / ");
 }
 
 function choisirModeEchelle(chart, axe, mode) {
@@ -2950,7 +3037,7 @@ function initZoomGraphe(id) {
   nav.querySelectorAll("[data-zoom]").forEach(b => b.addEventListener("click", () => {
     const chart = graphe();
     if (!chart) return;
-    if (b.dataset.zoom === "tout") { delete zooms[id]; rafraichirVue(chart); }
+    if (b.dataset.zoom === "tout") reinitialiserVue(chart);
     else zoomerFacteur(chart, b.dataset.zoom === "plus" ? 0.5 : 2);
   }));
   const boutonEchelle = nav.querySelector(".zb-echelle");
@@ -3008,10 +3095,22 @@ function initZoomGraphe(id) {
     else f1 = Math.max(f0 + mini, Math.min(1, f1 + df));
     appliquerFractions(f0, f1);
   });
+  // Double clic (ou double toucher) sur l'aperçu : toute la période, comme sur le graphe. Détecté à la main : le double
+  // toucher n'envoie pas toujours « dblclick » sur une zone qui bloque les gestes du navigateur.
+  let dernierToucher = null;
   const finGeste = e => {
     if (!geste || e.pointerId !== geste.pointeur) return;
+    const bougé = Math.abs(fraction(e) - geste.depart) > 0.01;
     geste = null;
     apercu.classList.remove("glisse");
+    const maintenant = performance.now();
+    if (!bougé && dernierToucher && maintenant - dernierToucher.t < 400 && Math.abs(e.clientX - dernierToucher.x) < 24) {
+      dernierToucher = null; dernier = null;
+      const chart = graphe();
+      if (chart && zooms[id]) { delete zooms[id]; rafraichirVue(chart); }
+      return;
+    }
+    dernierToucher = bougé ? null : { t: maintenant, x: e.clientX };
   };
   apercu.addEventListener("pointerup", finGeste);
   apercu.addEventListener("pointercancel", finGeste);
@@ -3038,6 +3137,11 @@ function initZoomGraphe(id) {
   // --- souris sur le graphe : glisser pour choisir une plage, double-clic pour tout revoir, Ctrl + molette
   const selection = canvas.parentElement.querySelector(".selection-zoom");
   let choix = null;
+  // numéro de point (fractionnaire) sous une abscisse du canvas : l'axe est linéaire entre ses bornes entières
+  const indiceSous = (chart, x) => {
+    const echelleX = chart.scales.x, zone = chart.chartArea;
+    return echelleX.min + (x - zone.left) / (zone.right - zone.left) * (echelleX.max - echelleX.min);
+  };
   const xDans = (chart, e) => {
     const r = canvas.getBoundingClientRect(), zone = chart.chartArea;
     return Math.min(zone.right, Math.max(zone.left, e.clientX - r.left));
@@ -3067,8 +3171,7 @@ function initZoomGraphe(id) {
     choix = null;
     selection.hidden = true;
     if (!chart || Math.abs(x1 - x0) < 8) return;       // simple clic : rien
-    const echelleX = chart.scales.x;
-    zoomerIndices(chart, echelleX.getValueForPixel(Math.min(x0, x1)), echelleX.getValueForPixel(Math.max(x0, x1)));
+    zoomerIndices(chart, indiceSous(chart, Math.min(x0, x1)), indiceSous(chart, Math.max(x0, x1)));
   };
   canvas.addEventListener("pointerup", finChoix);
   canvas.addEventListener("pointercancel", e => { if (choix && e.pointerId === choix.pointeur) { choix = null; selection.hidden = true; } });
@@ -3077,13 +3180,30 @@ function initZoomGraphe(id) {
     const chart = graphe();
     if (!chart || !e.ctrlKey) return;        // sans Ctrl, la molette fait défiler la page comme d'habitude
     e.preventDefault();
-    const r = canvas.getBoundingClientRect();
-    const c = chart.scales.x.getValueForPixel(e.clientX - r.left);
-    zoomerFacteur(chart, Math.exp(Math.max(-1, Math.min(1, e.deltaY / 200))), c);
+    // Cran de molette ≈ 13 % (avant : 65 %, trop brusque) ; le pincement du pavé tactile, qui envoie de petits deltas,
+    // zoome en continu. deltaMode 1 / 2 : Firefox compte parfois en lignes ou en pages.
+    let dy = e.deltaY;
+    if (e.deltaMode === 1) dy *= 33; else if (e.deltaMode === 2) dy *= 400;
+    const k = Math.max(-0.3, Math.min(0.3, dy * 0.0012));
+    const r = canvas.getBoundingClientRect(), zone = chart.chartArea;
+    const p = Math.min(1, Math.max(0, (e.clientX - r.left - zone.left) / (zone.right - zone.left)));
+    zoomerFacteur(chart, Math.exp(k), p);
   }, { passive: false });
 
-  // l'aperçu se redessine quand sa largeur change
-  if ("ResizeObserver" in window) new ResizeObserver(() => { const chart = graphe(); if (chart) dessinerApercu(chart, nav); }).observe(apercu);
+  // la police arrive souvent après le premier dessin du graphe : la hauteur du cadre de lecture est alors remesurée
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { const chart = graphe(); if (chart) fixerHauteurLecture(chart); });
+  // l'aperçu se redessine, et la hauteur du cadre de lecture est recalculée, quand la largeur change
+  if ("ResizeObserver" in window) {
+    new ResizeObserver(() => { const chart = graphe(); if (chart) dessinerApercu(chart, nav); }).observe(apercu);
+    let largeurAvant = canvas.parentElement.clientWidth, attente = 0;
+    new ResizeObserver(() => {
+      const l = canvas.parentElement.clientWidth;
+      if (l === largeurAvant) return;
+      largeurAvant = l;
+      cancelAnimationFrame(attente);
+      attente = requestAnimationFrame(() => { const chart = graphe(); if (chart) fixerHauteurLecture(chart); });
+    }).observe(canvas.parentElement);
+  }
 }
 
 function dessiner(idCanvas, serie, champs, animer) {
@@ -3136,6 +3256,7 @@ function dessiner(idCanvas, serie, champs, animer) {
     majNav(ancien);
     const a = ancien.tooltip ? ancien.tooltip.getActiveElements() : [];
     ancien.__idx = undefined;   // les données ont changé : on réécrit la lecture
+    fixerHauteurLecture(ancien);
     ecrireLecture(ancien, a.length ? a[0].index : null);
     return utiles.length;
   }
@@ -3216,6 +3337,7 @@ function dessiner(idCanvas, serie, champs, animer) {
   graphes[idCanvas].__temps = temps;
   graphes[idCanvas].__zeros = zeros;
   graphes[idCanvas].__lecture = lectureDe(document.getElementById(idCanvas));
+  fixerHauteurLecture(graphes[idCanvas]);
   ecrireLecture(graphes[idCanvas], null);
   majNav(graphes[idCanvas]);
   return utiles.length;
@@ -4008,7 +4130,7 @@ function initPleinEcran() {
     aide.textContent = trad("fs.manuel");
     aide.classList.add("visible");
     clearTimeout(minuterieAide);
-    minuterieAide = setTimeout(() => aide.classList.remove("visible"), 4500);
+    minuterieAide = setTimeout(() => aide.classList.remove("visible"), 9000);
   };
   if (bascule) bascule.addEventListener("click", () => {
     if (elementPlein()) sortirPleinEcran();

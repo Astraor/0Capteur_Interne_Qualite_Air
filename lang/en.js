@@ -14,7 +14,7 @@ window.I18N_DICT.en = {
   "ep.passer": "Continue without full screen",
   "fs.entrer": "Enter full screen",
   "fs.sortir": "Exit full screen",
-  "fs.manuel": "Browser full screen: press F11 (or Esc) to exit.",
+  "fs.manuel": "Browser full screen: a website cannot exit it for you. Press F11 (Mac: ⌃⌘F) or use the browser menu.",
 
   /* ---------- Contents and chapters ---------- */
   "nav.chapitres": "Page chapters",
@@ -184,7 +184,7 @@ window.I18N_DICT.en = {
   "graphe.fenetre": "Displayed period: arrow keys to move, + and − to zoom, Esc to see everything",
   "graphe.zoom_plus": "Zoom in",
   "graphe.zoom_moins": "Zoom out",
-  "graphe.zoom_tout": "Show all",
+  "graphe.zoom_tout": "Reset view",
   "graphe.zoom_tout_affiche": "Whole period",
   "graphe.zoom_etat": "Zoom: {de} → {a}",
   "graphe.echelle": "Vertical scale",

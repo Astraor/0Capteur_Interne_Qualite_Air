@@ -19,7 +19,7 @@ window.I18N_DICT.fr = {
   "ep.passer": "Continuer sans plein écran",
   "fs.entrer": "Passer en plein écran",
   "fs.sortir": "Quitter le plein écran",
-  "fs.manuel": "Plein écran du navigateur : appuyez sur F11 (ou Échap) pour le quitter.",
+  "fs.manuel": "Plein écran du navigateur : un site ne peut pas le quitter à votre place. Appuyez sur F11 (Mac : ⌃⌘F) ou utilisez le menu du navigateur.",
 
   /* ---------- Sommaire et chapitres ---------- */
   "nav.chapitres": "Chapitres de la page",
@@ -189,7 +189,7 @@ window.I18N_DICT.fr = {
   "graphe.fenetre": "Période affichée : flèches pour se déplacer, + et − pour zoomer, Échap pour tout revoir",
   "graphe.zoom_plus": "Zoomer",
   "graphe.zoom_moins": "Dézoomer",
-  "graphe.zoom_tout": "Tout voir",
+  "graphe.zoom_tout": "Réinitialiser la vue",
   "graphe.zoom_tout_affiche": "Toute la période",
   "graphe.zoom_etat": "Zoom : {de} → {a}",
   "graphe.echelle": "Échelle verticale",
