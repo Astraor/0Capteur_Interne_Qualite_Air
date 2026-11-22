@@ -10,8 +10,8 @@ Deux façons de parler à la carte **sans câble USB** :
 | Mise à jour du programme | Oui (`maj installer`, signée) | Non |
 | Il faut | Un compte Cloudflare gratuit | Une appli « terminal BLE » |
 
-**Commandes acceptées sans câble :** `aide`, `status`, `verbose on`, `verbose off`, `calib`, `calib oui`, `reboot`, `wifi scan`, `wifi connect`, `maj`, `maj installer`.
-**Toujours au câble USB :** `wifi add/ent/del/list`, `set cle`, `set jeton`, `set relais`, `oublier`, `vider_file`, `bt oublier`. La carte les refuse d'elle-même quand elles arrivent par Bluetooth ou par Internet, et ce qu'elles affichent ne quitte jamais le câble USB.
+**Commandes acceptées sans câble :** `aide`, `status`, `verbose on`, `verbose off`, `calib`, `reboot`, `wifi scan`, `wifi connect`, `maj`, `maj installer`. Une par seconde au plus ; `wifi scan`, `wifi connect` et `maj` une fois par 30 s, `reboot` une fois par 5 min. `calib oui` (qui fausserait les mesures de CO₂ s'il était lancé par erreur ou par un intrus) est réservé au câble USB.
+**Toujours au câble USB :** `wifi add/ent/del/list`, `set cle`, `set jeton`, `set relais`, `calib oui`, `oublier`, `vider_file`, `bt appairer`, `bt demarrage`, `bt liste`, `bt oublier`. La carte les refuse d'elle-même quand elles arrivent par Bluetooth ou par Internet, et ce qu'elles affichent ne quitte jamais le câble USB.
 
 ---
 
@@ -73,9 +73,9 @@ L'ancienne devient inutile, même pour ceux qui l'ont copiée.
 ### e. Bluetooth
 
 1. Installe une appli : **Serial Bluetooth Terminal** (Android) ou **Bluefruit Connect** / **nRF Toolbox → UART** (iPhone).
-2. Connecte-toi à **MAir-XXXX** (les 4 derniers caractères de l'adresse de la carte).
+2. Au câble USB, tape `bt appairer`, puis dans les **2 minutes** connecte-toi à **MAir-XXXX** (les 4 derniers caractères de l'adresse de la carte). En dehors de ces 2 minutes, un nouveau téléphone est refusé ; ceux déjà appairés se reconnectent quand ils veulent. Sans câble sous la main : `bt demarrage on` (une fois, au câble USB) ouvre aussi ces 2 minutes à chaque mise sous tension (débrancher / rebrancher la carte).
 3. L'écran de la carte affiche **BLUETOOTH** et un **code à 6 chiffres** : tape-le sur le téléphone.
-4. Tape `status`. Le téléphone est mémorisé : pas de code les fois suivantes. `bt oublier` (USB) efface les téléphones connus.
+4. Tape `status`. Le téléphone est mémorisé : pas de code les fois suivantes. Au câble USB : `bt liste` montre les téléphones appairés, `bt oublier <n>` en retire un, `bt oublier` les retire tous.
 
 ---
 
@@ -104,14 +104,22 @@ Le numéro de version (AAMMJJhhmm) est fabriqué à la compilation, d'après la 
 | Fichier abîmé ou modifié en route | Empreinte SHA-256 signée, vérifiée avant d'activer la nouvelle version |
 | Retour à une vieille version vulnérable | Numéro de version signé : la carte refuse un numéro plus petit ou égal |
 | Nouvelle version qui plante | Ancienne version gardée intacte, retour automatique |
-| Faux relais (Wi-Fi piégé) | HTTPS avec vérification du certificat (racines de Google Trust Services, Let's Encrypt, SSL.com, Sectigo : `racines_tls.h`) |
+| Faux relais (Wi-Fi piégé) | HTTPS avec vérification du certificat, du nom du serveur **et de sa date** (racines de Google Trust Services, Let's Encrypt, SSL.com, Sectigo : `racines_tls.h`) ; une seule connexion chiffrée à la fois, fermée après chaque échange |
 | Quelqu'un tape des commandes à distance | Mot de passe de console ; 10 essais faux = 15 min de blocage ; liste blanche sur le relais **et** sur la carte |
 | Fuite des mots de passe Wi-Fi / de la clé | Jamais saisis ni affichés autrement qu'au câble USB |
-| Bluetooth : un voisin se connecte | Code à 6 chiffres affiché sur l'écran (il faut le voir), appairage chiffré ; rien n'est envoyé ni accepté avant |
+| Bluetooth : un voisin se connecte | Nouveau téléphone accepté seulement 2 min après `bt appairer` (USB), ou après une mise sous tension si `bt demarrage on` ; `status` donne le nombre de téléphones appairés ; code à 6 chiffres affiché sur l'écran ; appairage chiffré « Secure Connections » seulement ; rien n'est envoyé ni accepté avant ; connexion non appairée coupée après 90 s |
+| Commandes à distance en boucle | Une par seconde ; `wifi …` et `maj` une fois par 30 s ; `reboot` une fois par 5 min ; `calib oui` au câble USB seulement |
+| Annuler une mise à jour à distance (`reboot` pendant l'essai) | `reboot` et `maj` refusés à distance pendant l'essai d'une nouvelle version (environ 1 min) ; une version qui redémarre en boucle n'est plus réinstallée à distance (publier une version corrigée, ou `maj oublier` au câble USB) |
+| Nouvelle version qui casse le Wi-Fi | Sans aucun échange avec le relais en 20 min, Wi-Fi ou pas, retour automatique à l'ancienne version (aussi si le réseau tombe juste après une mise à jour : la version n'est alors pas refusée, `maj installer` la réinstalle) |
+| Couper la carte du relais depuis le même réseau (eduroam) | Le jeton de la carte est testé AVANT le blocage par adresse : 10 faux jetons depuis l'adresse partagée bloquent les fraudeurs, pas la vraie carte, qui n'est pas non plus soumise à la limite de débit par adresse |
+| Mot de passe de console essayé depuis des milliers d'adresses | Alerte `[sécurité]` dans le journal au-delà de 50 secrets refusés en 1 h ; essais comptés avant toute attente (une rafale ne dépasse pas 10 essais) ; une session ouverte reste utilisable depuis une adresse bloquée |
+| Clé AirCarto lue sur le réseau | Envoi des mesures en HTTPS, certificat d'AirCarto vérifié |
+| Faux point d'accès eduroam | Certificat du serveur de l'université (`ca_eduroam.h`, voir l'exemple) : sans lui, ton mot de passe ENT peut être capturé |
+| Nom de Wi-Fi piégé (retours à la ligne...) | Caractères de contrôle remplacés par `?` ; une ligne de la carte ne peut pas imiter une trace du relais (préfixe « carte : ») |
 | Clé AirCarto lue sur GitHub | Plus écrite dans le site : seul le relais la connaît (secret Cloudflare). Change-la (nouvelle clé AirCarto) : l'ancienne reste dans l'historique git |
 | Carte volée | `oublier` à distance impossible (exprès) ; change le jeton (`wrangler secret put JETON_CARTE`) et ton mot de passe eduroam |
 
-À faire de ton côté : validation en deux étapes sur **GitHub** et **Cloudflare**, mot de passe de console long (celui proposé par `pio run -t cles`), copie de sauvegarde de la clé privée.
+À faire de ton côté : validation en deux étapes sur **GitHub** et **Cloudflare**, mot de passe de console long (celui proposé par `pio run -t cles`), copie de sauvegarde de la clé privée (`Firmware/outils/cle_privee_ota.pem`, jamais dans git ; garde la copie hors d'un dossier synchronisé comme OneDrive).
 
 ---
 

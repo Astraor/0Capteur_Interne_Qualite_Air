@@ -10,8 +10,9 @@
  *   set cle LA_CLE_DE_32_CARACTERES
  * La carte garde jusqu'à 5 réseaux en mémoire et se connecte toute seule au meilleur réseau
  * connu visible (pas besoin de reboot). Le type (entreprise / classique) est choisi PAR RÉSEAU.
- *   wifi list | wifi del <n> | wifi scan | wifi connect
- * Autres commandes : aide | status | verbose on/off | calib oui | vider_file | oublier | maj | bt oublier
+ *   wifi list | wifi del <n|nom> | wifi scan | wifi connect
+ * Autres commandes : aide | status | verbose on/off | calib oui | vider_file | oublier | maj
+ *   bt appairer | bt demarrage on/off | bt liste | bt oublier [n]   (Bluetooth, câble USB seulement)
  *   set relais <url> | set jeton <jeton>   (console à distance, voir relais/LISEZMOI.md)
  *
  * CONSOLE SANS FIL (le moniteur série, sans câble) :
@@ -19,10 +20,14 @@
  *     y prend les commandes tapées dans la page console. Sert aussi aux MISES À JOUR : « maj installer » télécharge
  *     la dernière release GitHub, vérifie sa SIGNATURE (clé privée sur ton PC seulement), l'installe dans l'autre
  *     emplacement de la mémoire et revient tout seul à l'ancienne version si la nouvelle ne marche pas.
- *   - À CÔTÉ, par Bluetooth (BLUETOOTH_ACTIF) : appairage avec le code à 6 chiffres affiché sur l'écran.
- *   Par Bluetooth et à distance, SEULES les commandes sans secret ni effacement sont acceptées (aide, status,
- *   verbose, calib, reboot, wifi scan, wifi connect, maj) : Wi-Fi, clé, jeton, relais, oublier, vider_file
- *   = câble USB uniquement, et ce qu'ils affichent ne quitte jamais le câble USB.
+ *   - À CÔTÉ, par Bluetooth (BLUETOOTH_ACTIF) : appairage avec le code à 6 chiffres affiché sur l'écran. Un NOUVEAU
+ *     téléphone ne peut s'appairer que dans les 2 min qui suivent « bt appairer » tapé au câble USB (ou une mise sous
+ *     tension, si « bt demarrage on ») ; les téléphones déjà appairés se reconnectent à tout moment.
+ *   Par Bluetooth et à distance, SEULES les commandes sans secret, sans effacement et sans effet durable sont
+ *   acceptées (aide, status, verbose, calib, reboot, wifi scan, wifi connect, maj), une par seconde au plus
+ *   (wifi scan / wifi connect / maj : une fois par 30 s ; reboot : une fois par 5 min) :
+ *   Wi-Fi, clé, jeton, relais, oublier, vider_file, calib oui = câble USB uniquement, et ce qu'affichent Wi-Fi,
+ *   set et oublier ne quitte jamais le câble USB. (Le nom du réseau connecté, lui, apparaît dans « status ».)
  * SAISIE : ce que tu tapes s'affiche (écho), Retour arrière efface un caractère,
  * Ctrl+U efface toute la ligne. Les flèches / Suppr sont ignorées.
  * Avant de rendre ou prêter la carte : tape "oublier" (ou pio run -t erase).
@@ -49,8 +54,8 @@
  *   Une seule police (standard 5x7, zéro sans barre), pas de blanc : titres en cyan.
  *   Démarrage : logo animé "LA BONNE M'AIR" (basilique stylisée, voir afficherSplash).
  *
- * CHAMPS ENVOYÉS (JSON plat, nombres uniquement) :
- *   standard : device_id, uptime, rssi, heap, co2, pm1, pm25, pm10
+ * CHAMPS ENVOYÉS (JSON plat, nombres uniquement), en HTTPS (la clé du groupe ne circule plus en clair) :
+ *   standard : device_id, uptime, rssi, heap, co2, pm1, pm25, pm10, npm_status (octet d'état du NextPM)
  *              (co2 / pm = MOYENNE des lectures de la période : capteurs lus chaque seconde, une mesure toutes
  *               les 10 s en direct, 30 s hors ligne ou pendant un rattrapage, 60 s sur batterie)
  *   perso :
@@ -62,9 +67,8 @@
  *     x_pct_co2_1000    % du temps au-dessus de 1000 ppm depuis le démarrage
  *     x_reset           cause du dernier redémarrage (esp_reset_reason)
  *     x_alim            1 = secteur, 0 = batterie
- *     x_pm_statut       octet d'état du NextPM
  *     x_temp_pm, x_hum_pm   température / humidité internes du NextPM
- *   => 10 champs x_ exactement (maximum du guide AirCarto).
+ *   => 9 champs x_ (10 au maximum, guide AirCarto) : l'état du NextPM est passé dans le champ officiel npm_status.
  *
  * HORS LIGNE : le serveur date chaque mesure à sa RÉCEPTION. Une mesure
  * rejouée plus tard est donc enregistrée à la mauvaise heure ; on corrige à
@@ -122,6 +126,14 @@
 #define DOUBLE_BUFFER             1  // 1 = dessin sans scintillement | 0 si l'écran reste noir ou s'affiche mal
 #define ANIMATIONS                0  // 1 = clignement, chiffres qui glissent, sommet de courbe qui clignote | 0 = calme
 #define TRANSITION_FONDU          1  // 1 = fondu au noir (~150 ms) entre deux pages | 0 = changement sec
+#ifndef AIRCARTO_HTTPS
+#define AIRCARTO_HTTPS            1  // 1 = mesures envoyées en HTTPS (clé chiffrée, serveur vérifié) | 0 = HTTP simple
+                                     //     (clé du groupe lisible sur le réseau : seulement si le HTTPS pose problème)
+#endif
+#ifndef EDUROAM_IDENTITE_ANONYME
+#define EDUROAM_IDENTITE_ANONYME  1  // 1 = eduroam : « anonymous@ton-domaine » circule en clair à la place de ton identifiant
+                                     //     (le vrai ne part que dans le tunnel chiffré) | 0 si ton université le refuse
+#endif
 #ifndef CONSOLE_DISTANTE
 #define CONSOLE_DISTANTE          1  // 1 = journal, commandes et mise à jour PAR INTERNET, via ton relais Cloudflare
                                      //     (dossier relais/ ; adresse et jeton : set relais / set jeton, au câble USB)
@@ -154,20 +166,32 @@
 #include <PxMatrix.h>
 // Police : la 5x7 intégrée à Adafruit GFX, en taille 1 (textes) et 2 (valeurs)
 
+// HTTPS vers AirCarto et vers le relais : certificats racines acceptés (Let's Encrypt, Google, SSL.com, Sectigo)
+#include <WiFiClientSecure.h>
+#include "racines_tls.h"
 #if WIFI_ACTIVE
 #include "esp_wpa2.h"
+// eduroam : certificat de l'autorité qui signe le serveur d'authentification de l'université (facultatif mais
+// conseillé : sans lui, un faux point d'accès « eduroam » peut récupérer ton identifiant et ton mot de passe ENT).
+// Fichier à créer : voir ca_eduroam.h.exemple.
+#if __has_include("ca_eduroam.h")
+#include "ca_eduroam.h"
+#include <mbedtls/x509_crt.h>
+#define CA_EDUROAM_PRESENT 1
+#else
+#define CA_EDUROAM_PRESENT 0
+#endif
 #endif
 #if CONSOLE_DISTANTE
-// Console à distance et mise à jour : HTTPS vers le relais, écriture du nouveau programme, vérification de signature
-#include <WiFiClientSecure.h>
+// Console à distance et mise à jour : écriture du nouveau programme, vérification de signature
 #include <Update.h>
 #include <esp_ota_ops.h>
 #include <mbedtls/pk.h>
 #include <mbedtls/md.h>
-#include "racines_tls.h"     // certificats racines acceptés pour le relais (*.workers.dev)
 #endif
 #if BLUETOOTH_ACTIF
 #include <NimBLEDevice.h>    // pile Bluetooth basse consommation, plus légère que celle d'origine (lib_deps)
+#include <nimble/nimble/host/include/host/ble_hs.h>   // ble_hs_cfg : réglages de sécurité de la pile (sm_sc_only)
 #endif
 // Numéro de version : fabriqué à chaque compilation par outils/ota.py (date de la dernière modification du code,
 // AAMMJJhhmm). La carte n'accepte une mise à jour que si son numéro est PLUS GRAND que le sien.
@@ -191,8 +215,15 @@
 // =====================================================================
 // Les identifiants (Wi-Fi, ENT, clé du groupe) ne sont PAS ici : ils sont
 // enregistrés dans la mémoire de la carte par les commandes "wifi ..." et "set cle".
-// Adresse du serveur AirCarto qui reçoit les mesures (en http, pas https).
+// Adresse du serveur AirCarto qui reçoit les mesures, en HTTPS : la clé du groupe (en-tête X-Group-Key) est chiffrée
+// et la réponse du serveur ne peut plus être falsifiée en route. Certificat Let's Encrypt (chaîne YR2 -> Root YR ->
+// ISRG Root X1, vérifiée le 22/11/2026) : seules ces deux racines sont acceptées (RACINES_AIRCARTO).
+// AirCarto accepte les deux (http:// et https://, voir sa documentation openapi.yaml) : AIRCARTO_HTTPS choisit.
+#if AIRCARTO_HTTPS
+static const char* URL_SERVEUR  = "https://api.aircarto.fr/iut-amu/push";
+#else
 static const char* URL_SERVEUR  = "http://api.aircarto.fr/iut-amu/push";
+#endif
 // Serveur d'heure (NTP) et fuseau horaire de la France : heure d'hiver CET (UTC+1), heure d'été CEST,
 // bascule le dernier dimanche de mars et d'octobre.
 static const char* NTP_SERVER   = "pool.ntp.org";
@@ -296,6 +327,8 @@ static const unsigned long ESSAI_CLE_MS              = 900000UL;  // clé refus�
 static const uint8_t       ECHECS_AVANT_RECONNEXION  = 5;         // POST sans réponse alors que « connecté » : on refait la connexion Wi-Fi
 static const unsigned long SANS_REPONSE_REBOOT_MS    = 6UL * 3600000UL;  // 6 h connecté sans aucune réponse du serveur : redémarrage
 static const unsigned long ATTENTE_SERVEUR_MAX_MS    = 300000UL;  // délai demandé par le serveur (next_push_in_s) : 5 min au plus
+static const uint32_t TLS_BLOC_MIN_OCTETS            = 45000;     // HTTPS demande ~40 Ko d'un seul tenant : sinon on attend
+static const int      REPONSE_MAX_OCTETS             = 2048;      // réponse d'AirCarto lue au plus (quelques centaines d'octets)
 static const uint32_t WDT_TIMEOUT_S                  = 60;        // watchdog : redémarrage si la carte se fige
 
 // --- Stockage hors ligne ---
@@ -425,6 +458,30 @@ void setupDisplay() {
 // =====================================================================
 // TYPES ET VARIABLES GLOBALES
 // =====================================================================
+// ---------- Connexions HTTPS (AirCarto, relais) ----------
+// Arduino-ESP32 2.x vérifie l'autorité et le NOM du serveur, mais PAS les dates des certificats (option
+// MBEDTLS_HAVE_TIME_DATE absente). Cette classe ajoute le contrôle de la date de fin du certificat du serveur à
+// CHAQUE ouverture de connexion, y compris celles que HTTPClient ouvre lui-même : la clé du groupe ou le jeton du
+// relais ne partent qu'ensuite. (HTTPClient appelle connect(hote, port, délai), virtuelle : c'est elle qu'on
+// remplace.)
+bool certificatsALaDate(WiFiClientSecure &c, const char* quoi);
+class ClientTlsDate : public WiFiClientSecure {
+ public:
+  explicit ClientTlsDate(const char* q) : quoi(q) {}
+  using WiFiClientSecure::connect;
+  int connect(const char* hote, uint16_t port, int32_t delai) override {
+    if (!WiFiClientSecure::connect(hote, port, delai)) return 0;
+    if (!certificatsALaDate(*this, quoi)) { stop(); return 0; }
+    return 1;
+  }
+ private:
+  const char* quoi;
+};
+// Une seule connexion HTTPS à la fois (~40 Ko de mémoire chacune) : tacheEnvoi (AirCarto) et tacheRelais se passent
+// ce verrou. AirCarto attend jusqu'à 5 s (sinon l'envoi est reporté au créneau suivant), le relais jusqu'à 20 s ;
+// le relais laisse toujours au moins SYNC_LIVE_MS libres entre deux échanges, dans lesquels AirCarto passe.
+SemaphoreHandle_t mutexTls = NULL;
+
 HardwareSerial nextpmSerial(1);  // UART n°1
 ModbusMaster nextpm;
 MHZ19 mhz;
@@ -514,6 +571,7 @@ uint16_t histNb = 0;                   // nombre de lectures correspondantes
 String cfgCle;
 String cfgRelais;     // adresse du relais Cloudflare (https://....workers.dev) : « set relais », câble USB
 String cfgJeton;      // jeton SECRET de la carte auprès du relais : « set jeton », câble USB
+bool btAppairageDemarrage = false;   // « bt demarrage on » (câble USB) : nouveau téléphone accepté 2 min après la mise sous tension
 String deviceId;      // adresse MAC, lue une fois au démarrage
 uint32_t bootId = 0;  // identifiant aléatoire de ce démarrage
 
@@ -552,6 +610,9 @@ unsigned long tDernierWifiOK = 0;
 unsigned long tVisibleDepuis = 0;    // depuis quand un réseau en mémoire est visible SANS que la connexion réussisse (0 = non)
 uint32_t nbCoupuresWifi = 0;
 uint32_t nbSansHeure = 0;            // mesures d'un démarrage précédent abandonnées faute d'heure (commande status)
+ClientTlsDate clientAircarto("AirCarto");   // connexion chiffrée vers AirCarto (certificats réglés dans setup)
+unsigned long tPasAvant = 0;         // refus 429 : le serveur a demandé d'attendre jusqu'à cet instant (0 = rien)
+uint32_t nbReportsMemoire = 0;       // envois reportés faute de mémoire pour HTTPS (commande status)
 
 // Cache des réseaux Wi-Fi connus (enregistré en mémoire permanente, clés "w_...")
 #define NB_WIFI_MAX 5
@@ -568,6 +629,18 @@ int8_t dernierReseau = -1;  // dernier réseau qui a fonctionné : essayé en pr
 enum EtatWifi { WIFI_INACTIF, WIFI_SCAN, WIFI_CONNEXION, WIFI_CONNECTE, WIFI_PAUSE };
 EtatWifi etatWifi = WIFI_INACTIF;
 int8_t candidats[NB_WIFI_MAX];      // réseaux à essayer, dans l'ordre (le plus fort d'abord)
+// Point d'accès PRÉCIS vu au scan pour chaque candidat (adresse BSSID + canal), avec la bonne sécurité : la carte se
+// connecte à lui et à aucun autre du même nom (sinon le pilote rescanne seul et prend le plus fort, peut-être un
+// faux point d'accès ouvert nommé « eduroam »).
+uint8_t candBssid[NB_WIFI_MAX][6];
+int32_t candCanal[NB_WIFI_MAX];
+bool candBssidOk[NB_WIFI_MAX];
+uint8_t bssidCourant[6];            // point d'accès de la connexion en cours (reconnexion après une coupure)
+int32_t canalCourant = 0;
+bool bssidCourantOk = false;
+bool identiteReelle[NB_WIFI_MAX] = {false};   // eduroam : l'identité anonyme a été refusée, on envoie l'identifiant réel
+uint8_t bssidRefusAnonyme[NB_WIFI_MAX][6];    // premier point d'accès qui a refusé l'identité anonyme
+bool refusAnonymeVu[NB_WIFI_MAX] = {false};
 uint8_t nbCandidats = 0, idxCandidat = 0;
 int8_t reseauCourant = -1;          // réseau en cours d'essai ou connecté
 bool rescannerApresEchec = false;   // après une coupure : on retente le même réseau, puis on rescanne
@@ -664,6 +737,111 @@ String lireMac() {
   return String(buf);
 }
 
+// Le certificat de ca_eduroam.h est-il lisible ? (« vérifié » dans status seulement dans ce cas ; sinon la connexion
+// eduroam échoue, elle ne s'ouvre jamais sans contrôle.)
+int8_t caEduroamValide = -1;   // -1 pas de fichier | 0 illisible | 1 lisible
+void verifierCaEduroam() {
+#if WIFI_ACTIVE && CA_EDUROAM_PRESENT
+  mbedtls_x509_crt crt;
+  mbedtls_x509_crt_init(&crt);
+  caEduroamValide = (mbedtls_x509_crt_parse(&crt, (const unsigned char *)CA_EDUROAM, sizeof(CA_EDUROAM)) == 0) ? 1 : 0;
+  mbedtls_x509_crt_free(&crt);
+  if (!caEduroamValide) Console.println("ATTENTION : ca_eduroam.h illisible (encore l'exemple ?) : eduroam ne pourra pas se connecter.");
+#endif
+}
+
+// Nom de réseau Wi-Fi prêt à afficher. Un nom de Wi-Fi peut contenir N'IMPORTE QUELS octets (retours à la ligne,
+// séquences d'échappement du terminal...) : un point d'accès voisin bien nommé pourrait sinon écrire dans le moniteur
+// série ou fabriquer de fausses lignes dans le journal du relais. Seul l'ASCII imprimable passe : le reste devient
+// « ? » (y compris les accents et les caractères Unicode invisibles qui changent le sens d'écriture ou la ligne).
+String nomAffichable(const String &s) {
+  String r = s;
+  for (unsigned i = 0; i < r.length(); i++) {
+    uint8_t c = (uint8_t)r[i];
+    if (c < 32 || c >= 127) r.setCharAt(i, '?');
+  }
+  return r;
+}
+
+// ---------- Dates des certificats HTTPS (voir ClientTlsDate) ----------
+// Référence : la date de COMPILATION du programme (FW_VERSION), gravée dans la carte. Un certificat déjà expiré à
+// la compilation est refusé. On n'utilise PAS l'heure NTP : elle n'est pas chiffrée, et quelqu'un qui peut se
+// faire passer pour le serveur peut aussi la falsifier (vers le passé, elle ne protégerait de rien ; vers le futur,
+// elle ferait refuser tous les certificats : panne volontaire).
+static int64_t joursDepuis1970(int a, unsigned m, unsigned j) {   // calendrier grégorien (algorithme de H. Hinnant)
+  a -= (m <= 2);
+  const int64_t ere = (a >= 0 ? a : a - 399) / 400;
+  const unsigned ae = (unsigned)(a - ere * 400);
+  const unsigned jda = (153 * (m > 2 ? m - 3 : m + 9) + 2) / 5 + j - 1;
+  const unsigned jde = ae * 365 + ae / 4 - ae / 100 + jda;
+  return ere * 146097 + (int64_t)jde - 719468;
+}
+
+// Date de compilation (FW_VERSION = AAMMJJhhmm, heure locale), moins un jour de marge. 0 si inconnue.
+int64_t secondesCompilation() {
+  uint32_t v = (uint32_t)FW_VERSION;
+  unsigned aa = v / 100000000UL, mm = (v / 1000000UL) % 100, jj = (v / 10000UL) % 100;
+  unsigned hh = (v / 100UL) % 100, mi = v % 100;
+  if (v == 0) return 0;
+  // valeurs bornées (une version « 2611221960 » reste une date de 2026) : le contrôle n'est jamais désactivé
+  if (mm < 1) mm = 1;
+  if (mm > 12) mm = 12;
+  if (jj < 1) jj = 1;
+  if (jj > 31) jj = 31;
+  if (hh > 23) hh = 23;
+  if (mi > 59) mi = 59;
+  return joursDepuis1970(2000 + (int)aa, mm, jj) * 86400LL + hh * 3600LL + mi * 60LL - 86400LL;
+}
+
+// Le certificat du SERVEUR (le premier envoyé) est-il encore valable ? Seul lui compte : un intermédiaire superflu
+// et périmé, que certains serveurs envoient en plus, ne doit pas tout faire refuser.
+bool certificatsALaDate(WiFiClientSecure &c, const char* quoi) {
+  const mbedtls_x509_crt* crt = c.getPeerCertificate();
+  if (crt == nullptr || crt->raw.len == 0) {
+    Console.printf("%s : certificat du serveur illisible, connexion refusée.\n", quoi);
+    return false;
+  }
+  int64_t ref = secondesCompilation();
+  if (ref <= 0) return true;   // date de compilation inconnue (pas de version_fw.h) : impossible de juger
+  const mbedtls_x509_time &f = crt->valid_to;
+  int64_t fin = joursDepuis1970(f.year, (unsigned)f.mon, (unsigned)f.day) * 86400LL + f.hour * 3600LL + f.min * 60LL + f.sec;
+  if (fin < ref) {
+    Console.printf("%s : certificat EXPIRÉ le %04d-%02d-%02d, connexion refusée (faux serveur ?).\n", quoi,
+                   f.year, f.mon, f.day);
+    return false;
+  }
+  return true;
+}
+
+// Lit la réponse du serveur dans une chaîne, sans jamais dépasser max octets, qu'elle annonce sa taille ou qu'elle
+// arrive par morceaux (« chunked ») : une réponse énorme ou sans fin ne peut pas épuiser la mémoire.
+class FluxBorne : public Stream {
+ public:
+  FluxBorne(String &d, size_t m) : dest(d), max(m) {}
+  size_t write(uint8_t c) override { return write(&c, 1); }
+  size_t write(const uint8_t* b, size_t n) override {
+    if (dest.length() + n > max) { trop = true; return 0; }
+    dest.concat((const char*)b, n);
+    return n;
+  }
+  int available() override { return 0; }
+  int read() override { return -1; }
+  int peek() override { return -1; }
+  bool trop = false;
+ private:
+  String &dest;
+  size_t max;
+};
+
+String lireReponse(HTTPClient &http, size_t max) {
+  String corps;
+  if (http.getSize() > (int)max) { LOG("Réponse ignorée : %d octets annoncés.\n", http.getSize()); return corps; }
+  FluxBorne f(corps, max);
+  http.writeToStream(&f);
+  if (f.trop) { LOG("Réponse ignorée : plus de %u octets.\n", (unsigned)max); corps = ""; }
+  return corps;
+}
+
 // Nuit = de HEURE_NUIT_DEBUT (inclus) à HEURE_NUIT_FIN (exclu), en heure locale.
 // Fonctionne aussi si la plage passe minuit (ex. 22 -> 6).
 bool estNuit() {
@@ -705,6 +883,7 @@ void chargerConfig() {
   cfgJeton   = prefs.getString("jeton", "");
   offsetRejeu = prefs.getULong("off", 0);
   verbose    = prefs.getBool("verbose", false);
+  btAppairageDemarrage = prefs.getBool("bt_dem", false);
 }
 
 // La clé du groupe AirCarto doit faire exactement 32 caractères.
@@ -745,6 +924,7 @@ static void cleReseau(char* buf, size_t n, char type, uint8_t i) {
 
 void sauverReseaux() {
   char k[8];
+  for (uint8_t i = 0; i < NB_WIFI_MAX; i++) { identiteReelle[i] = false; refusAnonymeVu[i] = false; }   // les numéros changent
   prefs.putUChar("w_n", nbReseaux);
   for (uint8_t i = 0; i < NB_WIFI_MAX; i++) {
     if (i < nbReseaux) {
@@ -793,7 +973,7 @@ void chargerReseaux() {
     else if (s.length() > 0 && s != "eduroam") ajouterReseau(s, p, "");
     prefs.remove("ssid"); prefs.remove("wifi_pwd"); prefs.remove("eap_id"); prefs.remove("eap_pwd");
     sauverReseaux();
-    if (nbReseaux > 0) Console.printf("Ancien réglage Wi-Fi repris dans le cache : %s\n", reseaux[0].ssid.c_str());
+    if (nbReseaux > 0) Console.printf("Ancien réglage Wi-Fi repris dans le cache : %s\n", nomAffichable(reseaux[0].ssid).c_str());
     return;
   }
   nbReseaux = (n > NB_WIFI_MAX) ? NB_WIFI_MAX : n;
@@ -842,7 +1022,7 @@ const char* raisonLongue(uint8_t r) {
     case 0:                                  return "pas de réponse dans le délai";
     case WIFI_REASON_NO_AP_FOUND:            return "réseau introuvable (hors de portée ? nom exact ?)";
     case WIFI_REASON_BEACON_TIMEOUT:         return "signal perdu (borne éteinte ou trop loin)";
-    case WIFI_REASON_802_1X_AUTH_FAILED:     return "identifiant ou mot de passe ENT refusé";
+    case WIFI_REASON_802_1X_AUTH_FAILED:     return "identifiant ou mot de passe ENT refusé (ou ca_eduroam.h faux, ou identité anonyme refusée : EDUROAM_IDENTITE_ANONYME 0)";
     case WIFI_REASON_AUTH_FAIL:
     case WIFI_REASON_AUTH_EXPIRE:
     case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
@@ -861,27 +1041,51 @@ unsigned long delaiConnexion(int8_t i) {
 void lancerConnexion(int8_t i) {
 #if WIFI_ACTIVE
   const ReseauWifi &r = reseaux[i];
+  // Point d'accès précis vu au scan (sinon : n'importe lequel de ce nom, seulement pour un Wi-Fi à mot de passe)
+  uint8_t bssid[6];
+  int32_t canal = 0;
+  bool avecBssid = (idxCandidat < nbCandidats && candidats[idxCandidat] == i && candBssidOk[idxCandidat]);
+  if (avecBssid) { memcpy(bssid, candBssid[idxCandidat], 6); canal = candCanal[idxCandidat]; }
+  bssidCourantOk = avecBssid;
+  if (avecBssid) { memcpy(bssidCourant, bssid, 6); canalCourant = canal; }
   reseauCourant = i;
   WiFi.disconnect(false, false);
   delay(50);
   raisonDeco = 0;
   if (r.eapId.length() > 0) {
-    // WPA2 Entreprise (eduroam) : identité + identifiant + mot de passe ENT, puis on active le mode entreprise
-    esp_wifi_sta_wpa2_ent_set_identity((uint8_t *)r.eapId.c_str(), r.eapId.length());
+    // WPA2 Entreprise (eduroam) : identité + identifiant + mot de passe ENT, puis on active le mode entreprise.
+    // Certificat de l'autorité du serveur d'authentification (ca_eduroam.h) : la carte refuse un faux serveur, qui
+    // récupérerait sinon l'empreinte du mot de passe ENT. Pas de vérification des dates : la carte n'a pas encore
+    // l'heure (elle arrive par Internet, une fois connectée). Limite d'ESP32 Arduino 2.x : le NOM du serveur n'est
+    // pas vérifié, seulement l'autorité qui l'a signé.
+#if CA_EDUROAM_PRESENT
+    esp_wifi_sta_wpa2_ent_set_ca_cert((const unsigned char *)CA_EDUROAM, sizeof(CA_EDUROAM));
+    esp_wifi_sta_wpa2_ent_set_disable_time_check(true);
+#endif
+    // Identité « extérieure », lisible par tous en clair : anonymous@domaine (EDUROAM_IDENTITE_ANONYME) ; le vrai
+    // identifiant (set_username) ne part que dans le tunnel chiffré. (ESP-IDF copie la chaîne.)
+#if EDUROAM_IDENTITE_ANONYME
+    // (si l'université refuse l'identité anonyme, la carte repasse seule à l'identifiant réel : voir gererWiFi)
+    int arobase = r.eapId.indexOf('@');
+    String exterieure = (arobase >= 0 && !identiteReelle[i]) ? String("anonymous") + r.eapId.substring(arobase) : r.eapId;
+#else
+    String exterieure = r.eapId;
+#endif
+    esp_wifi_sta_wpa2_ent_set_identity((uint8_t *)exterieure.c_str(), exterieure.length());
     esp_wifi_sta_wpa2_ent_set_username((uint8_t *)r.eapId.c_str(), r.eapId.length());
     esp_wifi_sta_wpa2_ent_set_password((uint8_t *)r.mdp.c_str(), r.mdp.length());
     esp_wifi_sta_wpa2_ent_enable();
-    WiFi.begin(r.ssid.c_str());
+    WiFi.begin(r.ssid.c_str(), nullptr, canal, avecBssid ? bssid : nullptr);
   } else {
     // Wi-Fi classique : le mode entreprise DOIT être coupé, sinon la box refuse la connexion
     esp_wifi_sta_wpa2_ent_disable();
-    WiFi.begin(r.ssid.c_str(), r.mdp.length() ? r.mdp.c_str() : nullptr);
+    WiFi.begin(r.ssid.c_str(), r.mdp.length() ? r.mdp.c_str() : nullptr, canal, avecBssid ? bssid : nullptr);
   }
   etatWifi = WIFI_CONNEXION;
   tEtatWifi = millis();
   aRedessiner = true;
   if (wifiInteractif || verbose)
-    Console.printf("Wi-Fi : connexion à %s (%s, essai %u/%u)...\n", r.ssid.c_str(), typeReseau(i),
+    Console.printf("Wi-Fi : connexion à %s (%s, essai %u/%u)...\n", nomAffichable(r.ssid).c_str(), typeReseau(i),
                   (unsigned)(idxCandidat + 1), (unsigned)nbCandidats);
 #endif
 }
@@ -898,40 +1102,71 @@ void lancerScan() {
 #endif
 }
 
+// Le réseau vu au scan a-t-il la sécurité du réseau enregistré ? Un faux point d'accès OUVERT nommé « eduroam » ou
+// comme ta box est ainsi ignoré (pour un réseau entreprise, la carte n'exigerait sinon aucun chiffrement).
+bool securiteCompatible(uint8_t i, wifi_auth_mode_t m) {
+  if (estEntreprise(i)) return m == WIFI_AUTH_WPA2_ENTERPRISE;
+  if (reseaux[i].mdp.length() == 0) return m == WIFI_AUTH_OPEN;
+  return m != WIFI_AUTH_OPEN && m != WIFI_AUTH_WEP && m != WIFI_AUTH_WPA2_ENTERPRISE;
+}
+
+// Réseau qu'on peut essayer SANS l'avoir vu au scan : seulement un Wi-Fi à mot de passe (le pilote exige alors au
+// moins WPA, voir setMinSecurity). Un réseau entreprise ou ouvert doit avoir été vu avec la bonne sécurité.
+bool essayableSansScan(uint8_t i) {
+  return !estEntreprise(i) && reseaux[i].mdp.length() > 0;
+}
+
 // Range les réseaux connus visibles du plus fort au plus faible. n < 0 : le scan a échoué.
 void preparerCandidats(int n) {
   nbCandidats = 0;
   idxCandidat = 0;
   rescannerApresEchec = false;
-  if (n < 0) {  // scan raté : on essaie quand même tout, le dernier réseau qui a marché d'abord
-    if (dernierReseau >= 0) candidats[nbCandidats++] = dernierReseau;
-    for (uint8_t i = 0; i < nbReseaux; i++) if ((int8_t)i != dernierReseau) candidats[nbCandidats++] = i;
+  for (uint8_t k = 0; k < NB_WIFI_MAX; k++) candBssidOk[k] = false;
+  if (n < 0) {  // scan raté : on essaie les Wi-Fi à mot de passe, le dernier réseau qui a marché d'abord
+    if (dernierReseau >= 0 && essayableSansScan(dernierReseau)) candidats[nbCandidats++] = dernierReseau;
+    for (uint8_t i = 0; i < nbReseaux; i++)
+      if ((int8_t)i != dernierReseau && essayableSansScan(i)) candidats[nbCandidats++] = i;
     return;
   }
   int32_t force[NB_WIFI_MAX];
   for (uint8_t i = 0; i < nbReseaux; i++) {
     int32_t meilleur = -1000;
+    int jMeilleur = -1;
     for (int j = 0; j < n; j++) {
-      if (WiFi.SSID(j) == reseaux[i].ssid && WiFi.RSSI(j) > meilleur) meilleur = WiFi.RSSI(j);
+      if (WiFi.SSID(j) == reseaux[i].ssid && securiteCompatible(i, WiFi.encryptionType(j)) && WiFi.RSSI(j) > meilleur) {
+        meilleur = WiFi.RSSI(j);
+        jMeilleur = j;
+      }
     }
     if (meilleur <= -1000) continue;
+    uint8_t b[6];
+    const uint8_t* pb = WiFi.BSSID(jMeilleur);
+    bool bOk = (pb != nullptr);
+    if (bOk) memcpy(b, pb, 6);
+    int32_t c = WiFi.channel(jMeilleur);
     if ((int8_t)i == dernierReseau) meilleur += 5;  // petit bonus : à force égale, on garde ses habitudes
     // insertion triée (du plus fort au plus faible)
     uint8_t pos = nbCandidats;
     while (pos > 0 && force[pos - 1] < meilleur) {
       force[pos] = force[pos - 1];
       candidats[pos] = candidats[pos - 1];
+      memcpy(candBssid[pos], candBssid[pos - 1], 6);
+      candCanal[pos] = candCanal[pos - 1];
+      candBssidOk[pos] = candBssidOk[pos - 1];
       pos--;
     }
     force[pos] = meilleur;
     candidats[pos] = i;
+    if (bOk) memcpy(candBssid[pos], b, 6);
+    candCanal[pos] = c;
+    candBssidOk[pos] = bOk;
     nbCandidats++;
   }
   // Un réseau connu est-il visible ? (sert à surveillerWifiLongue : visible mais connexion impossible = pile bloquée)
   if (nbCandidats > 0) { if (tVisibleDepuis == 0) tVisibleDepuis = millis() | 1UL; }
   else tVisibleDepuis = 0;
-  // Rien de visible : peut-être un réseau caché, on tente le dernier réseau qui a fonctionné
-  if (nbCandidats == 0 && dernierReseau >= 0) candidats[nbCandidats++] = dernierReseau;
+  // Rien de visible : peut-être un réseau caché, on tente le dernier réseau qui a fonctionné (Wi-Fi à mot de passe)
+  if (nbCandidats == 0 && dernierReseau >= 0 && essayableSansScan(dernierReseau)) candidats[nbCandidats++] = dernierReseau;
   if (wifiInteractif || verbose)
     Console.printf("Wi-Fi : %d réseaux visibles, %u connus parmi eux.\n", n, (unsigned)nbCandidats);
   WiFi.scanDelete();
@@ -955,7 +1190,7 @@ void connexionReussie(unsigned long now) {
     prefs.putChar("w_last", dernierReseau);
   }
   configTzTime(TZ_FRANCE, NTP_SERVER);  // heure : indispensable pour dater les mesures stockées hors ligne
-  Console.printf("Wi-Fi connecté à %s | IP %s | %d dBm\n", WiFi.SSID().c_str(),
+  Console.printf("Wi-Fi connecté à %s | IP %s | %d dBm\n", nomAffichable(WiFi.SSID()).c_str(),
                 WiFi.localIP().toString().c_str(), WiFi.RSSI());
   montrerResultatWifi(true);
 }
@@ -1043,7 +1278,22 @@ void gererWiFi(unsigned long now) {
                        r == WIFI_REASON_802_1X_AUTH_FAILED || r == WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT);
       if (!refusNet && now - tEtatWifi < delaiConnexion(reseauCourant)) return;
       if (wifiInteractif || verbose)
-        Console.printf("Wi-Fi : échec sur %s : %s\n", reseaux[reseauCourant].ssid.c_str(), raisonLongue(r));
+        Console.printf("Wi-Fi : échec sur %s : %s\n", nomAffichable(reseaux[reseauCourant].ssid).c_str(), raisonLongue(r));
+#if EDUROAM_IDENTITE_ANONYME
+      // Repli sur l'identifiant réel seulement si DEUX points d'accès différents ont refusé l'identité anonyme : un faux
+      // point d'accès isolé ne peut pas, en refusant exprès, obliger la carte à dévoiler ton identifiant en clair.
+      if (r == WIFI_REASON_802_1X_AUTH_FAILED && estEntreprise(reseauCourant) && !identiteReelle[reseauCourant] && bssidCourantOk) {
+        uint8_t k = (uint8_t)reseauCourant;
+        if (!refusAnonymeVu[k]) {
+          refusAnonymeVu[k] = true;
+          memcpy(bssidRefusAnonyme[k], bssidCourant, 6);
+        } else if (memcmp(bssidRefusAnonyme[k], bssidCourant, 6) != 0) {
+          identiteReelle[k] = true;
+          Console.println("eduroam : identité anonyme refusée par deux bornes. Les prochains essais utilisent ton identifiant "
+                          "réel (EDUROAM_IDENTITE_ANONYME 0 pour toujours l'utiliser).");
+        }
+      }
+#endif
       if (++idxCandidat < nbCandidats) { lancerConnexion(candidats[idxCandidat]); return; }
       finTentatives(now);
       return;
@@ -1064,6 +1314,9 @@ void gererWiFi(unsigned long now) {
       nbCandidats = 1;
       idxCandidat = 0;
       candidats[0] = reseauCourant;
+      candBssidOk[0] = bssidCourantOk;    // même point d'accès qu'avant la coupure
+      memcpy(candBssid[0], bssidCourant, 6);
+      candCanal[0] = canalCourant;
       lancerConnexion(reseauCourant);
       rescannerApresEchec = true;
       return;
@@ -1612,33 +1865,63 @@ long calculerAge(JsonDocument &doc) {
 
 // Un POST ; la réponse du serveur décide de la suite
 ResultatPush posterAuServeur(const String &payload) {
-  // Un POST HTTP vers le serveur, avec des délais courts pour ne pas bloquer longtemps la tâche d'envoi.
-  HTTPClient http;
-  http.setConnectTimeout(2000);
-  http.setTimeout(3000);
   // Le serveur compte 10 s entre le début de deux requêtes : on note l'heure AVANT l'envoi
   // (avant, elle était notée après la réponse : la durée du POST s'ajoutait à chaque créneau).
   tDernierPush = millis();
   dejaPoste = true;
-  if (!http.begin(URL_SERVEUR)) {
-    LOG("Échec : http.begin() a refusé l'URL.\n");
-    echecsPush++; etatEnvoi = 2;
+#if AIRCARTO_HTTPS
+  // Une seule connexion HTTPS à la fois : si le relais en utilise une, on attend qu'il finisse (5 s au plus, bien
+  // en dessous du watchdog). Puis HTTPS demande ~40 Ko d'un seul tenant. Sinon : on réessaie au créneau suivant,
+  // sans compter un échec (la mesure est gardée).
+  if (mutexTls && xSemaphoreTake(mutexTls, pdMS_TO_TICKS(5000)) != pdTRUE) {
+    nbReportsMemoire++;
+    LOG("Envoi reporté : une autre connexion HTTPS est en cours.\n");
+    etatEnvoi = 2;
     return PUSH_REESSAYER;
   }
-  // En-têtes : le contenu est du JSON, et la clé du groupe identifie la station auprès du serveur.
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("X-Group-Key", lireCle());
-
-  LOG("Envoi : %s\n", payload.c_str());
-  // Envoie la requête. code = code HTTP du serveur (200 = OK, 401 = clé refusée...) ou valeur négative si le réseau a échoué.
-  int code = http.POST(payload);
-  dernierCodeHttp = code;
+  if (ESP.getMaxAllocHeap() < TLS_BLOC_MIN_OCTETS) {
+    if (mutexTls) xSemaphoreGive(mutexTls);
+    nbReportsMemoire++;
+    LOG("Envoi reporté : mémoire insuffisante pour HTTPS (plus grand bloc %u octets).\n", (unsigned)ESP.getMaxAllocHeap());
+    etatEnvoi = 2;
+    return PUSH_REESSAYER;
+  }
+#endif
+  // Un POST vers le serveur, avec des délais courts pour ne pas bloquer longtemps la tâche d'envoi.
+  // Une connexion par envoi (setReuse(false)) : rien ne reste en attente dans la connexion d'un envoi à l'autre.
+  HTTPClient http;
+  http.setConnectTimeout(4000);
+  http.setTimeout(5000);
+  http.setReuse(false);
+  int code = HTTPC_ERROR_CONNECTION_REFUSED;
   String corps;
-  if (code > 0) corps = http.getString();
-  http.end();
+#if AIRCARTO_HTTPS
+  // clientAircarto vérifie certificat, nom du serveur et date à l'ouverture (ClientTlsDate) : la clé part après.
+  bool pret = http.begin(clientAircarto, URL_SERVEUR);
+#else
+  bool pret = http.begin(URL_SERVEUR);
+#endif
+  if (pret) {
+    // En-têtes : le contenu est du JSON, et la clé du groupe identifie la station auprès du serveur.
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("X-Group-Key", lireCle());
 
-  if (code <= 0) {  // Pas de réponse : Wi-Fi, URL (http://, pas https) ou serveur injoignable
-    LOG("Échec de l'envoi : %s\n", HTTPClient::errorToString(code).c_str());
+    LOG("Envoi : %s\n", payload.c_str());
+    // Envoie la requête. code = code HTTP du serveur (200 = OK, 401 = clé refusée...) ou valeur négative si le réseau a échoué.
+    code = http.POST(payload);
+    if (code > 0) corps = lireReponse(http, REPONSE_MAX_OCTETS);   // quelques centaines d'octets attendus
+  }
+  http.end();
+#if AIRCARTO_HTTPS
+  clientAircarto.stop();   // (déjà fait par http.end, sauf si la connexion a échoué avant)
+  if (mutexTls) xSemaphoreGive(mutexTls);
+#endif
+  dernierCodeHttp = code;
+
+  if (code <= 0) {  // Pas de réponse : Wi-Fi, serveur injoignable, ou certificat du serveur refusé
+    char err[96] = "";
+    clientAircarto.lastError(err, sizeof(err));
+    LOG("Échec de l'envoi : %s%s%s\n", HTTPClient::errorToString(code).c_str(), err[0] ? " | dernière erreur TLS : " : "", err);
     echecsPush++; etatEnvoi = 2;
     // Le Wi-Fi se dit connecté mais rien ne passe (bail DHCP perdu, borne qui a changé de clé…) : gererWiFi ne le
     // voit pas (WiFi.status() reste « connecté »). Après quelques échecs de suite, on refait la connexion.
@@ -1688,6 +1971,10 @@ ResultatPush posterAuServeur(const String &payload) {
   if (code == 429) {  // envoi trop rapproché : on agrandit la marge (ce n'est pas une panne : pas d'espacement progressif)
     margePushMs += 500;
     if (margePushMs > MARGE_PUSH_MAX_MS) margePushMs = MARGE_PUSH_MAX_MS;
+    // Le serveur dit exactement combien attendre (retry_after_s) : le prochain envoi part à ce moment-là, pas avant.
+    long attente = rep["retry_after_s"] | 0L;
+    attente = constrain(attente, 0L, (long)(ATTENTE_SERVEUR_MAX_MS / 1000UL));
+    if (attente > 0) tPasAvant = (millis() + (unsigned long)attente * 1000UL) | 1UL;
     if (suivant > 0) ecartMinMs = max(ECART_PUSH_MIN_MS, (unsigned long)suivant * 1000UL);
     etatEnvoi = 2;
     return PUSH_REESSAYER;
@@ -1764,11 +2051,11 @@ bool construireRecord(String &ligne) {
     if (dansBornes("pm25", m25, 0, 1000)) doc["pm25"] = arrondi1(m25);
     if (dansBornes("pm10", m10, 0, 1000)) doc["pm10"] = arrondi1(m10);
     if (dansBornes("x_pm25_max", agPM25.maxi, 0, 1000)) doc["x_pm25_max"] = arrondi1(agPM25.maxi);
-    doc["x_pm_statut"] = (int)statutPM;
+    doc["npm_status"] = (int)statutPM;   // champ officiel d'AirCarto (0 à 255) : libère une place de champ x_
     if (!isnan(tempPM)) doc["x_temp_pm"] = arrondi1(tempPM);
     if (!isnan(humPM)) doc["x_hum_pm"] = arrondi1(humPM);
   }
-  // Champs personnalisés « x_ » (10 au maximum, imposé par AirCarto) : alimentation, aération détectée,
+  // Champs personnalisés « x_ » (10 au maximum, imposé par AirCarto ; 9 utilisés) : alimentation, aération détectée,
   // % du temps au-dessus de 1000 ppm, cause du dernier redémarrage.
   doc["x_alim"] = estSurSecteur ? 1 : 0;
   doc["x_aeration"] = aerationPeriode ? 1 : 0;
@@ -1881,6 +2168,10 @@ void gererEnvois(unsigned long now) {
     return;
   }
   if (dejaPoste && now - tDernierPush < ecartCourantMs()) return;  // le serveur refuse les envois trop rapprochés
+  if (tPasAvant != 0) {                                          // refus 429 : attente demandée par le serveur
+    if ((long)(now - tPasAvant) < 0) return;
+    tPasAvant = 0;
+  }
 
   String ligne;
   if (sortirPendante(ligne)) {
@@ -1947,12 +2238,13 @@ void tacheEnvoi(void* param) {
 static const unsigned long SYNC_REPOS_MS        = 30000UL;   // personne ne regarde : un paquet toutes les 30 s
 static const unsigned long SYNC_LIVE_MS         = 2000UL;    // console ouverte : presque en direct
 static const unsigned long SYNC_ERREUR_MAX_MS   = 300000UL;  // relais injoignable : on espace jusqu'à 5 min
-static const uint32_t      TLS_BLOC_MIN_OCTETS  = 45000;     // HTTPS demande ~40 Ko d'un seul tenant : sinon on attend
 static const size_t        JOURNAL_TAILLE       = 6144;      // journal en attente d'envoi (les plus vieilles lignes sautent)
 static const size_t        PAQUET_MAX_OCTETS    = 3072;      // au plus par envoi
 static const unsigned long OTA_VALIDATION_MS    = 60000UL;   // nouvelle version : validée après 1 min + un échange réussi
 static const unsigned long OTA_DELAI_MAX_MS     = 600000UL;  // ... sinon, après 10 min de Wi-Fi : retour à l'ancienne
 static const uint8_t       OTA_DEMARRAGES_MAX   = 3;         // 3 redémarrages sans validation : retour à l'ancienne
+static const unsigned long OTA_ESSAI_MAX_MS     = 1200000UL; // 20 min sans AUCUN échange avec le relais, Wi-Fi ou pas
+                                                             // (une version qui casse le Wi-Fi) : retour à l'ancienne
 
 char journalTampon[JOURNAL_TAILLE];
 size_t journalLong = 0;              // octets en attente dans journalTampon
@@ -1971,7 +2263,7 @@ Preferences prefsOta;                    // espace « ota » : suivi d'une mise 
 bool otaEnEssai = false;                 // ce démarrage est celui d'une nouvelle version pas encore validée
 String otaAncienne;                      // emplacement (app0 / app1) de la version précédente
 
-void retourAncienneVersion(const char* raison);
+void retourAncienneVersion(const char* raison, bool marquer);
 
 // Arduino valide d'office une nouvelle version dès son démarrage : on préfère la valider nous-mêmes (surveillerOta).
 extern "C" bool verifyRollbackLater() { return true; }
@@ -2110,14 +2402,16 @@ static bool signatureValide(const String& message, const String& sigHexa) {
 }
 
 // --- échanges avec le relais ---
-WiFiClientSecure clientRelais;
+ClientTlsDate clientRelais("Relais");   // vérifie aussi la date du certificat à chaque ouverture
 
 // Prépare une requête vers le relais (chemin = "/carte/...") avec le jeton de la carte.
-static bool ouvrirRequete(HTTPClient& http, const char* chemin, bool garderOuvert) {
+// Une connexion par échange (setReuse(false)) : clientRelais (ClientTlsDate) vérifie certificat, nom et date à
+// chaque ouverture, avant que le jeton ne parte ; aucune connexion chiffrée ne reste ouverte entre deux échanges.
+static bool ouvrirRequete(HTTPClient& http, const char* chemin) {
   String url = lireRelais() + chemin;
   http.setConnectTimeout(8000);
   http.setTimeout(10000);
-  http.setReuse(garderOuvert);
+  http.setReuse(false);
   if (!http.begin(clientRelais, url)) return false;
   http.addHeader("Authorization", "Bearer " + lireJeton());
   return true;
@@ -2129,7 +2423,7 @@ static bool synchroniserRelais() {
   uint32_t base = 0;
   size_t n = journalExtraire(paquet, sizeof(paquet), &base);
   HTTPClient http;
-  if (!ouvrirRequete(http, "/carte/sync", consoleLive)) return false;
+  if (!ouvrirRequete(http, "/carte/sync")) return false;
   char v[24];
   http.addHeader("Content-Type", "text/plain; charset=utf-8");
   snprintf(v, sizeof(v), "%lu", millis());                 http.addHeader("X-Millis", v);
@@ -2143,7 +2437,7 @@ static bool synchroniserRelais() {
     if (code == 401) LOG("Relais : jeton refusé (set jeton, au câble USB).\n");
     return false;
   }
-  String rep = http.getString();
+  String rep = lireReponse(http, 8192);   // état de la console + commandes en attente : quelques centaines d'octets
   http.end();
   journalRetirer(base, n);
   journalPerdues = 0;
@@ -2195,14 +2489,14 @@ static void verifierMiseAJour(bool installer) {
   return;
 #else
   HTTPClient http;
-  if (!ouvrirRequete(http, "/carte/manifeste", false)) { Console.println("Mise à jour : relais injoignable."); return; }
+  if (!ouvrirRequete(http, "/carte/manifeste")) { Console.println("Mise à jour : relais injoignable."); return; }
   int code = http.GET();
   if (code != 200) {
     Console.printf("Mise à jour : pas de manifeste (code %d). Release GitHub publiée avec firmware.json ?\n", code);
     http.end();
     return;
   }
-  String rep = http.getString();
+  String rep = lireReponse(http, 4096);
   http.end();
   JsonDocument doc;
   if (deserializeJson(doc, rep) != DeserializationError::Ok) { Console.println("Mise à jour : manifeste illisible."); return; }
@@ -2219,6 +2513,13 @@ static void verifierMiseAJour(bool installer) {
   Console.printf("Version installée : %lu | dernière publiée : %lu (%s, %lu octets, signature OK)\n",
                  (unsigned long)FW_VERSION, (unsigned long)version, tag.c_str(), (unsigned long)taille);
   if (version <= (uint32_t)FW_VERSION) { Console.println("La carte est à jour."); return; }
+  // Une version qui a déjà échoué sur cette carte (retour automatique à l'ancienne) n'est pas réinstallée à distance :
+  // sinon une console volée pourrait la réinstaller en boucle (« maj installer » puis « reboot »), en usant la flash.
+  if (version == prefsOta.getULong("refusee", 0)) {
+    Console.printf("Mise à jour REFUSÉE : la version %lu a déjà échoué sur cette carte (redémarrages en boucle). Publie "
+                   "une version corrigée, ou tape 'maj oublier' au câble USB pour l'autoriser à nouveau.\n", (unsigned long)version);
+    return;
+  }
   if (!installer) { Console.println("Pour l'installer : maj installer"); return; }
 
   const esp_partition_t* cible = esp_ota_get_next_update_partition(NULL);
@@ -2228,7 +2529,7 @@ static void verifierMiseAJour(bool installer) {
     return;
   }
   String chemin = "/carte/firmware?tag=" + tag;
-  if (!ouvrirRequete(http, chemin.c_str(), false)) { Console.println("Mise à jour : relais injoignable."); return; }
+  if (!ouvrirRequete(http, chemin.c_str())) { Console.println("Mise à jour : relais injoignable."); return; }
   http.setTimeout(20000);
   code = http.GET();
   if (code != 200) { Console.printf("Mise à jour : téléchargement refusé (code %d).\n", code); http.end(); return; }
@@ -2268,6 +2569,11 @@ static void verifierMiseAJour(bool installer) {
 #endif
 }
 
+// Oublie le suivi de l'essai en cours (garde « refusee » : la dernière version qui a échoué).
+void oublierEssaiOta() {
+  prefsOta.remove("anc"); prefsOta.remove("nouv"); prefsOta.remove("vers"); prefsOta.remove("essai");
+}
+
 // Au démarrage : suivi d'une mise à jour récente (appelée tout au début de setup).
 void verifierDemarrageOta() {
   prefsOta.begin("ota", false);
@@ -2278,8 +2584,12 @@ void verifierDemarrageOta() {
     return;
   }
   // Ce n'est pas la version installée à distance (flash USB entre-temps, ou retour en arrière déjà fait) : on oublie.
+  // Si l'on tourne sur l'ANCIEN emplacement avec un programme plus ancien, la nouvelle version a échoué (retour fait
+  // par le démarreur de l'ESP32 ou par nous) : on la note, pour ne pas la réinstaller à distance.
   if (nouv != actuelle->label || prefsOta.getULong("vers", 0) != (uint32_t)FW_VERSION) {
-    prefsOta.clear();
+    uint32_t vers = prefsOta.getULong("vers", 0);
+    oublierEssaiOta();
+    if (nouv != actuelle->label && vers > (uint32_t)FW_VERSION) prefsOta.putULong("refusee", vers);
     esp_ota_mark_app_valid_cancel_rollback();
     return;
   }
@@ -2287,19 +2597,22 @@ void verifierDemarrageOta() {
   prefsOta.putUChar("essai", essai);
   otaAncienne = prefsOta.getString("anc", "");
   otaEnEssai = true;
-  if (essai > OTA_DEMARRAGES_MAX) retourAncienneVersion("redémarrages en boucle");
+  if (essai > OTA_DEMARRAGES_MAX) retourAncienneVersion("redémarrages en boucle", true);
 }
 
-// Revient au programme précédent, resté intact dans l'autre emplacement.
-void retourAncienneVersion(const char* raison) {
+// Revient au programme précédent, resté intact dans l'autre emplacement. marquer = la version elle-même est en cause
+// (redémarrages en boucle) : elle ne sera plus réinstallée à distance (« maj oublier » au câble USB pour l'autoriser).
+// Pas de marque si la cause peut être extérieure (relais injoignable, Wi-Fi) : on pourra la réinstaller.
+void retourAncienneVersion(const char* raison, bool marquer) {
   const esp_partition_t* p = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_ANY, otaAncienne.c_str());
-  prefsOta.clear();
+  oublierEssaiOta();
   otaEnEssai = false;
   if (p == NULL || esp_ota_set_boot_partition(p) != ESP_OK) {
     Console.printf("Nouvelle version en échec (%s), mais retour impossible : on la garde.\n", raison);
     esp_ota_mark_app_valid_cancel_rollback();
     return;
   }
+  if (marquer) prefsOta.putULong("refusee", (uint32_t)FW_VERSION);   // pas de réinstallation à distance de cette version
   Console.printf("Nouvelle version en échec (%s) : retour à l'ancienne (%s), redémarrage.\n", raison, otaAncienne.c_str());
   delay(300);
   ESP.restart();
@@ -2315,11 +2628,13 @@ void surveillerOta() {
   tPrec = now;
   if (now >= OTA_VALIDATION_MS && tDernierSyncOK != 0) {
     otaEnEssai = false;
-    prefsOta.clear();
+    oublierEssaiOta();
     esp_ota_mark_app_valid_cancel_rollback();
     Console.printf("Nouvelle version %lu validée.\n", (unsigned long)FW_VERSION);
   } else if (avecReseau >= OTA_DELAI_MAX_MS) {
-    retourAncienneVersion("relais jamais joint après 10 min de Wi-Fi");
+    retourAncienneVersion("relais jamais joint après 10 min de Wi-Fi", false);
+  } else if (now >= OTA_ESSAI_MAX_MS) {
+    retourAncienneVersion("aucun échange avec le relais en 20 min (Wi-Fi perdu ?)", false);
   }
 }
 
@@ -2338,16 +2653,26 @@ void tacheRelais(void* param) {
     if (demandeMaj != 0) {
       bool installer = (demandeMaj == 2);
       demandeMaj = 0;
-      if (ESP.getMaxAllocHeap() < TLS_BLOC_MIN_OCTETS) Console.println("Mise à jour : mémoire insuffisante, réessaie.");
-      else verifierMiseAJour(installer);
+      if (mutexTls && xSemaphoreTake(mutexTls, pdMS_TO_TICKS(20000)) != pdTRUE) {
+        Console.println("Mise à jour : une autre connexion HTTPS est en cours, réessaie.");
+      } else {
+        if (ESP.getMaxAllocHeap() < TLS_BLOC_MIN_OCTETS) Console.println("Mise à jour : mémoire insuffisante, réessaie.");
+        else verifierMiseAJour(installer);
+        if (mutexTls) xSemaphoreGive(mutexTls);
+      }
       syncDemandee = true;
     }
     bool presquePlein = journalLong > JOURNAL_TAILLE / 2;
     if (!syncDemandee && !presquePlein && now - tSync < attente) continue;
     syncDemandee = false;
     tSync = now;
-    if (ESP.getMaxAllocHeap() < TLS_BLOC_MIN_OCTETS) { attente = 10000; continue; }
-    if (synchroniserRelais()) {
+    if (mutexTls && xSemaphoreTake(mutexTls, pdMS_TO_TICKS(20000)) != pdTRUE) { attente = 2000; continue; }
+    if (ESP.getMaxAllocHeap() < TLS_BLOC_MIN_OCTETS) { if (mutexTls) xSemaphoreGive(mutexTls); attente = 10000; continue; }
+    bool syncOK = synchroniserRelais();
+    clientRelais.stop();    // une connexion par échange : on libère tout de suite la mémoire de la connexion chiffrée
+    if (mutexTls) xSemaphoreGive(mutexTls);
+    tSync = millis();       // l'attente suivante part de la FIN de l'échange : AirCarto a sa place entre deux
+    if (syncOK) {
       echecs = 0;
       nbSyncOK++;
       tDernierSyncOK = millis();
@@ -2355,11 +2680,9 @@ void tacheRelais(void* param) {
     } else {
       nbSyncEchecs++;
       consoleLive = false;
-      clientRelais.stop();
       if (echecs < 10) echecs++;
       attente = min(SYNC_ERREUR_MAX_MS, SYNC_REPOS_MS * echecs);   // 30 s, 60 s, 90 s... jusqu'à 5 min
     }
-    if (!consoleLive) clientRelais.stop();    // au repos : on libère la mémoire de la connexion chiffrée
   }
 }
 
@@ -2376,7 +2699,16 @@ void journalEcrire(const uint8_t*, size_t) {}
 // SÉCURITÉ :
 //  - à la première connexion, l'écran affiche un CODE À 6 CHIFFRES à taper sur le téléphone : il faut VOIR l'écran
 //    pour s'appairer (appairage chiffré, protégé contre l'interception) ; le téléphone est ensuite reconnu ;
-//  - tant que l'appairage n'est pas fait, la carte n'envoie rien et ignore tout ce qu'elle reçoit ;
+//  - un NOUVEAU téléphone n'est accepté que pendant FENETRE_APPAIRAGE_MS après « bt appairer » au câble USB, ou,
+//    si l'option est activée (« bt demarrage on », câble USB ; désactivée par défaut), après une mise sous tension
+//    (débrancher / rebrancher la carte). Le reste du temps, le code n'est jamais affiché : quelqu'un qui voit l'écran
+//    depuis la pièce ne peut pas appairer son téléphone. Un redémarrage demandé à distance (reboot) ne rouvre jamais
+//    la fenêtre. La fenêtre se referme dès qu'un nouveau téléphone s'est appairé ;
+//  - « bt liste » / « bt oublier <n> » (câble USB) : voir les téléphones appairés, en retirer UN ;
+//  - appairage « Secure Connections » seulement, clé de 16 octets (platformio.ini : MYNEWT_VAL_BLE_SM_SC_ONLY) :
+//    l'ancien appairage « legacy », dont le code se retrouve en écoutant l'échange, est refusé ;
+//  - tant que l'appairage n'est pas fait, la carte n'envoie rien et ignore tout ce qu'elle reçoit ; une connexion
+//    qui ne s'appaire pas est coupée au bout de BT_SANS_APPAIRAGE_MS (elle bloquerait la console Bluetooth) ;
 //  - mêmes commandes qu'à distance seulement (liste blanche) : Wi-Fi, clé, jeton, effacements = câble USB ;
 //  - « bt oublier » (au câble USB) efface les téléphones connus.
 #if BLUETOOTH_ACTIF
@@ -2385,16 +2717,35 @@ static const char* NUS_RX      = "6E400002-B5A3-F393-E0A9-E50E24DCCA9E";   // le
 static const char* NUS_TX      = "6E400003-B5A3-F393-E0A9-E50E24DCCA9E";   // la carte répond ici (notifications)
 static const size_t BT_TAMPON  = 2048;            // texte en attente d'envoi (au-delà, les plus vieilles lignes sautent)
 static const unsigned long BT_PAS_MS = 15;        // un paquet au plus toutes les 15 ms (la radio suit sans perte)
+static const unsigned long FENETRE_APPAIRAGE_MS = 120000UL;  // nouveau téléphone : 2 min après mise sous tension / « bt appairer »
+static const unsigned long BT_SANS_APPAIRAGE_MS = 90000UL;   // connexion non appairée coupée au bout de 90 s
 
 NimBLECharacteristic* btTx = nullptr;
 volatile bool btConnecte = false;     // un téléphone est connecté
 volatile bool btAutorise = false;     // ... et appairé (chiffré + code vérifié) : on peut lui parler
 volatile uint16_t btConnexion = 0xFFFF;
 volatile uint16_t btMtu = 23;         // taille des paquets négociée (23 par défaut : 20 octets de texte)
+volatile unsigned long tFenetreAppairage = 0;   // ouverture de la fenêtre d'appairage (0 = fermée)
+volatile unsigned long tBtConnexion = 0;        // début de la connexion en cours
+volatile bool btRefuser = false;                // nouveau téléphone hors fenêtre : à déconnecter (par loop)
+volatile bool btCodeMontre = false;             // un code a été affiché pour cette connexion (nouvel appairage)
+
 char btTampon[BT_TAMPON];
 size_t btLong = 0;
 SemaphoreHandle_t mutexBt = NULL;
 String btNom;
+
+bool appairageOuvert() {
+  unsigned long t = tFenetreAppairage;
+  return t != 0 && millis() - t < FENETRE_APPAIRAGE_MS;
+}
+
+// Commande « bt appairer » (câble USB) : un nouveau téléphone peut s'appairer pendant FENETRE_APPAIRAGE_MS.
+void ouvrirAppairage() {
+  tFenetreAppairage = millis() | 1UL;
+  Console.printf("Bluetooth : appairage ouvert pendant %lu s. Connecte-toi à %s et tape le code affiché sur l'écran.\n",
+                 FENETRE_APPAIRAGE_MS / 1000UL, btNom.c_str());
+}
 
 void btEcrire(const uint8_t* b, size_t n) {
   if (!btAutorise || mutexBt == NULL) return;
@@ -2413,6 +2764,17 @@ void btEcrire(const uint8_t* b, size_t n) {
 // Appelée à chaque tour de loop() : envoie un paquet du tampon (taille négociée, 180 octets au plus).
 void btEnvoyer(unsigned long now) {
   static unsigned long tPaquet = 0;
+  // Connexion pas (encore) appairée : nouveau téléphone hors fenêtre d'appairage, ou qui traîne sans s'appairer.
+  // (comparaison signée : onConnect, sur l'autre cœur, peut avoir noté une heure plus récente que « now »)
+  if (btConnecte && !btAutorise && (btRefuser || (long)(now - tBtConnexion) >= (long)BT_SANS_APPAIRAGE_MS)) {
+    bool refus = btRefuser;
+    btRefuser = false;
+    tBtConnexion = now;   // une seule tentative de déconnexion par délai
+    NimBLEDevice::getServer()->disconnect(btConnexion);
+    if (refus) Console.println("Bluetooth : nouveau téléphone refusé (appairage fermé). Pour en ajouter un : 'bt appairer' au câble USB, ou débranche / rebranche la carte.");
+    else LOG("Bluetooth : connexion sans appairage coupée.\n");
+    return;
+  }
   if (!btAutorise || btTx == nullptr || btLong == 0 || now - tPaquet < BT_PAS_MS) return;
   tPaquet = now;
   uint8_t paquet[180];
@@ -2434,6 +2796,9 @@ class BtServeur : public NimBLEServerCallbacks {
   void onConnect(NimBLEServer* serveur, NimBLEConnInfo& info) override {
     btConnecte = true;
     btAutorise = false;
+    btRefuser = false;
+    btCodeMontre = false;
+    tBtConnexion = millis();
     btConnexion = info.getConnHandle();
     btMtu = 23;
     NimBLEDevice::startSecurity(info.getConnHandle());   // demande l'appairage tout de suite (code sur l'écran)
@@ -2442,32 +2807,62 @@ class BtServeur : public NimBLEServerCallbacks {
     btConnecte = false;
     btAutorise = false;
     codeAppairage = 0;
-    btLong = 0;
+    if (mutexBt && xSemaphoreTake(mutexBt, pdMS_TO_TICKS(50)) == pdTRUE) {   // btEcrire peut écrire en même temps
+      btLong = 0;
+      xSemaphoreGive(mutexBt);
+    }
     LOG("Bluetooth : téléphone déconnecté.\n");
   }
   void onMTUChange(uint16_t mtu, NimBLEConnInfo& info) override { btMtu = mtu; }
-  // Le téléphone demande le code : on en tire un au hasard et on l'affiche sur l'écran.
+  // Le téléphone demande le code (nouvel appairage) : on en tire un au hasard et on l'affiche sur l'écran,
+  // SEULEMENT si la fenêtre d'appairage est ouverte. Sinon le code n'est montré nulle part : l'appairage échoue,
+  // et loop() coupe la connexion (btEnvoyer). Les téléphones déjà appairés ne passent jamais par ici.
   uint32_t onPassKeyDisplay() override {
     uint32_t code = 100000 + esp_random() % 900000;
+    if (!appairageOuvert()) {
+      codeAppairage = 0;
+      btRefuser = true;
+      return code;
+    }
     codeAppairage = code;
     tCodeAppairage = millis();
+    btCodeMontre = true;
     return code;
   }
   void onAuthenticationComplete(NimBLEConnInfo& info) override {
     codeAppairage = 0;
-    if (info.isEncrypted() && info.isAuthenticated()) {
+    // chiffré + code vérifié + clé de 16 octets (128 bits)
+    if (info.isEncrypted() && info.isAuthenticated() && info.getSecKeySize() == 16) {
       btAutorise = true;
+      if (btCodeMontre) tFenetreAppairage = 0;   // un nouveau téléphone par fenêtre : elle se referme
       Console.printf("Bluetooth : téléphone appairé (console %s). Tape 'aide'.\n", btNom.c_str());
     } else {
+      // Appairage chiffré mais SANS code (« Just Works », téléphone qui se dit sans clavier) : NimBLE l'a quand même
+      // enregistré ; on l'efface, sinon ces appairages s'accumulent et poussent dehors ceux des vrais téléphones.
+      // (Pas d'effacement sur un simple échec de chiffrement : quelqu'un qui usurperait l'adresse d'un vrai téléphone
+      // ferait sinon effacer son appairage.)
+      if (info.isEncrypted() && !(info.isAuthenticated() && info.getSecKeySize() == 16))
+        NimBLEDevice::deleteBond(info.getIdAddress());
       NimBLEDevice::getServer()->disconnect(info.getConnHandle());   // code faux ou appairage sans code : dehors
     }
+  }
+};
+
+// Mémoire des appairages pleine (3 téléphones) : NimBLE effacerait le plus ancien pour faire de la place. Hors de la
+// fenêtre d'appairage, on refuse : personne ne peut pousser dehors les téléphones déjà appairés.
+class BtStockage : public NimBLEDeviceCallbacks {
+  int onStoreStatus(struct ble_store_status_event* e, void* arg) override {
+    if (!appairageOuvert()) return BLE_HS_ESTORE_CAP;
+    // fenêtre ouverte : on ne fait de place (en oubliant le plus ancien) que pour un appairage AVEC code
+    if (e->event_code == BLE_STORE_EVENT_OVERFLOW) return btCodeMontre ? ble_store_util_status_rr(e, arg) : BLE_HS_ESTORE_CAP;
+    return 0;
   }
 };
 
 class BtReception : public NimBLECharacteristicCallbacks {
   String ligne;
   void onWrite(NimBLECharacteristic* c, NimBLEConnInfo& info) override {
-    if (!(info.isEncrypted() && info.isAuthenticated())) return;   // pas appairé : ignoré
+    if (!(info.isEncrypted() && info.isAuthenticated() && info.getSecKeySize() == 16)) return;   // pas appairé : ignoré
     NimBLEAttValue v = c->getValue();
     const uint8_t* d = v.data();
     for (size_t i = 0; i < v.size(); i++) {
@@ -2492,9 +2887,18 @@ void initialiserBluetooth() {
   unsigned l = deviceId.length();
   btNom = (l >= 5) ? "MAir-" + deviceId.substring(l - 5, l - 3) + deviceId.substring(l - 2) : String("MAir");
   NimBLEDevice::init(btNom.c_str());
+  NimBLEDevice::setDeviceCallbacks(new BtStockage());
   NimBLEDevice::setSecurityAuth(true, true, true);           // mémoriser le téléphone, code obligatoire, chiffrement moderne
   NimBLEDevice::setSecurityIOCap(BLE_HS_IO_DISPLAY_ONLY);    // la carte AFFICHE le code, le téléphone le tape
   NimBLEDevice::setMTU(185);
+  // « Secure Connections » seulement, clé de 16 octets : déjà réglé dans platformio.ini (MYNEWT_VAL_BLE_SM_SC_ONLY),
+  // forcé ici aussi (NimBLE 2.x le lit à chaque appairage), puis vérifié : on prévient si ce n'est pas actif.
+  ble_hs_cfg.sm_sc_only = 1;
+  if (!ble_hs_cfg.sm_sc_only || !ble_hs_cfg.sm_sc || !ble_hs_cfg.sm_mitm)
+    Console.println("ATTENTION Bluetooth : appairage sécurisé (Secure Connections + code) NON actif !");
+  // Option « bt demarrage on » : fenêtre d'appairage ouverte à la mise sous tension (débrancher / rebrancher, bouton
+  // EN), jamais après un redémarrage logiciel (reboot à distance, mise à jour, plantage).
+  if (btAppairageDemarrage && esp_reset_reason() == ESP_RST_POWERON) tFenetreAppairage = millis() | 1UL;
   NimBLEServer* serveur = NimBLEDevice::createServer();
   serveur->setCallbacks(new BtServeur());
   serveur->advertiseOnDisconnect(true);
@@ -2507,6 +2911,28 @@ void initialiserBluetooth() {
   auto* pub = NimBLEDevice::getAdvertising();   // (NimBLEAdvertising)
   pub->setName(btNom.c_str());
   pub->start();
+}
+
+// Commande « bt liste » (câble USB) : téléphones appairés, numérotés pour « bt oublier <n> ».
+void listerTelephones() {
+  int n = NimBLEDevice::getNumBonds();
+  if (n <= 0) { Console.println("Aucun téléphone Bluetooth appairé."); return; }
+  Console.printf("Téléphones Bluetooth appairés (%d) :\n", n);
+  for (int i = 0; i < n; i++) Console.printf("  %d) %s\n", i + 1, NimBLEDevice::getBondedAddress(i).toString().c_str());
+}
+
+// Commande « bt oublier <n> » (câble USB) : retire UN téléphone (numéro de « bt liste »).
+void oublierTelephone(int numero) {
+  int n = NimBLEDevice::getNumBonds();
+  if (numero < 1 || numero > n) { Console.println("Numéro invalide : voir 'bt liste'."); return; }
+  NimBLEAddress a = NimBLEDevice::getBondedAddress(numero - 1);
+  if (!NimBLEDevice::deleteBond(a)) { Console.println("Suppression impossible."); return; }
+  // s'il est connecté en ce moment, on le déconnecte
+  if (btConnecte) {
+    NimBLEConnInfo info = NimBLEDevice::getServer()->getPeerInfoByHandle(btConnexion);
+    if (info.getIdAddress() == a) NimBLEDevice::getServer()->disconnect(btConnexion);
+  }
+  Console.printf("Téléphone %d (%s) oublié. Il lui faudra un nouvel appairage.\n", numero, a.toString().c_str());
 }
 
 // Commande « bt oublier » (câble USB) : efface les téléphones mémorisés.
@@ -3862,14 +4288,18 @@ void afficherAide() {
   Console.println("  wifi add <nom> [mdp]  ajoute / modifie un Wi-Fi classique (sans mdp = réseau ouvert)");
   Console.println("  wifi ent <nom> <identifiant> <mdp>   ajoute un WPA2 Entreprise (ex. eduroam)");
   Console.println("                        nom avec espaces : entre guillemets, ex. wifi add \"Box de Paul\" mdp");
-  Console.println("  wifi del <n>          supprime le réseau n (numéro de 'wifi list')");
+  Console.println("  wifi del <n|nom>       supprime UN réseau : son numéro ('wifi list') ou son nom");
   Console.println("  wifi scan             liste les réseaux visibles (* = connu)");
   Console.println("  wifi connect          relance la connexion tout de suite");
   Console.println("  set cle <clé>         clé du groupe AirCarto (32 caractères)");
   Console.println("  set relais <url>      adresse du relais Cloudflare (https://...workers.dev)");
   Console.println("  set jeton <jeton>     jeton secret de la carte auprès du relais (16 caractères au moins)");
   Console.println("  maj                   cherche une mise à jour publiée (maj installer : l'installe)");
-  Console.println("  bt oublier            efface les téléphones Bluetooth appairés");
+  Console.println("  maj oublier           réautorise une version qui a échoué sur la carte");
+  Console.println("  bt appairer           autorise un nouveau téléphone Bluetooth pendant 2 min");
+  Console.println("  bt demarrage on|off   autorise aussi un nouveau téléphone 2 min après la mise sous tension");
+  Console.println("  bt liste              téléphones Bluetooth appairés");
+  Console.println("  bt oublier [n]        oublie le téléphone n ('bt liste'), ou tous sans numéro");
   Console.println("  reboot                redémarre la carte");
   Console.println("  verbose on|off        active/coupe l'affichage automatique des mesures");
   Console.println("  calib oui             calibrage du zéro CO2 (seulement après 20 min à l'air libre)");
@@ -3877,7 +4307,7 @@ void afficherAide() {
   Console.println("  oublier               efface identifiants et clé de la carte");
   Console.println("Saisie : Retour arrière = efface 1 caractère | Ctrl+U = efface toute la ligne");
   Console.println("À distance (console du relais, Bluetooth) : aide, status, verbose, calib, reboot, wifi scan,");
-  Console.println("wifi connect, maj. Wi-Fi, clé, jeton, relais et effacements : câble USB seulement.");
+  Console.println("wifi connect, maj. Wi-Fi, clé, jeton, relais, calib oui, bt et effacements : câble USB seulement.");
 }
 
 // Résumé de l'état de la carte (réseau, clé, file d'attente...) à la demande, commande « status ».
@@ -3888,7 +4318,7 @@ void afficherStatus() {
   Console.printf("uptime / mémoire : %lu s | %u octets libres (plus grand bloc : %u)\n", millis() / 1000UL,
                 (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
   if (reseauOK()) {
-    Console.printf("WiFi : connecté à %s (%s) | IP %s | %d dBm\n", WiFi.SSID().c_str(), typeReseau(reseauCourant),
+    Console.printf("WiFi : connecté à %s (%s) | IP %s | %d dBm\n", nomAffichable(WiFi.SSID()).c_str(), typeReseau(reseauCourant),
                   WiFi.localIP().toString().c_str(), WiFi.RSSI());
   } else if (!WIFI_ACTIVE) {
     Console.println("WiFi : désactivé (WIFI_ACTIVE 0)");
@@ -3898,11 +4328,22 @@ void afficherStatus() {
   }
   Console.printf("réseaux en mémoire : %u / %u | coupures WiFi : %u\n", (unsigned)nbReseaux, (unsigned)NB_WIFI_MAX,
                 (unsigned)nbCoupuresWifi);
+#if WIFI_ACTIVE
+  bool aEntreprise = false;
+  for (uint8_t i = 0; i < nbReseaux; i++) if (estEntreprise(i)) aEntreprise = true;
+  if (aEntreprise)
+    Console.println(caEduroamValide == 1 ? "certificat du serveur ENT : vérifié (ca_eduroam.h)"
+                    : caEduroamValide == 0 ? "certificat du serveur ENT : ca_eduroam.h ILLISIBLE (connexion impossible)"
+                    : "certificat du serveur ENT : NON vérifié, mot de passe ENT exposé (voir src/ca_eduroam.h.exemple)");
+#endif
   Console.printf("heure NTP : %s | mode nuit : %s\n", heureValide() ? "valide" : "pas encore", estNuit() ? "oui" : "non");
   Console.printf("clé du groupe : %s%s\n", cleOK() ? "présente (32 car.)" : "ABSENTE ou mauvaise longueur",
                 cleInvalide ? " | REFUSÉE par le serveur (nouvel essai toutes les 15 min)" : "");
-  Console.printf("dernier envoi : code HTTP %d | état %u | écart %lu ms (dont marge %lu ms)\n", dernierCodeHttp,
+  Console.printf("dernier envoi (%s) : code HTTP %d | état %u | écart %lu ms (dont marge %lu ms)",
+                AIRCARTO_HTTPS ? "HTTPS" : "HTTP, clé lisible sur le réseau", dernierCodeHttp,
                 (unsigned)etatEnvoi, ecartCourantMs(), margePushMs);
+  if (nbReportsMemoire > 0) Console.printf(" | reportés (mémoire ou autre connexion HTTPS) : %u", (unsigned)nbReportsMemoire);
+  Console.println();
   Console.printf("file d'attente : %u mesures (%u octets de fichier)", (unsigned)nbLignesAttente, (unsigned)tailleBacklog);
   if (nbLignesAttente > 0 && reseauOK()) {
     // créneaux libres pour le retard = 1 envoi / écart, moins les mesures fraîches (1 / période)
@@ -3937,7 +4378,12 @@ void afficherStatus() {
   Console.println();
 #endif
 #if BLUETOOTH_ACTIF
-  Console.printf("Bluetooth : %s | %s\n", btNom.c_str(), btAutorise ? "téléphone appairé connecté" : btConnecte ? "connexion en cours (code à l'écran)" : "en attente");
+  Console.printf("Bluetooth : %s | %s | %d téléphone(s) appairé(s) ('bt liste')\n", btNom.c_str(),
+                 btAutorise ? "téléphone appairé connecté" : btConnecte ? "connexion en cours" : "en attente",
+                 NimBLEDevice::getNumBonds());
+  Console.printf("Bluetooth : nouveau téléphone %s | à la mise sous tension : %s | Secure Connections seul : %s\n",
+                 appairageOuvert() ? "ACCEPTÉ (fenêtre ouverte)" : "refusé ('bt appairer' au câble USB)",
+                 btAppairageDemarrage ? "oui" : "non", ble_hs_cfg.sm_sc_only ? "oui" : "NON");
 #endif
 }
 
@@ -4014,8 +4460,8 @@ void listerReseaux() {
   Console.printf("Réseaux en mémoire (%u / %u) :\n", (unsigned)nbReseaux, (unsigned)NB_WIFI_MAX);
   for (uint8_t i = 0; i < nbReseaux; i++) {
     bool actif = reseauOK() && reseauCourant == (int8_t)i;
-    Console.printf("  %u) %-24s %-6s", (unsigned)(i + 1), reseaux[i].ssid.c_str(), typeReseau(i));
-    if (estEntreprise(i)) Console.printf(" id %s", reseaux[i].eapId.c_str());
+    Console.printf("  %u) %-24s %-6s", (unsigned)(i + 1), nomAffichable(reseaux[i].ssid).c_str(), typeReseau(i));
+    if (estEntreprise(i)) Console.printf(" id %s", nomAffichable(reseaux[i].eapId).c_str());
     if (actif) Console.print("  <- connecté");
     else if ((int8_t)i == dernierReseau) Console.print("  (dernier utilisé)");
     Console.println();
@@ -4031,12 +4477,15 @@ void scannerReseaux() {
   Console.println("Recherche des réseaux visibles...");
   int n = WiFi.scanNetworks(false, false);
   if (n <= 0) { Console.println("Aucun réseau visible."); WiFi.scanDelete(); return; }
+  // Le repère « * » (réseau enregistré dans la carte) n'est montré qu'au câble USB : à distance et en Bluetooth,
+  // la liste des réseaux visibles ne révèle pas ceux que la carte connaît (commande sensible = sortie USB seule).
+  bool montrerConnus = (sortieUsbSeule > 0);
   for (int j = 0; j < n; j++) {
     bool connu = false;
-    for (uint8_t i = 0; i < nbReseaux; i++) if (reseaux[i].ssid == WiFi.SSID(j)) connu = true;
+    if (montrerConnus) for (uint8_t i = 0; i < nbReseaux; i++) if (reseaux[i].ssid == WiFi.SSID(j)) connu = true;
     bool ent = (WiFi.encryptionType(j) == WIFI_AUTH_WPA2_ENTERPRISE);
     bool ouvert = (WiFi.encryptionType(j) == WIFI_AUTH_OPEN);
-    Console.printf(" %c %-28s %4d dBm  %s\n", connu ? '*' : ' ', WiFi.SSID(j).c_str(), WiFi.RSSI(j),
+    Console.printf(" %c %-28s %4d dBm  %s\n", connu ? '*' : ' ', nomAffichable(WiFi.SSID(j)).c_str(), WiFi.RSSI(j),
                   ent ? "ENTREPRISE (wifi ent)" : (ouvert ? "OUVERT" : "WPA (wifi add)"));
   }
   WiFi.scanDelete();
@@ -4061,18 +4510,26 @@ void commandeWifi(const String &s) {
     String mdp = resteLigne(s, pos);
     if (ssid.length() == 0 || ssid.length() > 32) { Console.println("Nom de réseau absent ou trop long (32 max)."); return; }
     if (ent && (id.length() == 0 || mdp.length() == 0)) { Console.println("Usage : wifi ent <nom> <identifiant> <mdp>"); return; }
+    if (ent && caEduroamValide != 1)
+      Console.println("ATTENTION : sans certificat vérifié (src/ca_eduroam.h), un faux point d'accès peut capturer ce mot de passe. "
+                      "Préfère un réseau dédié aux objets, ou ajoute le certificat.");
     if (!ent && mdp.length() > 0 && (mdp.length() < 8 || mdp.length() > 63)) {
       Console.println("Mot de passe Wi-Fi : 8 à 63 caractères."); return;
     }
     int i = ajouterReseau(ssid, mdp, id);
     if (i < 0) { Console.println("Mémoire pleine (5 réseaux) : supprime-en un avec 'wifi del <n>'."); return; }
-    Console.printf("Réseau %u enregistré : %s (%s). Connexion...\n", (unsigned)(i + 1), ssid.c_str(), typeReseau(i));
+    Console.printf("Réseau %u enregistré : %s (%s). Connexion...\n", (unsigned)(i + 1), nomAffichable(ssid).c_str(), typeReseau(i));
     relancerWifi(true);
   } else if (sous == "del") {
-    int n = motSuivant(s, pos).toInt();
-    if (n < 1 || n > nbReseaux) { Console.println("Numéro invalide : voir 'wifi list'."); return; }
-    int i = n - 1;
-    Console.printf("Réseau %s supprimé.\n", reseaux[i].ssid.c_str());
+    // « wifi del 2 » (numéro de 'wifi list') ou « wifi del MaBox » / « wifi del "Box de Paul" » (nom exact)
+    String quoi = motSuivant(s, pos);
+    int i = -1;
+    bool chiffres = quoi.length() > 0;
+    for (unsigned k = 0; k < quoi.length(); k++) if (!isDigit(quoi[k])) chiffres = false;
+    if (chiffres && quoi.toInt() >= 1 && quoi.toInt() <= nbReseaux) i = quoi.toInt() - 1;
+    for (uint8_t k = 0; i < 0 && k < nbReseaux; k++) if (reseaux[k].ssid == quoi) i = k;
+    if (i < 0) { Console.println("Réseau introuvable : donne son numéro ou son nom exact (voir 'wifi list')."); return; }
+    Console.printf("Réseau %s supprimé.\n", nomAffichable(reseaux[i].ssid).c_str());
     for (int k = i + 1; k < nbReseaux; k++) reseaux[k - 1] = reseaux[k];
     nbReseaux--;
     reseaux[nbReseaux] = ReseauWifi();
@@ -4086,7 +4543,7 @@ void commandeWifi(const String &s) {
     scannerReseaux();
   } else if (sous == "connect") {
     Console.println("Relance de la connexion Wi-Fi...");
-    relancerWifi(true);
+    relancerWifi(sortieUsbSeule > 0);   // à distance : pas d'écran de connexion ni de noms des réseaux essayés
   } else {
     Console.println("Commande wifi inconnue. Tape 'aide'.");
   }
@@ -4133,7 +4590,7 @@ void executerCommande(const String &cmd) {
     Console.println("MH-Z19C désactivé (MHZ_ACTIVE 0).");
 #endif
   } else if (bas == "calib") {
-    Console.println("Calibrage : l'air doit être extérieur (~400 ppm) depuis 20 min. Tape 'calib oui' pour confirmer.");
+    Console.println("Calibrage : l'air doit être extérieur (~400 ppm) depuis 20 min. Tape 'calib oui' au câble USB pour confirmer.");
   } else if (bas == "maj" || bas == "maj installer") {
 #if CONSOLE_DISTANTE
     if (!relaisConfigure) { Console.println("Mise à jour : relais non configuré (set relais / set jeton, câble USB)."); return; }
@@ -4142,6 +4599,35 @@ void executerCommande(const String &cmd) {
     Console.println(demandeMaj == 2 ? "Recherche et installation de la mise à jour..." : "Recherche d'une mise à jour...");
 #else
     Console.println("Mise à jour à distance désactivée (CONSOLE_DISTANTE 0).");
+#endif
+  } else if (bas == "maj oublier") {   // câble USB seulement (pas dans la liste blanche)
+#if CONSOLE_DISTANTE
+    prefsOta.remove("refusee");
+    Console.println("Mise à jour : plus aucune version refusée, 'maj installer' peut réinstaller la dernière publiée.");
+#endif
+  } else if (bas == "bt appairer") {
+#if BLUETOOTH_ACTIF
+    ouvrirAppairage();
+#else
+    Console.println("Bluetooth désactivé (BLUETOOTH_ACTIF 0).");
+#endif
+  } else if (bas == "bt demarrage on" || bas == "bt demarrage off") {
+    btAppairageDemarrage = (bas == "bt demarrage on");
+    prefs.putBool("bt_dem", btAppairageDemarrage);
+    Console.println(btAppairageDemarrage
+      ? "Bluetooth : un nouveau téléphone pourra s'appairer pendant 2 min après chaque mise sous tension."
+      : "Bluetooth : nouveau téléphone seulement après 'bt appairer' (câble USB).");
+  } else if (bas == "bt liste") {
+#if BLUETOOTH_ACTIF
+    listerTelephones();
+#else
+    Console.println("Bluetooth désactivé (BLUETOOTH_ACTIF 0).");
+#endif
+  } else if (bas.startsWith("bt oublier ")) {
+#if BLUETOOTH_ACTIF
+    oublierTelephone(bas.substring(11).toInt());
+#else
+    Console.println("Bluetooth désactivé (BLUETOOTH_ACTIF 0).");
 #endif
   } else if (bas == "bt oublier") {
 #if BLUETOOTH_ACTIF
@@ -4179,10 +4665,13 @@ void executerCommande(const String &cmd) {
 }
 
 // Commandes acceptées par Bluetooth et par la console à distance : rien qui touche aux mots de passe, à la clé,
-// au jeton, au relais, ni rien qui efface. Comparaison sur la commande ENTIÈRE (en minuscules, espaces réduits).
+// au jeton, au relais, rien qui efface, rien qui ait un effet durable. Comparaison sur la commande ENTIÈRE (en
+// minuscules, espaces réduits). « calib oui » n'y est plus : lancé depuis un téléphone appairé ou une console dont
+// le mot de passe aurait fuité, il fausserait les mesures de CO2 jusqu'au prochain calibrage (câble USB seulement).
+// MÊME LISTE dans relais/src/index.js (COMMANDES_AUTORISEES).
 bool commandeAutoriseeADistance(const String &bas) {
   static const char* const AUTORISEES[] = {
-    "aide", "help", "status", "verbose on", "verbose off", "calib", "calib oui", "reboot",
+    "aide", "help", "status", "verbose on", "verbose off", "calib", "reboot",
     "wifi scan", "wifi connect", "maj", "maj installer"
   };
   for (const char* a : AUTORISEES) if (bas == a) return true;
@@ -4191,7 +4680,55 @@ bool commandeAutoriseeADistance(const String &bas) {
 
 // Commande dont la sortie ne doit pas quitter le câble USB (noms de réseaux, identifiant ENT, longueurs...).
 bool commandeSensible(const String &bas) {
-  return bas == "wifi" || bas.startsWith("wifi ") || bas.startsWith("set ") || bas == "oublier" || bas == "bt oublier";
+  return bas == "wifi" || bas.startsWith("wifi ") || bas.startsWith("set ") || bas == "oublier" || bas.startsWith("bt ");
+}
+
+// Limites des commandes à distance (Bluetooth, relais) : rien ne doit pouvoir tourner en boucle.
+static const unsigned long ECART_COMMANDES_DISTANTES_MS = 1000UL;    // une commande par seconde (les suivantes attendent)
+static const unsigned long ECART_RESEAU_DISTANT_MS      = 30000UL;   // wifi scan / wifi connect / maj : une fois par 30 s
+static const unsigned long ECART_REBOOT_DISTANT_MS      = 300000UL;  // reboot : une fois par 5 min
+static const uint32_t      MARQUE_REBOOT_DISTANT        = 0x52454244UL;
+// Mémoire RTC : garde sa valeur pendant un redémarrage logiciel (pas après une coupure de courant). Elle dit si
+// CE démarrage vient d'un « reboot » demandé à distance : un compteur en RAM repartirait de zéro à chaque redémarrage
+// et n'empêcherait pas des redémarrages en boucle. (Pendant l'essai d'une nouvelle version, reboot et maj sont de
+// toute façon refusés à distance : un seul redémarrage avant validation la ferait revenir à l'ancienne.)
+RTC_NOINIT_ATTR uint32_t rebootDistant;
+bool demarreParRebootDistant = false;
+unsigned long tDerniereDistante = 0;   // dernière commande à distance exécutée (traiterCommandesAttente)
+
+// Au démarrage (setup) : ce démarrage vient-il d'un reboot demandé à distance ?
+void lireRebootDistant() {
+  demarreParRebootDistant = (rebootDistant == MARQUE_REBOOT_DISTANT && esp_reset_reason() == ESP_RST_SW);
+  rebootDistant = 0;
+}
+
+// Refuse une commande à distance trop rapprochée de la précédente du même genre (message, puis false).
+bool commandeDistantePermise(const String &bas, const char* origine) {
+  static unsigned long tReseauDistant = 0;
+  unsigned long now = millis();
+  bool reseau = bas.startsWith("wifi ") || bas.startsWith("maj");
+#if CONSOLE_DISTANTE
+  // Nouvelle version en essai (1 min + un échange avec le relais) : le démarreur de l'ESP32 revient à l'ancienne
+  // version au PREMIER redémarrage avant validation. Un reboot à distance pourrait donc annuler toute mise à jour.
+  if (otaEnEssai && (bas == "reboot" || bas.startsWith("maj"))) {
+    Console.printf("> %s : refusée depuis %s pendant l'essai d'une nouvelle version (réessaie dans 1 min).\n",
+                   bas.c_str(), origine);
+    return false;
+  }
+#endif
+  if (reseau && tReseauDistant != 0 && now - tReseauDistant < ECART_RESEAU_DISTANT_MS) {
+    Console.printf("> %s : refusée depuis %s (une fois par %lu s au plus).\n", bas.c_str(), origine,
+                   ECART_RESEAU_DISTANT_MS / 1000UL);
+    return false;
+  }
+  if (bas == "reboot" && demarreParRebootDistant && now < ECART_REBOOT_DISTANT_MS) {
+    Console.printf("> reboot : refusé depuis %s (déjà redémarrée à distance il y a moins de %lu min).\n", origine,
+                   ECART_REBOOT_DISTANT_MS / 60000UL);
+    return false;
+  }
+  if (reseau) tReseauDistant = now | 1UL;
+  if (bas == "reboot") rebootDistant = MARQUE_REBOOT_DISTANT;   // relu au démarrage suivant (lireRebootDistant)
+  return true;
 }
 
 // Point d'entrée de TOUTES les commandes (USB, Bluetooth, relais).
@@ -4209,12 +4746,15 @@ void executerCommandeSource(const String &cmd, uint8_t source) {
       Console.printf("> %s : refusée depuis %s (réservée au câble USB). Tape 'aide'.\n", debut.c_str(), origine);
       return;
     }
-    Console.printf("> %s   (%s)\n", cmd.c_str(), origine);
+    if (!commandeDistantePermise(bas, origine)) return;
+    Console.printf("> %s   (%s)\n", bas.c_str(), origine);
     executerCommande(bas);
     return;
   }
-  // USB : tout est permis. Une commande sensible écrit seulement sur l'USB ; les autres sont recopiées à distance.
-  if (commandeSensible(bas)) {
+  // USB : tout est permis. Seules les commandes de la liste blanche (sans secret) sont recopiées à distance avec ce
+  // qu'elles affichent ; toutes les autres restent sur l'USB, y compris une commande mal tapée qui contiendrait un
+  // mot de passe (« wfi ent eduroam id MDP »).
+  if (commandeSensible(bas) || !commandeAutoriseeADistance(bas)) {
     sortieUsbSeule++;
     executerCommande(cmd);
     sortieUsbSeule--;
@@ -4248,6 +4788,9 @@ void deposerCommande(const char* texte, uint8_t source) {
 
 void traiterCommandesAttente() {
   if (mutexCommandes == NULL || nbCommandesAttente == 0) return;
+  // Bluetooth et relais : une commande par seconde au plus ; les suivantes attendent leur tour dans la file.
+  if (tDerniereDistante != 0 && millis() - tDerniereDistante < ECART_COMMANDES_DISTANTES_MS) return;
+  tDerniereDistante = millis() | 1UL;
   CommandeAttente c;
   xSemaphoreTake(mutexCommandes, portMAX_DELAY);
   c = commandesAttente[0];
@@ -4331,6 +4874,8 @@ void setup() {
 
   mutexEnvoi = xSemaphoreCreateMutex();  // avant tout : loop() et la tâche d'envoi s'en servent
   mutexCommandes = xSemaphoreCreateMutex();   // commandes reçues par Bluetooth / relais
+  mutexTls = xSemaphoreCreateMutex();         // une seule connexion HTTPS à la fois (AirCarto / relais)
+  lireRebootDistant();                        // ce démarrage vient-il d'un « reboot » demandé à distance ?
 #if CONSOLE_DISTANTE
   mutexJournal = xSemaphoreCreateMutex();     // journal à distance
   verifierDemarrageOta();                     // nouvelle version en essai ? (retour à l'ancienne si elle boucle)
@@ -4342,6 +4887,12 @@ void setup() {
   deviceId = lireMac();
   // Relit Wi-Fi, clé du groupe, position de rejeu... enregistrés en mémoire permanente.
   chargerConfig();
+  verifierCaEduroam();
+  for (uint8_t i = 0; i < nbReseaux; i++)
+    if (estEntreprise(i) && caEduroamValide != 1) {
+      Console.println("ATTENTION : réseau entreprise sans certificat vérifié (ca_eduroam.h) : un faux point d'accès peut capturer ton mot de passe ENT.");
+      break;
+    }
 #if CONSOLE_DISTANTE
   majRelaisConfigure();
   Console.printf("Version du programme : %lu%s\n", (unsigned long)FW_VERSION, otaEnEssai ? " (nouvelle, en essai)" : "");
@@ -4393,7 +4944,14 @@ void setup() {
   // Watchdog : la carte redémarre toute seule si loop() reste bloquée 60 s
   esp_task_wdt_init(WDT_TIMEOUT_S, true);
   esp_task_wdt_add(NULL);
-  xTaskCreatePinnedToCore(tacheEnvoi, "envoi", 8192, NULL, 1, NULL, 1);  // réseau + fichier hors ligne, cœur 1 comme loop()
+#if AIRCARTO_HTTPS
+  // HTTPS vers AirCarto : seules les racines de Let's Encrypt sont acceptées (RACINES_AIRCARTO), le nom
+  // api.aircarto.fr et la date du certificat sont vérifiés ; poignée de main 10 s au plus.
+  clientAircarto.setCACert(RACINES_AIRCARTO);
+  clientAircarto.setHandshakeTimeout(10);
+#endif
+  // réseau + fichier hors ligne, cœur 1 comme loop() ; pile agrandie (8 -> 12 Ko) pour la poignée de main HTTPS
+  xTaskCreatePinnedToCore(tacheEnvoi, "envoi", 12288, NULL, 1, NULL, 1);
 #if CONSOLE_DISTANTE
   xTaskCreatePinnedToCore(tacheRelais, "relais", 12288, NULL, 1, NULL, 0); // console à distance + mise à jour (HTTPS)
 #endif
