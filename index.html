@@ -2859,8 +2859,33 @@ function rafraichirVue(chart) {
   appliquerVue(chart.canvas.id, chart.__temps, chart.options.scales, chart.__zeros);
   chart.update("none");
   chart.__idx = undefined;
-  ecrireLecture(chart, null);
+  relireSousSouris(chart);
   majNav(chart);
+}
+
+// Après un zoom, la souris n'a pas bougé : aucun événement ne dit à Chart.js quel point elle survole maintenant, et le
+// cadre de lecture retombait sur le texte d'aide jusqu'au prochain mouvement. On retrouve donc le point sous la
+// dernière position connue de la souris (chart.__souris, tenue à jour par initZoomGraphe) et on le relit.
+function relireSousSouris(chart) {
+  const m = chart.__souris, z = chart.chartArea, s = chart.scales.x;
+  const k = chart.data.datasets.findIndex((d, i) => chart.isDatasetVisible(i));
+  if (!m || !z || !s || k < 0 || m.x < z.left || m.x > z.right || m.y < z.top || m.y > z.bottom) {
+    if (chart.tooltip && chart.tooltip.getActiveElements().length) {
+      chart.setActiveElements([]);
+      chart.tooltip.setActiveElements([], { x: 0, y: 0 });
+      chart.update("none");          // le trait vertical du curseur disparaît
+      chart.__idx = undefined;
+    }
+    ecrireLecture(chart, null);
+    return;
+  }
+  const bas = Math.round(s.min), haut = Math.round(s.max);
+  const idx = Math.max(bas, Math.min(haut, Math.round(s.min + (m.x - z.left) / (z.right - z.left) * (s.max - s.min))));
+  const actifs = [{ datasetIndex: k, index: idx }];
+  chart.setActiveElements(actifs);
+  if (chart.tooltip) chart.tooltip.setActiveElements(actifs, { x: m.x, y: m.y });
+  chart.update("none");               // redessine le trait vertical à la nouvelle place
+  ecrireLecture(chart, idx);
 }
 
 function navDe(chart) {
@@ -3185,9 +3210,20 @@ function initZoomGraphe(id) {
   canvas.addEventListener("pointerup", finChoix);
   canvas.addEventListener("pointercancel", e => { if (choix && e.pointerId === choix.pointeur) { choix = null; selection.hidden = true; } });
   canvas.addEventListener("dblclick", () => { const chart = graphe(); if (chart && zooms[id]) { delete zooms[id]; rafraichirVue(chart); } });
+  // dernière position de la souris sur le graphe (pour relire la valeur sous le curseur après un zoom sans bouger)
+  const noterSouris = e => {
+    const chart = graphe();
+    if (!chart || (e.pointerType && e.pointerType !== "mouse")) return;
+    const r = canvas.getBoundingClientRect();
+    chart.__souris = { x: e.clientX - r.left, y: e.clientY - r.top };
+  };
+  canvas.addEventListener("pointermove", noterSouris);
+  canvas.addEventListener("pointerenter", noterSouris);
+  canvas.addEventListener("pointerleave", () => { const chart = graphe(); if (chart) chart.__souris = null; });
   canvas.addEventListener("wheel", e => {
     const chart = graphe();
     if (!chart) return;
+    noterSouris(e);
     // La molette zoome dès que la souris est sur le graphe (plus besoin de Ctrl), jusqu'au bout : même quand tout est
     // déjà affiché (ou au zoom maximal), la page ne défile pas. Seul un geste surtout horizontal est laissé au navigateur.
     if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
