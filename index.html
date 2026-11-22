@@ -3890,6 +3890,21 @@ function seuilEnLigne() {
   return SEUIL_EN_LIGNE_MS + (pointsBruts && pointsBruts.freq ? enMs(pointsBruts.freq) : 0);
 }
 
+// La carte a deux capteurs indépendants : les particules (PM1, PM2.5, PM10 : NextPM) et le CO₂ (MH-Z19C). L'un peut
+// se taire pendant que l'autre continue d'envoyer : la carte reste alors « en ligne » alors qu'une mesure manque.
+const GROUPES_CAPTEUR = [
+  { cle: "pm",  champs: ["pm1", "pm25", "pm10"] },
+  { cle: "co2", champs: ["co2"] },
+];
+// Groupes dont la dernière mesure est trop ancienne (t = 0 : aucune mesure sur la période affichée).
+function groupesManquants() {
+  const stats = (cache && cache.stats) || {};
+  const maintenant = Date.now(), seuil = seuilEnLigne();
+  return GROUPES_CAPTEUR
+    .map(g => ({ cle: g.cle, t: Math.max(0, ...g.champs.map(c => (stats[c] ? stats[c].derniere.t : 0))) }))
+    .filter(g => maintenant - g.t > seuil);
+}
+
 // Pastille d'en-tête : capteur en ligne, en retard ou muet.
 function majStatut(tDerniere, pasMs) {
   if (!tDerniere) {
@@ -3901,7 +3916,18 @@ function majStatut(tDerniere, pasMs) {
   if (capteurMuet(tDerniere, pasMs)) {
     definirStatut("erreur", () => trad("statut.muet", { depuis: depuisMaintenant() }));
   } else if (age <= seuilEnLigne()) {
-    definirStatut("ok", () => trad("statut.ok", { depuis: depuisMaintenant() }));
+    const manquants = groupesManquants();
+    if (manquants.length) {
+      // En ligne, mais un des deux capteurs ne mesure plus : on dit lequel et depuis quand
+      definirStatut("alerte", () => trad("statut.manque", {
+        quoi: manquants.map(g => {
+          const nom = trad("statut.groupe." + g.cle);
+          return g.t ? trad("statut.manque_item", { nom, depuis: depuis(Date.now() - g.t) }) : trad("statut.manque_aucune", { nom });
+        }).join(" ; "),
+      }));
+    } else {
+      definirStatut("ok", () => trad("statut.ok", { depuis: depuisMaintenant() }));
+    }
   } else {
     definirStatut("alerte", () => trad("statut.retard", { depuis: depuisMaintenant() }));
   }
