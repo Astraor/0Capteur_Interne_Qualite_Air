@@ -260,12 +260,13 @@
     font: 600 .78rem/1.25 var(--mono);
   }
   .statut .point { position: relative; width: 10px; height: 10px; flex: none; border-radius: 50%; background: currentColor; }
-  /* Anneau dessiné directement à sa taille finale (3,2 × le point, trait 6,4 px) puis réduit au départ (scale .3125) :
-     agrandir un petit rond le faisait grossir pixel par pixel dans Firefox (voir @keyframes onde). */
-  .statut.ok .point::after {
-    content: ""; position: absolute; inset: -110%; border-radius: 50%;
-    border: 6.4px solid currentColor; animation: onde 2.2s ease-out infinite; will-change: transform, opacity;
-  }
+  /* Onde autour du point : un cercle SVG dont on anime le rayon et l'épaisseur du trait (et non un rond agrandi par
+     transform: scale). Firefox redessinait le rond agrandi à des échelles successives : il grossissait par à-coups et
+     son trait clignotait. Un cercle vectoriel est retracé exactement à chaque image, au dixième de pixel près.
+     La zone de dessin fait 3,2 × le point (taille finale de l'onde) ; une unité = 1/10 du point. */
+  .point .onde { position: absolute; left: -110%; top: -110%; width: 320%; height: 320%; overflow: visible; pointer-events: none; display: none; }
+  .point .onde circle { fill: none; stroke: currentColor; stroke-width: 2px; opacity: 0; animation: onde 2.2s ease-out infinite; }
+  .statut.ok .point .onde, .pied-statut.ok .point .onde { display: block; }
   .statut.alerte .point { border-radius: 0; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
   .statut.erreur .point { border-radius: 1px; }
 
@@ -369,10 +370,11 @@
      dont la transformation n'est qu'un déplacement ou un agrandissement : une flèche qui descend de 5 px en 0,9 s ne
      bouge alors qu'une fois tous les ~11 images (marches d'escalier), un rond qui grossit de quelques pixels saute de
      taille en taille. Une rotation infime (0,02°, invisible) lui fait abandonner cet arrondi : il dessine les positions
-     intermédiaires, comme Chrome. Les ronds sont en plus dessinés à leur taille maximale et seulement réduits (scale ≤ 1),
+     intermédiaires, comme Chrome. Le point du tampon est en plus dessiné à sa taille maximale et seulement réduit (scale ≤ 1),
      jamais agrandis : l'image n'est jamais étirée, donc nette d'un bout à l'autre. */
   @keyframes respire { 0%, 100% { transform: scale(1) rotate(.02deg); } 50% { transform: scale(1.06) rotate(.02deg); } }
-  @keyframes onde { 0% { transform: scale(.3125) rotate(.02deg); opacity: .7; } 100% { transform: scale(1) rotate(.02deg); opacity: 0; } }
+  /* onde : de la taille du point (rayon 4 + trait 2 = bord du point) à 3,2 × sa taille, en s'effaçant */
+  @keyframes onde { 0% { r: 4px; stroke-width: 2px; opacity: .7; } 100% { r: 12.8px; stroke-width: 6.4px; opacity: 0; } }
   @keyframes lettre { from { opacity: 0; transform: translateY(.28em) rotate(5deg); } to { opacity: 1; transform: none; } }
   @keyframes trace { to { stroke-dashoffset: 0; } }
   @keyframes attente { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
@@ -961,8 +963,8 @@
   .pied-statut .point { position: relative; width: 9px; height: 9px; flex: none; border-radius: 50%; background: #50f0e6; }
   .pied-statut.alerte .point { border-radius: 0; background: #f0e641; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
   .pied-statut.erreur .point { border-radius: 1px; background: #ff5050; }
-  .pied-statut.ok .point::after { content: ""; position: absolute; inset: -110%; border-radius: 50%; border: 6.4px solid #50f0e6; animation: onde 2.2s ease-out infinite; will-change: transform, opacity; }
-  html.mouvement-reduit .pied-statut .point::after { animation: none; display: none; }   /* anneau dessiné en grand : sans animation, on le retire */
+  .pied-statut .point .onde { color: #50f0e6; }
+  html.mouvement-reduit .pied-statut .point .onde { display: none; }
   .pied-colonnes { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 30px 40px; padding: 30px 0 32px; }
   .pied-col h2 { margin: 0 0 12px; font: 600 .7rem/1.4 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: rgba(242, 244, 240, .58); }
   .pied-col, .pied-col p, .pied-col li, .pied-col dd { font-size: .88rem; line-height: 1.5; color: rgba(242, 244, 240, .84); }
@@ -1098,7 +1100,7 @@
   html.mouvement-reduit { scroll-behavior: auto; }
   html.mouvement-reduit :is(.hero-disque, .tampon svg, .tampon-point, .descendre span,
     .squelette i, .mot.attente #verdict-lettres, .ouv-fleche) { animation: none; }
-  html.mouvement-reduit .statut .point::after { animation: none; display: none; }
+  html.mouvement-reduit .statut .point .onde { display: none; }
   html.mouvement-reduit .tampon-point { transform: scale(.6667); }   /* point dessiné à 21 px : taille de repos (14 px) sans animation */
   html.mouvement-reduit .lettre { animation: fondu .6s ease both; animation-delay: calc(var(--i, 0) * 30ms + 100ms); }
   html.mouvement-reduit .apparait { animation: fondu .7s ease both; animation-delay: calc(var(--d, 0) * 90ms + 100ms); }
@@ -1270,7 +1272,7 @@
       <p class="marque" data-i18n="hero.marque">Qualité de l'air intérieur · Marseille</p>
 
       <p id="statut" class="statut">
-        <span class="point"></span>
+        <span class="point"><svg class="onde" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><circle cx="16" cy="16" r="4"></circle></svg></span>
         <span id="statut-texte">Chargement…</span>
       </p>
 
@@ -1582,7 +1584,7 @@
         <p class="pied-marque"><img class="pied-logo" src="img/logo.svg" alt="" width="64" height="64" loading="lazy" decoding="async">La Bonne M’air</p>
         <p class="pied-devise" data-i18n="pied.devise">Le capteur qui veille sur l’air que vous respirez, installé à Marseille.</p>
       </div>
-      <p class="pied-statut" id="pied-statut" aria-hidden="true"><span class="point"></span><span id="pied-statut-texte">—</span></p>
+      <p class="pied-statut" id="pied-statut" aria-hidden="true"><span class="point"><svg class="onde" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><circle cx="16" cy="16" r="4"></circle></svg></span><span id="pied-statut-texte">—</span></p>
     </div>
 
     <div class="pied-colonnes">
