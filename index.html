@@ -1768,10 +1768,10 @@
 <!-- Traductions : un fichier par langue, puis le moteur. L'ordre compte (voir js/i18n.js).
      ?v=… : à changer à chaque modification de ces fichiers, sinon le navigateur peut garder l'ancienne version en cache
      (la page affichait alors les noms des clés, « pied.devise »…). -->
-<script src="lang/fr.js?v=20261125"></script>
-<script src="lang/en.js?v=20261125"></script>
-<script src="lang/ja.js?v=20261125"></script>
-<script src="js/i18n.js?v=20261125"></script>
+<script src="lang/fr.js?v=20261126"></script>
+<script src="lang/en.js?v=20261126"></script>
+<script src="lang/ja.js?v=20261126"></script>
+<script src="js/i18n.js?v=20261126"></script>
 
 <script>
 window.__pret = true;   // dit à la page que le script a bien démarré (voir le <head>)
@@ -2742,7 +2742,7 @@ function viderPuces(idCanvas) {
 //   rafraîchissement automatique et au changement de pas. Si la fenêtre touche la dernière mesure, elle suit le direct
 //   (même durée, toujours collée à la fin). Une nouvelle période (6 h, 24 h…) remet tout à zéro.
 // - Outils : aperçu sous le graphe (fenêtre à déplacer, bords à étirer : souris et doigt), glisser sur le graphe à la
-//   souris pour choisir une plage, Ctrl + molette (ou pincement du pavé tactile) autour du curseur, boutons − / + /
+//   souris pour choisir une plage, molette (ou pincement du pavé tactile) autour du curseur, boutons − / + /
 //   Tout voir, double-clic pour tout revoir, clavier sur la fenêtre de l'aperçu (flèches, + / −, Échap).
 // - Échelle verticale, par axe : Auto (particules depuis 0, CO₂ ajusté), Serrée (au plus près des courbes affichées,
 //   pratique après un zoom) ou Manuelle (min / max). Mémorisée dans le navigateur.
@@ -3134,7 +3134,7 @@ function initZoomGraphe(id) {
     if (fait) e.preventDefault();
   });
 
-  // --- souris sur le graphe : glisser pour choisir une plage, double-clic pour tout revoir, Ctrl + molette
+  // --- souris sur le graphe : glisser pour choisir une plage, double-clic pour tout revoir, molette
   const selection = canvas.parentElement.querySelector(".selection-zoom");
   let choix = null;
   // numéro de point (fractionnaire) sous une abscisse du canvas : l'axe est linéaire entre ses bornes entières
@@ -3178,7 +3178,12 @@ function initZoomGraphe(id) {
   canvas.addEventListener("dblclick", () => { const chart = graphe(); if (chart && zooms[id]) { delete zooms[id]; rafraichirVue(chart); } });
   canvas.addEventListener("wheel", e => {
     const chart = graphe();
-    if (!chart || !e.ctrlKey) return;        // sans Ctrl, la molette fait défiler la page comme d'habitude
+    if (!chart) return;
+    // La molette zoome dès que la souris est sur le graphe (plus besoin de Ctrl). Deux cas où la page défile comme
+    // d'habitude : un geste surtout horizontal, et un dézoom alors que tout est déjà affiché (rien à dézoomer : sinon
+    // on ne pourrait plus faire défiler la page vers le bas en passant sur le graphe).
+    if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+    if (e.deltaY > 0 && !e.ctrlKey && !zooms[id]) return;
     e.preventDefault();
     // Cran de molette ≈ 13 % (avant : 65 %, trop brusque) ; le pincement du pavé tactile, qui envoie de petits deltas,
     // zoome en continu. deltaMode 1 / 2 : Firefox compte parfois en lignes ou en pages.

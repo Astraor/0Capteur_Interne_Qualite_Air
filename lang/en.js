@@ -196,7 +196,7 @@ window.I18N_DICT.en = {
   "graphe.ech_manuel_titre": "Choose the axis minimum and maximum",
   "graphe.ech_min": "min",
   "graphe.ech_max": "max",
-  "graphe.aide_zoom_souris": "Zoom: drag across the chart to pick a range, Ctrl + wheel, or use the overview window. Double-click to see everything.",
+  "graphe.aide_zoom_souris": "Zoom: drag across the chart to pick a range, mouse wheel, or use the overview window. Double-click to see everything.",
   "graphe.aide_zoom_tactile": "Zoom: drag the overview window, or its edges to widen or narrow it.",
   "graphe.puces": "Readings shown on the chart",
   "graphe.aucune_serie": "Tick at least one reading to display it.",

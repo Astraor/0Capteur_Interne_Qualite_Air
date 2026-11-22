@@ -201,7 +201,7 @@ window.I18N_DICT.fr = {
   "graphe.ech_manuel_titre": "Choisir le minimum et le maximum de l'axe",
   "graphe.ech_min": "min",
   "graphe.ech_max": "max",
-  "graphe.aide_zoom_souris": "Zoom : glissez sur le graphe pour choisir une plage, Ctrl + molette, ou la fenêtre de l'aperçu. Double-clic pour tout revoir.",
+  "graphe.aide_zoom_souris": "Zoom : glissez sur le graphe pour choisir une plage, molette, ou la fenêtre de l'aperçu. Double-clic pour tout revoir.",
   "graphe.aide_zoom_tactile": "Zoom : faites glisser la fenêtre de l'aperçu, ou ses bords pour l'agrandir ou la réduire.",
   "graphe.puces": "Mesures affichées sur le graphe",
   "graphe.aucune_serie": "Cochez au moins une mesure pour l'afficher.",
