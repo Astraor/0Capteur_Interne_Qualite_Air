@@ -195,7 +195,7 @@ window.I18N_DICT.ja = {
   "graphe.ech_manuel_titre": "軸の最小値と最大値を指定する",
   "graphe.ech_min": "最小",
   "graphe.ech_max": "最大",
-  "graphe.aide_zoom_souris": "拡大：グラフ上をドラッグして範囲を選択、Ctrl + ホイール、または概要の枠を使います。ダブルクリックで全体表示。",
+  "graphe.aide_zoom_souris": "拡大：グラフ上をドラッグして範囲を選択、マウスホイール、または概要の枠を使います。ダブルクリックで全体表示。",
   "graphe.aide_zoom_tactile": "拡大：概要の枠をドラッグ、または端をドラッグして広げたり狭めたりします。",
   "graphe.puces": "グラフに表示する測定項目",
   "graphe.aucune_serie": "表示するには、少なくとも1つの測定項目にチェックを入れてください。",
