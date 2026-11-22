@@ -819,6 +819,7 @@
   .echelle-barre i { display: block; height: 100%; flex: none; box-sizing: border-box; }
   .echelle-barre i:not(:last-child) { border-right: 3px solid var(--fond); }
   .graduation { position: absolute; top: 60px; transform: translateX(-50%); font: 500 .68rem/1 var(--mono); color: var(--doux); white-space: nowrap; }
+  .echelle > .graduation { z-index: 1; padding: 0 3px; background: var(--fond); }   /* devant les traits de la loupe */
   .graduation::before { content: ""; position: absolute; left: 50%; top: -8px; height: 5px; width: 1px; background: var(--doux); }
   /* Repère de la dernière mesure : un point de largeur nulle placé à la valeur ; le trait et la pastille sont tous deux
      centrés dessus par le même translate(-50 %), ils restent donc alignés quel que soit l'arrondi des pixels. */
@@ -850,6 +851,28 @@
     transition: left 1.7s var(--courbe), width 1.7s var(--courbe);
   }
   .js .bloc:not(.vu) .incert-bande { left: 0%; width: 0%; }
+  /* Loupe automatique (voir majLoupe) : seconde jauge, plus fine, sous la principale */
+  .loupe { position: relative; margin-top: 30px; padding: 22px 0 26px; }
+  .loupe[hidden] { display: none; }
+  .loupe-barre { height: 10px; border-radius: 1px; }
+  .loupe .plage { top: 6px; }
+  .loupe .repere { top: 16px; height: 22px; }
+  .loupe .incert-bande { top: 18px; height: 18px; }
+  .loupe .incert-bande[hidden] { display: none; }
+  .loupe .graduation { top: 44px; }
+  .loupe .plage, .loupe .repere, .loupe .incert-bande { transition: none; }   /* l'échelle change à chaque mise à jour */
+  .loupe-titre { position: absolute; top: 0; right: 0; font: 600 .62rem/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--doux); }
+  .loupe-fenetre {
+    position: absolute; top: 34px; height: 22px; box-sizing: border-box; pointer-events: none;
+    left: var(--wa, 0%); width: max(6px, calc(var(--wb, 0%) - var(--wa, 0%)));
+    border: 1.5px dashed var(--doux); border-radius: 2px;
+  }
+  .loupe-fenetre[hidden] { display: none; }
+  /* traits du cadre vers les bords de la loupe : du bas du cadre (56 px) au haut de la barre agrandie (52 + 30 + 22 px) */
+  .loupe-lien { position: absolute; left: 0; top: 56px; width: 100%; height: 48px; overflow: visible; pointer-events: none; }
+  .loupe-lien path { fill: none; stroke: var(--doux); stroke-width: 1; stroke-dasharray: 3 3; opacity: .55; vector-effect: non-scaling-stroke; }
+  .js .bloc:not(.vu) .loupe, .js .bloc:not(.vu) .loupe-lien, .js .bloc:not(.vu) .loupe-fenetre { opacity: 0; }
+  .loupe, .loupe-lien, .loupe-fenetre { transition: opacity .8s ease 1.2s; }
   .incert { display: block; margin: -2px 0 6px; font: 500 .74rem/1.3 var(--mono); color: var(--doux); }
   .incert b { font-weight: 700; color: var(--encre); }
 
@@ -893,6 +916,60 @@
     -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none;
     -webkit-user-select: none; user-select: none;
   }
+  /* ---------- Zoom et échelle des graphes ---------- */
+  @media (hover: hover) and (pointer: fine) { .zone-graphe canvas { cursor: crosshair; } }
+  .selection-zoom { position: absolute; z-index: 2; pointer-events: none; background: rgba(35, 71, 168, .12); border: 1.5px solid var(--cobalt); border-width: 0 1.5px; }
+  .graphe-nav { margin-top: 10px; }
+  .graphe-nav[hidden] { display: none; }
+  /* Aperçu : toute la période en petit ; la fenêtre claire est la partie affichée au-dessus */
+  .apercu { position: relative; height: 46px; border: 2px solid var(--encre); border-radius: 3px; overflow: hidden; touch-action: none; cursor: pointer; -webkit-user-select: none; user-select: none; }
+  .apercu-fond { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .apercu-voile { position: absolute; top: 0; bottom: 0; background: rgba(14, 27, 36, .14); pointer-events: none; }
+  .apercu-voile.g { left: 0; width: var(--f0, 0%); }
+  .apercu-voile.d { right: 0; width: calc(100% - var(--f1, 100%)); }
+  .apercu-fenetre {
+    position: absolute; top: 0; bottom: 0; left: var(--f0, 0%); width: calc(var(--f1, 100%) - var(--f0, 0%)); min-width: 10px;
+    box-sizing: border-box; border: 2px solid var(--cobalt); border-width: 0 2px; cursor: grab;
+  }
+  .apercu.glisse .apercu-fenetre { cursor: grabbing; }
+  .apercu-fenetre:focus-visible { outline: 3px solid var(--cobalt); outline-offset: -3px; }
+  /* poignées : 20 px de large pour le doigt, centrées sur les bords de la fenêtre */
+  .apercu-poignee { position: absolute; top: 0; bottom: 0; width: 20px; cursor: ew-resize; }
+  .apercu-poignee.g { left: -11px; }
+  .apercu-poignee.d { right: -11px; }
+  .apercu-poignee::after { content: ""; position: absolute; left: 50%; top: 50%; width: 6px; height: 18px; margin: -9px 0 0 -3px; border-radius: 2px; background: var(--cobalt); }
+  .graphe-boutons { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 10px; }
+  .zoom-groupe { display: inline-flex; gap: 6px; }
+  .zb {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 36px; min-height: 36px; padding: 0 10px;
+    border: 2px solid var(--encre); border-radius: 999px; background: var(--fond); color: var(--encre);
+    font: 700 1rem/1 var(--sans); cursor: pointer;
+  }
+  .zb-texte { font-size: .8rem; font-stretch: 108%; padding: 0 14px; }
+  .zb:disabled { opacity: .35; cursor: default; }
+  @media (hover: hover) { .zb:not(:disabled):hover { background: var(--encre); color: var(--fond); } }
+  .zb:focus-visible { outline: 3px solid var(--cobalt); outline-offset: 2px; }
+  .zb[aria-expanded="true"] { background: var(--encre); color: var(--fond); }
+  .zb-mode { font: 500 .72rem/1 var(--mono); opacity: .75; }
+  @media (pointer: coarse) { .zb { min-height: 44px; min-width: 44px; } }
+  .zoom-etat { flex: 1 1 auto; font: 500 .74rem/1.3 var(--mono); color: var(--doux); }
+  .zb-echelle { margin-left: auto; }
+  .panneau-echelle { display: grid; gap: 10px; margin-top: 10px; padding: 12px 14px; border: 2px solid var(--encre); border-radius: 3px; }
+  .panneau-echelle[hidden] { display: none; }
+  .ech-ligne { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+  .ech-nom { min-width: 11em; font: 600 .82rem/1.3 var(--sans); }
+  .ech-modes { display: inline-flex; border: 2px solid var(--encre); border-radius: 999px; overflow: hidden; }
+  .ech-modes button { min-height: 32px; padding: 0 12px; border: 0; background: transparent; color: var(--encre); font: 600 .76rem/1 var(--sans); cursor: pointer; }
+  .ech-modes button + button { border-left: 2px solid var(--encre); }
+  .ech-modes button[aria-checked="true"] { background: var(--encre); color: var(--fond); }
+  .ech-modes button:focus-visible { outline: 3px solid var(--cobalt); outline-offset: -3px; }
+  @media (pointer: coarse) { .ech-modes button { min-height: 40px; } }
+  .ech-manuel { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; font: 500 .76rem/1 var(--mono); color: var(--doux); }
+  .ech-manuel[hidden] { display: none; }
+  .ech-manuel input { width: 6.5em; min-height: 32px; padding: 0 8px; border: 2px solid var(--encre); border-radius: 3px; background: var(--fond); color: var(--encre); font: 500 .85rem/1 var(--mono); }
+  .ech-manuel input[aria-invalid="true"] { border-color: #c0392b; }
+  .aide-zoom { margin: 8px 0 0; font: 500 .72rem/1.4 var(--mono); color: var(--doux); }
+  @media print { .graphe-nav { display: none !important; } }
 
   /* ---------- Tableaux ---------- */
   .defile { overflow-x: auto; }
@@ -1475,6 +1552,28 @@
       </div>
       <div class="zone-graphe">
         <canvas id="graphe-air" role="img" aria-label="Courbes des particules fines PM1, PM2.5, PM10 et du CO₂ sur la période choisie" data-i18n-attr="aria-label:pm.aria"></canvas>
+        <div class="selection-zoom" hidden></div>
+      </div>
+      <!-- Zoom et échelle (voir « Zoom et échelle des graphes » dans le script) -->
+      <div class="graphe-nav" data-graphe="graphe-air" hidden>
+        <div class="apercu" title="Aperçu de toute la période" data-i18n-attr="title:graphe.apercu">
+          <canvas class="apercu-fond" aria-hidden="true"></canvas>
+          <span class="apercu-voile g" aria-hidden="true"></span><span class="apercu-voile d" aria-hidden="true"></span>
+          <div class="apercu-fenetre" tabindex="0" role="slider" aria-valuemin="0" aria-valuemax="100" aria-label="Période affichée : flèches pour se déplacer, + et − pour zoomer" data-i18n-attr="aria-label:graphe.fenetre">
+            <span class="apercu-poignee g" aria-hidden="true"></span><span class="apercu-poignee d" aria-hidden="true"></span>
+          </div>
+        </div>
+        <div class="graphe-boutons">
+          <span class="zoom-groupe">
+            <button type="button" class="zb" data-zoom="moins" aria-label="Dézoomer" title="Dézoomer" data-i18n-attr="aria-label:graphe.zoom_moins;title:graphe.zoom_moins"><span aria-hidden="true">−</span></button>
+            <button type="button" class="zb" data-zoom="plus" aria-label="Zoomer" title="Zoomer" data-i18n-attr="aria-label:graphe.zoom_plus;title:graphe.zoom_plus"><span aria-hidden="true">+</span></button>
+            <button type="button" class="zb zb-texte" data-zoom="tout" data-i18n="graphe.zoom_tout">Tout voir</button>
+          </span>
+          <span class="zoom-etat" aria-live="polite"></span>
+          <button type="button" class="zb zb-texte zb-echelle" aria-expanded="false" aria-controls="echelle-graphe-air"><span data-i18n="graphe.echelle">Échelle verticale</span> <span class="zb-mode"></span></button>
+        </div>
+        <div class="panneau-echelle" id="echelle-graphe-air" hidden></div>
+        <p class="aide-zoom"></p>
       </div>
     </div>
   </section>
@@ -1658,10 +1757,10 @@
 <!-- Traductions : un fichier par langue, puis le moteur. L'ordre compte (voir js/i18n.js).
      ?v=… : à changer à chaque modification de ces fichiers, sinon le navigateur peut garder l'ancienne version en cache
      (la page affichait alors les noms des clés, « pied.devise »…). -->
-<script src="lang/fr.js?v=20261123"></script>
-<script src="lang/en.js?v=20261123"></script>
-<script src="lang/ja.js?v=20261123"></script>
-<script src="js/i18n.js?v=20261123"></script>
+<script src="lang/fr.js?v=20261124"></script>
+<script src="lang/en.js?v=20261124"></script>
+<script src="lang/ja.js?v=20261124"></script>
+<script src="js/i18n.js?v=20261124"></script>
 
 <script>
 window.__pret = true;   // dit à la page que le script a bien démarré (voir le <head>)
@@ -2580,6 +2679,7 @@ function construirePuces(idCanvas, utiles) {
       chart.update();
       chart.__idx = undefined;
       ecrireLecture(chart, null);
+      majNav(chart);
     });
     boite.append(puce);
   });
@@ -2588,6 +2688,402 @@ function construirePuces(idCanvas, utiles) {
 function viderPuces(idCanvas) {
   const boite = boitePuces(idCanvas);
   if (boite) { boite.replaceChildren(); delete boite.dataset.signature; }
+}
+
+// =====================================================================
+// Zoom et échelle des graphes
+// =====================================================================
+// - Zoom horizontal : on garde la période affichée en TEMPS (début, fin), pas en numéros de points : elle survit au
+//   rafraîchissement automatique et au changement de pas. Si la fenêtre touche la dernière mesure, elle suit le direct
+//   (même durée, toujours collée à la fin). Une nouvelle période (6 h, 24 h…) remet tout à zéro.
+// - Outils : aperçu sous le graphe (fenêtre à déplacer, bords à étirer : souris et doigt), glisser sur le graphe à la
+//   souris pour choisir une plage, Ctrl + molette (ou pincement du pavé tactile) autour du curseur, boutons − / + /
+//   Tout voir, double-clic pour tout revoir, clavier sur la fenêtre de l'aperçu (flèches, + / −, Échap).
+// - Échelle verticale, par axe : Auto (particules depuis 0, CO₂ ajusté), Serrée (au plus près des courbes affichées,
+//   pratique après un zoom) ou Manuelle (min / max). Mémorisée dans le navigateur.
+// Avec un zoom, l'axe vertical « Auto » ou « Serrée » ne tient compte que de la partie affichée (Chart.js ignore les
+// points hors de la plage horizontale).
+const zooms = {};                                                  // idCanvas -> { t0, t1, direct }
+const reglagesEchelle = Object.assign({}, lireMemoire("echelle-graphes"));   // "idCanvas:axe" -> { mode, min, max }
+
+function reglageAxe(id, axe) {
+  return reglagesEchelle[id + ":" + axe] || { mode: "auto" };
+}
+
+// Numéros du premier et du dernier point affichés (null : toute la période).
+function bornesZoom(id, temps) {
+  const z = zooms[id];
+  const n = temps.length;
+  if (!z || n < 4) return null;
+  let t0 = z.t0, t1 = z.t1;
+  if (z.direct) { t1 = temps[n - 1]; t0 = t1 - (z.t1 - z.t0); }
+  let i0 = 0;
+  while (i0 < n - 1 && temps[i0] < t0) i0++;
+  let i1 = n - 1;
+  while (i1 > 0 && temps[i1] > t1) i1--;
+  if (i1 - i0 < 2) {                       // au moins 3 points
+    const c = Math.round((i0 + i1) / 2);
+    i0 = Math.max(0, Math.min(n - 3, c - 1));
+    i1 = i0 + 2;
+  }
+  if (i0 <= 0 && i1 >= n - 1) return null;
+  return [i0, i1];
+}
+
+// Écrit le zoom et les échelles dans les options d'axes (avant création ou avant mise à jour du graphe).
+function appliquerVue(id, temps, echelles, zeros) {
+  const b = bornesZoom(id, temps);
+  echelles.x.min = b ? b[0] : undefined;
+  echelles.x.max = b ? b[1] : undefined;
+  ["y", "y1"].forEach(axe => {
+    const o = echelles[axe];
+    if (!o) return;
+    const r = reglageAxe(id, axe);
+    o.min = undefined; o.max = undefined; o.grace = 0; o.beginAtZero = !!zeros[axe];   // zeros : réglage « Auto » de l'axe
+    if (r.mode === "serre") { o.beginAtZero = false; o.grace = "8%"; }
+    else if (r.mode === "manuel" && estNombre(r.min) && estNombre(r.max) && r.max > r.min) { o.min = r.min; o.max = r.max; }
+  });
+}
+
+// Change le zoom d'un graphe à partir de numéros de points (i0, i1), puis redessine.
+function zoomerIndices(chart, i0, i1) {
+  const temps = chart.__temps, n = temps.length;
+  i0 = Math.max(0, Math.round(i0)); i1 = Math.min(n - 1, Math.round(i1));
+  if (i1 - i0 < 2) { const c = (i0 + i1) / 2; i0 = Math.max(0, Math.min(n - 3, Math.round(c - 1))); i1 = i0 + 2; }
+  const id = chart.canvas.id;
+  if (i0 <= 0 && i1 >= n - 1) delete zooms[id];
+  else zooms[id] = { t0: temps[i0], t1: temps[i1], direct: i1 >= n - 1 };
+  rafraichirVue(chart);
+}
+
+// Zoom d'un facteur (< 1 : zoomer, > 1 : dézoomer) autour du point c (par défaut le milieu de la vue).
+function zoomerFacteur(chart, facteur, c) {
+  const n = chart.__temps.length;
+  const b = bornesZoom(chart.canvas.id, chart.__temps) || [0, n - 1];
+  if (c === undefined) c = (b[0] + b[1]) / 2;
+  const largeur = Math.max(2, (b[1] - b[0]) * facteur);
+  let i0 = c - (c - b[0]) * facteur;
+  let i1 = i0 + largeur;
+  if (i0 < 0) { i1 -= i0; i0 = 0; }
+  if (i1 > n - 1) { i0 -= i1 - (n - 1); i1 = n - 1; }
+  zoomerIndices(chart, Math.max(0, i0), i1);
+}
+
+function rafraichirVue(chart) {
+  appliquerVue(chart.canvas.id, chart.__temps, chart.options.scales, chart.__zeros);
+  chart.update("none");
+  chart.__idx = undefined;
+  ecrireLecture(chart, null);
+  majNav(chart);
+}
+
+function navDe(chart) {
+  return document.querySelector('.graphe-nav[data-graphe="' + chart.canvas.id + '"]');
+}
+
+// Met à jour l'aperçu (courbes en petit + fenêtre), les boutons, le texte d'état et le panneau d'échelle.
+function majNav(chart) {
+  const nav = navDe(chart);
+  if (!nav) return;
+  nav.hidden = false;
+  const temps = chart.__temps, n = temps.length;
+  const b = bornesZoom(chart.canvas.id, temps);
+  const f0 = b ? b[0] / (n - 1) : 0, f1 = b ? b[1] / (n - 1) : 1;
+  const apercu = nav.querySelector(".apercu");
+  apercu.style.setProperty("--f0", (f0 * 100).toFixed(3) + "%");
+  apercu.style.setProperty("--f1", (f1 * 100).toFixed(3) + "%");
+  const fenetre = nav.querySelector(".apercu-fenetre");
+  fenetre.setAttribute("aria-valuenow", Math.round(f0 * 100));
+  const courtes = chart.__courtes || [];
+  const texte = b ? (courtes[b[0]] + " → " + courtes[b[1]]) : trad("graphe.zoom_tout_affiche");
+  fenetre.setAttribute("aria-valuetext", texte);
+  nav.querySelector(".zoom-etat").textContent = b ? trad("graphe.zoom_etat", { de: chart.data.labels[b[0]], a: chart.data.labels[b[1]] }) : "";
+  nav.querySelector('[data-zoom="moins"]').disabled = !b;
+  nav.querySelector('[data-zoom="tout"]').disabled = !b;
+  nav.querySelector('[data-zoom="plus"]').disabled = !!b && b[1] - b[0] <= 2;
+  nav.querySelector(".aide-zoom").textContent = trad(ecranTactile() ? "graphe.aide_zoom_tactile" : "graphe.aide_zoom_souris");
+  dessinerApercu(chart, nav);
+  majPanneauEchelle(chart, nav);
+}
+
+// Les courbes cochées, chacune ramenée à sa propre hauteur (unités différentes), sur toute la période.
+function dessinerApercu(chart, nav) {
+  const canvas = nav.querySelector(".apercu-fond");
+  const ratio = Math.min(window.devicePixelRatio || 1, 2);
+  const l = canvas.clientWidth, h = canvas.clientHeight;
+  if (!l || !h) return;
+  if (canvas.width !== Math.round(l * ratio) || canvas.height !== Math.round(h * ratio)) {
+    canvas.width = Math.round(l * ratio); canvas.height = Math.round(h * ratio);
+  }
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.clearRect(0, 0, l, h);
+  const n = chart.__temps.length;
+  if (n < 2) return;
+  chart.data.datasets.forEach((d, k) => {
+    if (!chart.isDatasetVisible(k)) return;
+    let mini = Infinity, maxi = -Infinity;
+    d.data.forEach(v => { if (v != null) { if (v < mini) mini = v; if (v > maxi) maxi = v; } });
+    if (!Number.isFinite(mini)) return;
+    const etendue = (maxi - mini) || 1;
+    ctx.strokeStyle = d.borderColor;
+    ctx.globalAlpha = .85;
+    ctx.lineWidth = 1.3;
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    let trou = true;
+    d.data.forEach((v, i) => {
+      if (v == null) { trou = true; return; }
+      const x = i / (n - 1) * l, y = h - 5 - (v - mini) / etendue * (h - 10);
+      if (trou) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      trou = false;
+    });
+    ctx.stroke();
+  });
+  ctx.globalAlpha = 1;
+}
+
+// Panneau « Échelle verticale » : une ligne par axe (nom, Auto / Serrée / Manuelle, et min / max en mode manuel).
+function majPanneauEchelle(chart, nav) {
+  const panneau = nav.querySelector(".panneau-echelle");
+  const id = chart.canvas.id;
+  const axes = ["y", "y1"].filter(a => chart.options.scales[a]);
+  const nomAxe = axe => {
+    const champs = chart.data.datasets.filter(d => d.yAxisID === axe);
+    return champs.map(d => d.label).join(" · ") + " (" + (champs[0] ? champs[0].unite : "") + ")";
+  };
+  const signature = axes.map(nomAxe).join("|") + "|" + I18N.langue();
+  if (panneau.dataset.signature !== signature) {
+    panneau.dataset.signature = signature;
+    panneau.replaceChildren();
+    axes.forEach(axe => {
+      const ligne = el("div", "ech-ligne");
+      ligne.dataset.axe = axe;
+      const modes = el("div", "ech-modes");
+      modes.setAttribute("role", "radiogroup");
+      modes.setAttribute("aria-label", nomAxe(axe));
+      ["auto", "serre", "manuel"].forEach(m => {
+        const bouton = el("button", "", trad("graphe.ech_" + m));
+        bouton.type = "button";
+        bouton.dataset.mode = m;
+        bouton.setAttribute("role", "radio");
+        bouton.title = trad("graphe.ech_" + m + "_titre");
+        bouton.addEventListener("click", () => choisirModeEchelle(chart, axe, m));
+        modes.append(bouton);
+      });
+      const manuel = el("span", "ech-manuel");
+      ["min", "max"].forEach(cote => {
+        const etiquette = el("label", "", trad("graphe.ech_" + cote) + " ");
+        const champ = el("input");
+        champ.type = "number";
+        champ.step = "any";
+        champ.inputMode = "decimal";
+        champ.dataset.cote = cote;
+        champ.addEventListener("input", () => lireManuel(chart, axe, ligne));
+        etiquette.append(champ);
+        manuel.append(etiquette);
+      });
+      ligne.append(el("span", "ech-nom", nomAxe(axe)), modes, manuel);
+      panneau.append(ligne);
+    });
+  }
+  // état des boutons et des champs
+  let resume = [];
+  panneau.querySelectorAll(".ech-ligne").forEach(ligne => {
+    const r = reglageAxe(id, ligne.dataset.axe);
+    ligne.querySelectorAll(".ech-modes button").forEach(b => b.setAttribute("aria-checked", String(b.dataset.mode === r.mode)));
+    const manuel = ligne.querySelector(".ech-manuel");
+    manuel.hidden = r.mode !== "manuel";
+    if (r.mode === "manuel") {
+      manuel.querySelectorAll("input").forEach(c => {
+        if (document.activeElement !== c && estNombre(r[c.dataset.cote])) c.value = r[c.dataset.cote];
+      });
+    }
+    resume.push(trad("graphe.ech_" + r.mode));
+  });
+  resume = [...new Set(resume)];
+  nav.querySelector(".zb-mode").textContent = "· " + (resume.length === 1 ? resume[0] : resume.join(" / "));
+}
+
+function choisirModeEchelle(chart, axe, mode) {
+  const cle = chart.canvas.id + ":" + axe;
+  const r = Object.assign({}, reglagesEchelle[cle] || {}, { mode });
+  if (mode === "manuel" && !(estNombre(r.min) && estNombre(r.max) && r.max > r.min)) {
+    // première fois : on part de l'échelle affichée, arrondie
+    const sc = chart.scales[axe];
+    if (sc) {
+      const pas = pasRond(Math.max(sc.max - sc.min, Math.abs(sc.max) * 0.02, 1e-6), 5);
+      r.min = +(Math.floor(sc.min / pas) * pas).toFixed(6);
+      r.max = +(Math.ceil(sc.max / pas) * pas).toFixed(6);
+      if (r.max <= r.min) r.max = r.min + pas;
+    }
+  }
+  reglagesEchelle[cle] = r;
+  ecrireMemoire("echelle-graphes", reglagesEchelle);
+  rafraichirVue(chart);
+  if (mode === "manuel") {
+    const champ = navDe(chart).querySelector('.ech-ligne[data-axe="' + axe + '"] input');
+    if (champ) champ.focus();
+  }
+}
+
+function lireManuel(chart, axe, ligne) {
+  const champs = ligne.querySelectorAll(".ech-manuel input");
+  const min = parseFloat(champs[0].value.replace(",", ".")), max = parseFloat(champs[1].value.replace(",", "."));
+  const valide = estNombre(min) && estNombre(max) && max > min;
+  champs.forEach(c => c.setAttribute("aria-invalid", String(!valide)));
+  if (!valide) return;
+  reglagesEchelle[chart.canvas.id + ":" + axe] = { mode: "manuel", min, max };
+  ecrireMemoire("echelle-graphes", reglagesEchelle);
+  appliquerVue(chart.canvas.id, chart.__temps, chart.options.scales, chart.__zeros);
+  chart.update("none");
+}
+
+// Branche les commandes de zoom d'un graphe (une seule fois : elles retrouvent le graphe courant dans « graphes »).
+function initZoomGraphe(id) {
+  const canvas = document.getElementById(id);
+  const nav = document.querySelector('.graphe-nav[data-graphe="' + id + '"]');
+  if (!canvas || !nav) return;
+  const graphe = () => graphes[id];
+
+  // --- boutons
+  nav.querySelectorAll("[data-zoom]").forEach(b => b.addEventListener("click", () => {
+    const chart = graphe();
+    if (!chart) return;
+    if (b.dataset.zoom === "tout") { delete zooms[id]; rafraichirVue(chart); }
+    else zoomerFacteur(chart, b.dataset.zoom === "plus" ? 0.5 : 2);
+  }));
+  const boutonEchelle = nav.querySelector(".zb-echelle");
+  const panneau = nav.querySelector(".panneau-echelle");
+  boutonEchelle.addEventListener("click", () => {
+    panneau.hidden = !panneau.hidden;
+    boutonEchelle.setAttribute("aria-expanded", String(!panneau.hidden));
+  });
+
+  // --- aperçu : déplacer la fenêtre, étirer ses bords, ou cliquer à côté pour y centrer la vue
+  const apercu = nav.querySelector(".apercu");
+  let geste = null, attente = false, dernier = null;
+  const fraction = e => { const r = apercu.getBoundingClientRect(); return Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)); };
+  const appliquerFractions = (f0, f1) => {
+    const chart = graphe();
+    if (!chart) return;
+    const n = chart.__temps.length;
+    dernier = [f0 * (n - 1), f1 * (n - 1)];
+    if (attente) return;
+    attente = true;
+    requestAnimationFrame(() => { attente = false; if (dernier) zoomerIndices(chart, dernier[0], dernier[1]); });
+  };
+  apercu.addEventListener("pointerdown", e => {
+    const chart = graphe();
+    if (!chart || (e.pointerType === "mouse" && e.button !== 0)) return;
+    const n = chart.__temps.length;
+    const b = bornesZoom(id, chart.__temps) || [0, n - 1];
+    let f0 = b[0] / (n - 1), f1 = b[1] / (n - 1);
+    const f = fraction(e);
+    let mode = e.target.classList.contains("apercu-poignee") ? (e.target.classList.contains("g") ? "g" : "d")
+      : e.target.closest(".apercu-fenetre") ? "deplacer" : "sauter";
+    if (mode === "sauter") {
+      // clic hors de la fenêtre : la vue s'y centre (sans zoom, on part d'un quart de la période)
+      const largeur = (f1 - f0 >= 0.999) ? 0.25 : (f1 - f0);
+      f0 = Math.min(1 - largeur, Math.max(0, f - largeur / 2)); f1 = f0 + largeur;
+      appliquerFractions(f0, f1);
+      mode = "deplacer";
+    }
+    geste = { mode, depart: f, f0, f1, pointeur: e.pointerId };
+    apercu.setPointerCapture(e.pointerId);
+    apercu.classList.add("glisse");
+    e.preventDefault();
+  });
+  apercu.addEventListener("pointermove", e => {
+    if (!geste || e.pointerId !== geste.pointeur) return;
+    const chart = graphe();
+    if (!chart) return;
+    const mini = 2 / Math.max(3, chart.__temps.length - 1);
+    const df = fraction(e) - geste.depart;
+    let { f0, f1 } = geste;
+    if (geste.mode === "deplacer") {
+      const largeur = f1 - f0;
+      f0 = Math.min(1 - largeur, Math.max(0, f0 + df)); f1 = f0 + largeur;
+    } else if (geste.mode === "g") f0 = Math.min(f1 - mini, Math.max(0, f0 + df));
+    else f1 = Math.max(f0 + mini, Math.min(1, f1 + df));
+    appliquerFractions(f0, f1);
+  });
+  const finGeste = e => {
+    if (!geste || e.pointerId !== geste.pointeur) return;
+    geste = null;
+    apercu.classList.remove("glisse");
+  };
+  apercu.addEventListener("pointerup", finGeste);
+  apercu.addEventListener("pointercancel", finGeste);
+
+  // --- clavier sur la fenêtre de l'aperçu
+  nav.querySelector(".apercu-fenetre").addEventListener("keydown", e => {
+    const chart = graphe();
+    if (!chart) return;
+    const n = chart.__temps.length;
+    const b = bornesZoom(id, chart.__temps) || [0, n - 1];
+    const largeur = b[1] - b[0], pas = Math.max(1, Math.round(largeur / 5));
+    let fait = true;
+    if (e.key === "ArrowLeft") zoomerIndices(chart, Math.max(0, b[0] - pas), Math.max(0, b[0] - pas) + largeur);
+    else if (e.key === "ArrowRight") zoomerIndices(chart, Math.min(n - 1, b[1] + pas) - largeur, Math.min(n - 1, b[1] + pas));
+    else if (e.key === "+" || e.key === "=") zoomerFacteur(chart, 0.5);
+    else if (e.key === "-" || e.key === "_") zoomerFacteur(chart, 2);
+    else if (e.key === "Home") zoomerIndices(chart, 0, largeur);
+    else if (e.key === "End") zoomerIndices(chart, n - 1 - largeur, n - 1);
+    else if (e.key === "Escape") { delete zooms[id]; rafraichirVue(chart); }
+    else fait = false;
+    if (fait) e.preventDefault();
+  });
+
+  // --- souris sur le graphe : glisser pour choisir une plage, double-clic pour tout revoir, Ctrl + molette
+  const selection = canvas.parentElement.querySelector(".selection-zoom");
+  let choix = null;
+  const xDans = (chart, e) => {
+    const r = canvas.getBoundingClientRect(), zone = chart.chartArea;
+    return Math.min(zone.right, Math.max(zone.left, e.clientX - r.left));
+  };
+  canvas.addEventListener("pointerdown", e => {
+    const chart = graphe();
+    if (!chart || e.pointerType !== "mouse" || e.button !== 0) return;
+    const r = canvas.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top, zone = chart.chartArea;
+    if (x < zone.left || x > zone.right || y < zone.top || y > zone.bottom) return;
+    choix = { x0: x, x1: x, pointeur: e.pointerId };
+    canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener("pointermove", e => {
+    const chart = graphe();
+    if (!choix || !chart || e.pointerId !== choix.pointeur) return;
+    choix.x1 = xDans(chart, e);
+    const g = Math.min(choix.x0, choix.x1), largeur = Math.abs(choix.x1 - choix.x0);
+    if (largeur < 4) { selection.hidden = true; return; }
+    const zone = chart.chartArea;
+    Object.assign(selection.style, { left: g + "px", width: largeur + "px", top: zone.top + "px", height: (zone.bottom - zone.top) + "px" });
+    selection.hidden = false;
+  });
+  const finChoix = e => {
+    const chart = graphe();
+    if (!choix || e.pointerId !== choix.pointeur) return;
+    const { x0, x1 } = choix;
+    choix = null;
+    selection.hidden = true;
+    if (!chart || Math.abs(x1 - x0) < 8) return;       // simple clic : rien
+    const echelleX = chart.scales.x;
+    zoomerIndices(chart, echelleX.getValueForPixel(Math.min(x0, x1)), echelleX.getValueForPixel(Math.max(x0, x1)));
+  };
+  canvas.addEventListener("pointerup", finChoix);
+  canvas.addEventListener("pointercancel", e => { if (choix && e.pointerId === choix.pointeur) { choix = null; selection.hidden = true; } });
+  canvas.addEventListener("dblclick", () => { const chart = graphe(); if (chart && zooms[id]) { delete zooms[id]; rafraichirVue(chart); } });
+  canvas.addEventListener("wheel", e => {
+    const chart = graphe();
+    if (!chart || !e.ctrlKey) return;        // sans Ctrl, la molette fait défiler la page comme d'habitude
+    e.preventDefault();
+    const r = canvas.getBoundingClientRect();
+    const c = chart.scales.x.getValueForPixel(e.clientX - r.left);
+    zoomerFacteur(chart, Math.exp(Math.max(-1, Math.min(1, e.deltaY / 200))), c);
+  }, { passive: false });
+
+  // l'aperçu se redessine quand sa largeur change
+  if ("ResizeObserver" in window) new ResizeObserver(() => { const chart = graphe(); if (chart) dessinerApercu(chart, nav); }).observe(apercu);
 }
 
 function dessiner(idCanvas, serie, champs, animer) {
@@ -2632,9 +3128,12 @@ function dessiner(idCanvas, serie, champs, animer) {
   const ancien = graphes[idCanvas];
   if (ancien && !animer && ancien.__signature === signature) {
     ancien.__courtes = courtes;
+    ancien.__temps = serie.map(r => r.t);
     ancien.data.labels = longues;
     ancien.data.datasets.forEach((d, i) => { d.data = jeux[i].data; });
+    appliquerVue(idCanvas, ancien.__temps, ancien.options.scales, ancien.__zeros);   // le zoom (en temps) suit les nouvelles données
     ancien.update("none");
+    majNav(ancien);
     const a = ancien.tooltip ? ancien.tooltip.getActiveElements() : [];
     ancien.__idx = undefined;   // les données ont changé : on réécrit la lecture
     ecrireLecture(ancien, a.length ? a[0].index : null);
@@ -2681,6 +3180,11 @@ function dessiner(idCanvas, serie, champs, animer) {
     });
   }
 
+  const temps = serie.map(r => r.t);
+  const zeros = {};
+  Object.keys(echelles).forEach(axe => { zeros[axe] = !!echelles[axe].beginAtZero; });
+  appliquerVue(idCanvas, temps, echelles, zeros);
+
   graphes[idCanvas] = new Chart(document.getElementById(idCanvas), {
     type: "line",
     data: { labels: longues, datasets: jeux },
@@ -2709,8 +3213,11 @@ function dessiner(idCanvas, serie, champs, animer) {
   });
   graphes[idCanvas].__signature = signature;
   graphes[idCanvas].__courtes = courtes;
+  graphes[idCanvas].__temps = temps;
+  graphes[idCanvas].__zeros = zeros;
   graphes[idCanvas].__lecture = lectureDe(document.getElementById(idCanvas));
   ecrireLecture(graphes[idCanvas], null);
+  majNav(graphes[idCanvas]);
   return utiles.length;
 }
 
@@ -2790,7 +3297,100 @@ function creerEchelle(champ) {
   const bande = el("span", "incert-bande");   // incertitude du capteur autour de la dernière mesure
   const repere = el("span", "repere");
   echelle.append(plageTexte, plage, bande, repere);
+
+  // Loupe : seconde jauge, agrandie et linéaire, qui n'apparaît que lorsque la mesure, son incertitude et le min/max
+  // tiennent dans un petit bout de la jauge (ou en débordent, ex. CO₂ sous 400 ppm). Voir majLoupe().
+  const fenetre = el("span", "loupe-fenetre");      // zone agrandie, repérée sur la jauge principale
+  const lien = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  lien.setAttribute("class", "loupe-lien");
+  lien.setAttribute("viewBox", "0 0 100 10");
+  lien.setAttribute("preserveAspectRatio", "none");
+  lien.setAttribute("aria-hidden", "true");
+  lien.innerHTML = '<path d=""></path>';
+  const loupe = el("div", "loupe");
+  loupe.hidden = true;
+  loupe.setAttribute("aria-hidden", "true");     // mêmes informations que la jauge et le texte (lus une seule fois)
+  const loupeTitre = el("span", "loupe-titre");
+  const loupeBarre = el("div", "loupe-barre");
+  const loupePlage = el("span", "plage");
+  const loupeBande = el("span", "incert-bande");
+  const loupeRepere = el("span", "repere");
+  const loupeGrad = el("div", "loupe-graduations");
+  loupe.append(loupeTitre, loupePlage, loupeBarre, loupeBande, loupeRepere, loupeGrad);
+  echelle.append(fenetre, lien, loupe);
+  echelle.loupe = { boite: loupe, titre: loupeTitre, barre: loupeBarre, plage: loupePlage, bande: loupeBande, repere: loupeRepere, grad: loupeGrad, fenetre, lien };
   return { echelle, repere, graduations, plage, plageTexte, bande };
+}
+
+// Pas « rond » (1, 2, 2,5 ou 5 × 10^k) pour découper une étendue en environ n intervalles.
+function pasRond(etendue, n) {
+  const brut = etendue / n;
+  const p = Math.pow(10, Math.floor(Math.log10(brut)));
+  const m = brut / p;
+  return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 2.5 ? 2.5 : m <= 5 ? 5 : 10) * p;
+}
+
+// Loupe automatique sous la jauge.
+// La jauge principale couvre toute l'échelle ATMO (ex. CO₂ de 400 à 2 500 ppm) : un air calme y tient dans quelques
+// pixels, le min et le max se chevauchent, et l'incertitude sous 400 ppm sortait de la jauge (invisible).
+// Quand la zone utile (min, max, mesure ± incertitude) occupe moins de 30 % de la jauge ou en déborde, une seconde
+// jauge apparaît dessous : linéaire, bornée à cette zone (+ marge, bornes rondes), avec les mêmes couleurs de niveaux
+// et ses propres graduations. Un cadre pointillé et deux traits montrent quelle partie de la jauge est agrandie.
+function majLoupe(carte, s, v, u) {
+  const L = carte.echelleEl.loupe;
+  if (!L) return;
+  const champ = carte.champ, S = SEUILS[champ], info = CHAMPS[champ];
+  const bas = Math.min(s.min, v - u), haut = Math.max(s.max, v + u);
+  const plein = S.plafond - S.plancher;
+  const etendue = Math.max(haut - bas, plein / 60);   // jamais plus de ~×60 : une loupe trop forte ne montre que du bruit
+  let a = bas - etendue * 0.18, b = haut + etendue * 0.18;
+  const pas = pasRond(b - a, 4);
+  a = Math.max(0, Math.floor(a / pas) * pas);
+  b = Math.ceil(b / pas) * pas;
+  const pa = positionJauge(champ, a), pb = positionJauge(champ, b);
+  const deborde = v - u < S.plancher || s.min < S.plancher || v + u > S.plafond || s.max > S.plafond;
+  const utile = deborde || pb - pa < 30;
+  L.boite.hidden = !utile;
+  L.fenetre.hidden = !utile;
+  L.lien.style.display = utile ? "" : "none";
+  carte.echelleEl.classList.toggle("avec-loupe", utile);
+  if (!utile) return;
+
+  const pos = x => ((x - a) / (b - a) * 100);
+  const borne = x => Math.min(100, Math.max(0, pos(x))).toFixed(2) + "%";
+  // couleurs des niveaux, à leur vraie place (séparées par un filet de la couleur du fond, comme sur la jauge)
+  const couleurs = NIVEAUX.slice(0, S.limites.length + 1).map(n => n.ciel);
+  let i = 0;
+  while (i < S.limites.length && S.limites[i] < a) i++;
+  const arrets = [couleurs[i] + " 0%"];
+  for (; i < S.limites.length && S.limites[i] < b; i++) {
+    const p = pos(S.limites[i]).toFixed(2);
+    arrets.push(`${couleurs[i]} calc(${p}% - 1.5px)`, `var(--fond) calc(${p}% - 1.5px)`, `var(--fond) calc(${p}% + 1.5px)`, `${couleurs[i + 1]} calc(${p}% + 1.5px)`);
+  }
+  arrets.push(couleurs[i] + " 100%");
+  L.barre.style.background = "linear-gradient(90deg, " + arrets.join(", ") + ")";
+
+  L.repere.style.setProperty("--pos", borne(v));
+  L.bande.style.setProperty("--a", borne(v - u));
+  L.bande.style.setProperty("--b", borne(v + u));
+  L.bande.hidden = !(u > 0);
+  L.plage.style.setProperty("--min", borne(s.min));
+  L.plage.style.setProperty("--max", borne(s.max));
+
+  const decimales = pas >= 1 ? 0 : pas >= 0.1 ? 1 : 2;
+  L.grad.replaceChildren();
+  for (let x = a; x <= b + pas / 1000; x += pas) {
+    const g = el("span", "graduation", nb(x, decimales));
+    g.style.left = pos(x).toFixed(2) + "%";
+    L.grad.append(g);
+  }
+  const facteur = 100 / Math.max(pb - pa, 0.5);
+  L.titre.textContent = trad("carte.loupe", { x: nb(facteur, facteur < 10 ? 1 : 0) });
+
+  // cadre sur la jauge principale (au moins 6 px de large pour rester visible) et traits vers les bords de la loupe
+  L.fenetre.style.setProperty("--wa", pa.toFixed(2) + "%");
+  L.fenetre.style.setProperty("--wb", pb.toFixed(2) + "%");
+  L.lien.firstChild.setAttribute("d", `M${pa.toFixed(2)} 0L0 10M${pb.toFixed(2)} 0L100 10`);
 }
 
 function creerCarte(champ) {
@@ -2857,6 +3457,7 @@ function majCarte(carte, s, perime) {
       carte.bandeEl.title = carte.incertEl.title;
       carte.echelleEl.setAttribute("aria-label", carte.echelleEl.getAttribute("aria-label") + " " + carte.incertEl.textContent + ".");
     }
+    majLoupe(carte, s, d.valeur, inc ? incertitude(carte.champ, d.valeur) : 0);
   }
   carte.nomEl.textContent = nomChamp(carte.champ);
   carte.detailEl.textContent = perime ? trad("carte.derniere", { depuis: depuis(Date.now() - d.t) }) : detailChamp(carte.champ);
@@ -4836,6 +5437,7 @@ function pauseHorsEcran() {
 
 // Applique une période (clé de l'API : "-6h", "-90m"…). Si aucun bouton ne lui correspond, c'est une durée personnalisée.
 function choisirPeriode(cle) {
+  if (cle !== periodeActuelle) Object.keys(zooms).forEach(id => { delete zooms[id]; });   // nouvelle période : vue entière
   animerProchain = (cle !== periodeActuelle);
   periodeActuelle = cle;
   ecrireMemoire("periode", cle);   // retrouvée à la prochaine visite
@@ -5546,6 +6148,7 @@ function demarrer() {
     if (curseur) curseur.classList.add("pret");   // le curseur ne glisse qu'après sa mise en place
   });
   securise(initTampon);
+  securise(() => initZoomGraphe("graphe-air"));
   securise(dessinerFleches);
   securise(pauseHorsEcran);
   securise(initFigureParticules);
