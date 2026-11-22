@@ -1,0 +1,12 @@
+# Mémoire flash de 4 Mo de l'ESP32, découpée pour la mise à jour à distance (OTA) :
+#  - app0 / app1 : deux emplacements de 1,5 Mo pour le programme. La carte tourne sur l'un et écrit la mise à jour
+#    dans l'autre ; si la nouvelle version échoue, elle revient sur l'ancienne, restée intacte.
+#  - spiffs : 896 Ko pour LittleFS (mesures gardées hors ligne, voir TAILLE_MAX_BACKLOG dans main.cpp).
+# Changer cette table demande un flash USB (et efface les mesures en attente).
+# Name,   Type, SubType,  Offset,   Size,     Flags
+nvs,      data, nvs,      0x9000,   0x5000,
+otadata,  data, ota,      0xe000,   0x2000,
+app0,     app,  ota_0,    0x10000,  0x180000,
+app1,     app,  ota_1,    0x190000, 0x180000,
+spiffs,   data, spiffs,   0x310000, 0xE0000,
+coredump, data, coredump, 0x3F0000, 0x10000,
