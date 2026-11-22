@@ -335,7 +335,7 @@
     border-bottom: 2px solid currentColor;
     font-size: .85rem; font-weight: 700; font-stretch: 115%; text-decoration: none;
   }
-  .descendre span { display: inline-block; animation: rebond .9s cubic-bezier(.37, 0, .63, 1) infinite alternate; will-change: transform; }
+  .descendre span { display: inline-block; }
   .lecture { flex: 0 1 430px; margin: 0; display: grid; gap: 12px; }
   .lecture > div { display: grid; grid-template-columns: 96px 1fr; gap: 14px; align-items: baseline; padding-top: 10px; border-top: 2px solid currentColor; }
   .lecture dt { font-size: .72rem; font-weight: 700; font-stretch: 125%; text-transform: uppercase; letter-spacing: .05em; }
@@ -366,7 +366,7 @@
   @media (min-width: 720px) { .tampon { display: block; } }
 
   /* ---------- Animations ---------- */
-  /* Boucles fluides dans Firefox. Firefox (et Safari) arrondit au pixel entier la position et la taille d'un élément
+  /* Boucles fluides dans Firefox (disque, point du tampon). Firefox (et Safari) arrondit au pixel entier la position et la taille d'un élément
      dont la transformation n'est qu'un déplacement ou un agrandissement : une flèche qui descend de 5 px en 0,9 s ne
      bouge alors qu'une fois tous les ~11 images (marches d'escalier), un rond qui grossit de quelques pixels saute de
      taille en taille. Une rotation infime (0,02°, invisible) lui fait abandonner cet arrondi : il dessine les positions
@@ -378,7 +378,9 @@
   @keyframes lettre { from { opacity: 0; transform: translateY(.28em) rotate(5deg); } to { opacity: 1; transform: none; } }
   @keyframes trace { to { stroke-dashoffset: 0; } }
   @keyframes attente { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
-  @keyframes rebond { from { transform: translate3d(0, 0, 0) rotate(.02deg); } to { transform: translate3d(0, 5px, 0) rotate(.02deg); } }
+  /* Flèches « ↓ » animées : voir dessinerFleches() (tracé SVG animé, pas de transform) */
+  .fleche-svg { display: inline-block; width: .75em; height: 1em; vertical-align: -.14em; overflow: visible; }
+  .fleche-svg path { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
   @keyframes monte { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
   @keyframes tourne { to { transform: rotate(360deg); } }
   @keyframes bat { from { transform: scale(.6667) rotate(.02deg); } to { transform: scale(1) rotate(.02deg); } }
@@ -440,7 +442,7 @@
     position: absolute; left: 0; right: 0; bottom: calc(22px + env(safe-area-inset-bottom, 0px)); margin: 0;
     text-align: center; font: 600 .75rem/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: rgba(242, 244, 240, .6);
   }
-  .ouv-fleche { display: inline-block; margin-left: 6px; animation: rebond .9s cubic-bezier(.37, 0, .63, 1) infinite alternate; will-change: transform; }
+  .ouv-fleche { display: inline-block; margin-left: 6px; }
   /* pendant l'ouverture et les points forts (scènes noires plein écran), les barres de la page s'effacent */
   .sommaire-story, .progression-lecture, .bascule-plein { transition: opacity .4s ease; }
   html.scene-libre .sommaire-story, html.scene-libre .progression-lecture, html.scene-libre .bascule-plein { opacity: 0; pointer-events: none; }
@@ -629,16 +631,13 @@
     box-shadow: 0 4px 18px rgba(14, 27, 36, .28); cursor: pointer;
     animation: aller-apparait .45s var(--courbe) both;
   }
-  /* flèche sur sa propre couche (animée par le processeur graphique, sans repeindre le bouton à chaque image),
-     mouvement continu (sinusoïde) au lieu de deux arrêts nets en haut et en bas */
-  .aller-mesures .fleche { display: inline-block; will-change: transform; animation: flotte 1.6s cubic-bezier(.37, 0, .63, 1) infinite alternate; }
-  @keyframes flotte { from { transform: translate3d(0, -2px, 0) rotate(.02deg); } to { transform: translate3d(0, 3px, 0) rotate(.02deg); } }
+  .aller-mesures .fleche { display: inline-block; }
   @keyframes aller-apparait { from { opacity: 0; transform: translateY(12px); } }
   @media (hover: hover) { .aller-mesures:hover { background: var(--encre); color: var(--fond); } }
   .aller-mesures:focus-visible { outline: 3px solid var(--cobalt); outline-offset: 3px; }
   @media (max-width: 899px) { .aller-mesures { bottom: calc(82px + env(safe-area-inset-bottom, 0px)); } }
   html.jeu-actif .aller-mesures, html.gate-ouvert .aller-mesures { display: none !important; }
-  html.mouvement-reduit .aller-mesures, html.mouvement-reduit .aller-mesures .fleche { animation: none; }
+  html.mouvement-reduit .aller-mesures { animation: none; }
   @media print { .aller-mesures { display: none !important; } }
 
   /* Pas de la moyenne (fréquence d'échantillonnage des graphes) */
@@ -1099,7 +1098,7 @@
      mais les fondus restent. Le réglage du système n'est volontairement pas suivi (voir le <head>). ---------- */
   html.mouvement-reduit { scroll-behavior: auto; }
   html.mouvement-reduit :is(.hero-disque, .tampon svg, .tampon-point, .descendre span,
-    .squelette i, .mot.attente #verdict-lettres, .ouv-fleche) { animation: none; }
+    .squelette i, .mot.attente #verdict-lettres) { animation: none; }
   html.mouvement-reduit .statut .point .onde { display: none; }
   html.mouvement-reduit .tampon-point { transform: scale(.6667); }   /* point dessiné à 21 px : taille de repos (14 px) sans animation */
   html.mouvement-reduit .lettre { animation: fondu .6s ease both; animation-delay: calc(var(--i, 0) * 30ms + 100ms); }
@@ -3931,6 +3930,31 @@ function creerNuage() {
 }
 
 // Tampon qui tourne : le texte est écrit le long d'un cercle, étiré pour boucler exactement.
+// Flèches « ↓ » qui montent et descendent (bouton flottant « Aller aux mesures », « Voir les mesures », « Faites défiler »).
+// Un caractère déplacé par CSS (transform) avançait par marches d'un pixel dans Firefox, même avec l'astuce de la
+// rotation infime : Firefox cale aussi les lettres sur la grille des pixels. La flèche est donc un tracé SVG dont on
+// anime directement les coordonnées (SMIL) : il est redessiné à chaque image à sa position exacte, dans tous les
+// navigateurs (Firefox, Chrome, Safari). Courbe sinusoïdale : pas d'arrêt net en haut ni en bas.
+// Réécrite après chaque changement de langue (« Voir les mesures ↓ » vient du dictionnaire).
+function dessinerFleches() {
+  // forme au repos dans une boîte 12 × 16 (≈ 1 em de haut) ; dy décale tout le tracé vers le bas
+  const trace = dy => `M6 ${2 + dy}V${13 + dy}M2 ${9 + dy}L6 ${13 + dy}L10 ${9 + dy}`;
+  const sinus = ".37 0 .63 1;.37 0 .63 1";
+  const fleche = (haut, bas, duree) => {
+    const anim = reduit() ? "" :
+      `<animate attributeName="d" dur="${duree}s" repeatCount="indefinite" calcMode="spline" keyTimes="0;.5;1" keySplines="${sinus}" values="${trace(haut)};${trace(bas)};${trace(haut)}"></animate>`;
+    return `<svg class="fleche-svg" viewBox="0 0 12 16" aria-hidden="true" focusable="false"><path d="${trace(haut)}">${anim}</path></svg>`;
+  };
+  // décalages en unités de la boîte (1 unité ≈ 0,85 px) : bouton flottant −2 → +3 px en 1,6 s ; les autres 0 → 5 px en 0,9 s
+  const reglages = [[".aller-mesures .fleche", -2.4, 3.6, 3.2], [".ouv-fleche", 0, 6, 1.8], [".descendre > span", 0, 6, 1.8]];
+  reglages.forEach(([selecteur, haut, bas, duree]) => {
+    document.querySelectorAll(selecteur).forEach(el => {
+      if (el.querySelector(".fleche-svg")) return;
+      el.innerHTML = fleche(haut, bas, duree);
+    });
+  });
+}
+
 function initTampon() {
   const t = document.getElementById("tampon");
   if (!t) return;
@@ -5517,6 +5541,7 @@ function demarrer() {
     if (curseur) curseur.classList.add("pret");   // le curseur ne glisse qu'après sa mise en place
   });
   securise(initTampon);
+  securise(dessinerFleches);
   securise(pauseHorsEcran);
   securise(initFigureParticules);
   securise(initEtoilesOuverture);
@@ -5588,6 +5613,7 @@ function demarrer() {
     securise(ecrireVersion);
     securise(() => { if (nuage) nuage.majLangue(); });
     securise(majTampon);
+    securise(dessinerFleches);
     securise(majManifeste);
     securise(ecrireStatut);
     securise(ecrireEtat);
