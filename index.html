@@ -26,6 +26,15 @@
   setTimeout(function () {
     if (!window.__pret) document.documentElement.classList.remove("js");
   }, 6000);
+  /* Défilement automatique au clic molette (la petite pastille ⇕ de Windows) : désactivé sur tout le site. Un clic sur la
+     molette n'est plus intercepté par le navigateur ; il reste utilisable sur un lien (ouvrir dans un nouvel onglet) et
+     dans les champs de saisie (coller sous Linux). */
+  document.addEventListener("mousedown", function (e) {
+    if (e.button !== 1) return;
+    var t = e.target;
+    if (t && t.closest && t.closest("a[href], input, textarea, select, [contenteditable='true']")) return;
+    e.preventDefault();
+  }, true);
 </script>
 
 <!-- Polices : chargées sans bloquer l'affichage (polices de secours en attendant) -->
