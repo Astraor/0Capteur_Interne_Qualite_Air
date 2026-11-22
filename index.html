@@ -260,9 +260,11 @@
     font: 600 .78rem/1.25 var(--mono);
   }
   .statut .point { position: relative; width: 10px; height: 10px; flex: none; border-radius: 50%; background: currentColor; }
+  /* Anneau dessiné directement à sa taille finale (3,2 × le point, trait 6,4 px) puis réduit au départ (scale .3125) :
+     agrandir un petit rond le faisait grossir pixel par pixel dans Firefox (voir @keyframes onde). */
   .statut.ok .point::after {
-    content: ""; position: absolute; inset: 0; border-radius: 50%;
-    border: 2px solid currentColor; animation: onde 2.2s ease-out infinite;
+    content: ""; position: absolute; inset: -110%; border-radius: 50%;
+    border: 6.4px solid currentColor; animation: onde 2.2s ease-out infinite; will-change: transform, opacity;
   }
   .statut.alerte .point { border-radius: 0; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
   .statut.erreur .point { border-radius: 1px; }
@@ -332,7 +334,7 @@
     border-bottom: 2px solid currentColor;
     font-size: .85rem; font-weight: 700; font-stretch: 115%; text-decoration: none;
   }
-  .descendre span { display: inline-block; animation: rebond 1.8s ease-in-out infinite; }
+  .descendre span { display: inline-block; animation: rebond .9s cubic-bezier(.37, 0, .63, 1) infinite alternate; will-change: transform; }
   .lecture { flex: 0 1 430px; margin: 0; display: grid; gap: 12px; }
   .lecture > div { display: grid; grid-template-columns: 96px 1fr; gap: 14px; align-items: baseline; padding-top: 10px; border-top: 2px solid currentColor; }
   .lecture dt { font-size: .72rem; font-weight: 700; font-stretch: 125%; text-transform: uppercase; letter-spacing: .05em; }
@@ -356,21 +358,28 @@
 
   /* Tampon rotatif : le script écrit le texte le long du cercle */
   .tampon { display: none; position: absolute; z-index: 2; right: var(--gouttiere); top: clamp(84px, 11vw, 124px); width: 118px; height: 118px; }
-  .tampon svg { display: block; width: 100%; height: 100%; animation: tourne 26s linear infinite; }
+  .tampon svg { display: block; width: 100%; height: 100%; animation: tourne 26s linear infinite; will-change: transform; }
   .tampon text { fill: currentColor; font: 600 9px var(--mono); }
-  .tampon-point { position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: currentColor; animation: bat 2s ease-in-out infinite; }
+  /* point dessiné à sa taille maximale (21 px = 14 px × 1,5) et réduit au repos : voir @keyframes bat */
+  .tampon-point { position: absolute; left: 50%; top: 50%; width: 21px; height: 21px; margin: -10.5px 0 0 -10.5px; border-radius: 50%; background: currentColor; animation: bat 1s cubic-bezier(.37, 0, .63, 1) infinite alternate; will-change: transform; }
   @media (min-width: 720px) { .tampon { display: block; } }
 
   /* ---------- Animations ---------- */
-  @keyframes respire { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
-  @keyframes onde { 0% { transform: scale(1); opacity: .7; } 100% { transform: scale(3.2); opacity: 0; } }
+  /* Boucles fluides dans Firefox. Firefox (et Safari) arrondit au pixel entier la position et la taille d'un élément
+     dont la transformation n'est qu'un déplacement ou un agrandissement : une flèche qui descend de 5 px en 0,9 s ne
+     bouge alors qu'une fois tous les ~11 images (marches d'escalier), un rond qui grossit de quelques pixels saute de
+     taille en taille. Une rotation infime (0,02°, invisible) lui fait abandonner cet arrondi : il dessine les positions
+     intermédiaires, comme Chrome. Les ronds sont en plus dessinés à leur taille maximale et seulement réduits (scale ≤ 1),
+     jamais agrandis : l'image n'est jamais étirée, donc nette d'un bout à l'autre. */
+  @keyframes respire { 0%, 100% { transform: scale(1) rotate(.02deg); } 50% { transform: scale(1.06) rotate(.02deg); } }
+  @keyframes onde { 0% { transform: scale(.3125) rotate(.02deg); opacity: .7; } 100% { transform: scale(1) rotate(.02deg); opacity: 0; } }
   @keyframes lettre { from { opacity: 0; transform: translateY(.28em) rotate(5deg); } to { opacity: 1; transform: none; } }
   @keyframes trace { to { stroke-dashoffset: 0; } }
   @keyframes attente { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
-  @keyframes rebond { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(5px); } }
+  @keyframes rebond { from { transform: translate3d(0, 0, 0) rotate(.02deg); } to { transform: translate3d(0, 5px, 0) rotate(.02deg); } }
   @keyframes monte { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
   @keyframes tourne { to { transform: rotate(360deg); } }
-  @keyframes bat { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.5); } }
+  @keyframes bat { from { transform: scale(.6667) rotate(.02deg); } to { transform: scale(1) rotate(.02deg); } }
   @keyframes brillance { to { background-position: -200% 0; } }
   @keyframes fondu { from { opacity: 0; } to { opacity: 1; } }
 
@@ -429,7 +438,7 @@
     position: absolute; left: 0; right: 0; bottom: calc(22px + env(safe-area-inset-bottom, 0px)); margin: 0;
     text-align: center; font: 600 .75rem/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: rgba(242, 244, 240, .6);
   }
-  .ouv-fleche { display: inline-block; margin-left: 6px; animation: rebond 1.8s ease-in-out infinite; will-change: transform; }
+  .ouv-fleche { display: inline-block; margin-left: 6px; animation: rebond .9s cubic-bezier(.37, 0, .63, 1) infinite alternate; will-change: transform; }
   /* pendant l'ouverture et les points forts (scènes noires plein écran), les barres de la page s'effacent */
   .sommaire-story, .progression-lecture, .bascule-plein { transition: opacity .4s ease; }
   html.scene-libre .sommaire-story, html.scene-libre .progression-lecture, html.scene-libre .bascule-plein { opacity: 0; pointer-events: none; }
@@ -621,7 +630,7 @@
   /* flèche sur sa propre couche (animée par le processeur graphique, sans repeindre le bouton à chaque image),
      mouvement continu (sinusoïde) au lieu de deux arrêts nets en haut et en bas */
   .aller-mesures .fleche { display: inline-block; will-change: transform; animation: flotte 1.6s cubic-bezier(.37, 0, .63, 1) infinite alternate; }
-  @keyframes flotte { from { transform: translate3d(0, -2px, 0); } to { transform: translate3d(0, 3px, 0); } }
+  @keyframes flotte { from { transform: translate3d(0, -2px, 0) rotate(.02deg); } to { transform: translate3d(0, 3px, 0) rotate(.02deg); } }
   @keyframes aller-apparait { from { opacity: 0; transform: translateY(12px); } }
   @media (hover: hover) { .aller-mesures:hover { background: var(--encre); color: var(--fond); } }
   .aller-mesures:focus-visible { outline: 3px solid var(--cobalt); outline-offset: 3px; }
@@ -952,8 +961,8 @@
   .pied-statut .point { position: relative; width: 9px; height: 9px; flex: none; border-radius: 50%; background: #50f0e6; }
   .pied-statut.alerte .point { border-radius: 0; background: #f0e641; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
   .pied-statut.erreur .point { border-radius: 1px; background: #ff5050; }
-  .pied-statut.ok .point::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 2px solid #50f0e6; animation: onde 2.2s ease-out infinite; }
-  html.mouvement-reduit .pied-statut .point::after { animation: none; }
+  .pied-statut.ok .point::after { content: ""; position: absolute; inset: -110%; border-radius: 50%; border: 6.4px solid #50f0e6; animation: onde 2.2s ease-out infinite; will-change: transform, opacity; }
+  html.mouvement-reduit .pied-statut .point::after { animation: none; display: none; }   /* anneau dessiné en grand : sans animation, on le retire */
   .pied-colonnes { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 30px 40px; padding: 30px 0 32px; }
   .pied-col h2 { margin: 0 0 12px; font: 600 .7rem/1.4 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: rgba(242, 244, 240, .58); }
   .pied-col, .pied-col p, .pied-col li, .pied-col dd { font-size: .88rem; line-height: 1.5; color: rgba(242, 244, 240, .84); }
@@ -1089,7 +1098,8 @@
   html.mouvement-reduit { scroll-behavior: auto; }
   html.mouvement-reduit :is(.hero-disque, .tampon svg, .tampon-point, .descendre span,
     .squelette i, .mot.attente #verdict-lettres, .ouv-fleche) { animation: none; }
-  html.mouvement-reduit .statut .point::after { animation: none; }
+  html.mouvement-reduit .statut .point::after { animation: none; display: none; }
+  html.mouvement-reduit .tampon-point { transform: scale(.6667); }   /* point dessiné à 21 px : taille de repos (14 px) sans animation */
   html.mouvement-reduit .lettre { animation: fondu .6s ease both; animation-delay: calc(var(--i, 0) * 30ms + 100ms); }
   html.mouvement-reduit .apparait { animation: fondu .7s ease both; animation-delay: calc(var(--d, 0) * 90ms + 100ms); }
   html.mouvement-reduit .souligne.dessine path { animation: none; stroke-dashoffset: 0; }
