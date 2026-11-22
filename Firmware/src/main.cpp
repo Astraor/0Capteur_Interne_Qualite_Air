@@ -168,6 +168,7 @@
 
 // HTTPS vers AirCarto et vers le relais : certificats racines acceptés (Let's Encrypt, Google, SSL.com, Sectigo)
 #include <WiFiClientSecure.h>
+#include <mbedtls/error.h>          // diag tls : texte des erreurs
 #include "racines_tls.h"
 #if WIFI_ACTIVE
 #include "esp_wpa2.h"
@@ -499,6 +500,7 @@ void btEcrire(const uint8_t* b, size_t n);        // Bluetooth (section BLUETOOT
 // D'où vient une commande : le câble USB peut tout ; Bluetooth et relais seulement la liste blanche.
 enum SourceCommande : uint8_t { SOURCE_USB, SOURCE_BLUETOOTH, SOURCE_RELAIS };
 void deposerCommande(const char* texte, uint8_t source);   // file d'attente, exécutée par loop()
+void diagnosticTls();                                      // commande « diag tls » (section COMMANDES)
 
 class SortieConsole : public Print {
  public:
@@ -2907,7 +2909,7 @@ void initialiserBluetooth() {
   NimBLECharacteristic* rx = service->createCharacteristic(NUS_RX, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR |
                                                            NIMBLE_PROPERTY::WRITE_ENC | NIMBLE_PROPERTY::WRITE_AUTHEN);
   rx->setCallbacks(new BtReception());
-  service->start();
+  // (plus de service->start() : NimBLE démarre les services avec le serveur, au lancement de la diffusion ci-dessous)
   auto* pub = NimBLEDevice::getAdvertising();   // (NimBLEAdvertising)
   pub->setName(btNom.c_str());
   pub->start();
@@ -4296,6 +4298,7 @@ void afficherAide() {
   Console.println("  set jeton <jeton>     jeton secret de la carte auprès du relais (16 caractères au moins)");
   Console.println("  maj                   cherche une mise à jour publiée (maj installer : l'installe)");
   Console.println("  maj oublier           réautorise une version qui a échoué sur la carte");
+  Console.println("  diag tls              teste la connexion HTTPS à AirCarto et affiche la raison d'un échec");
   Console.println("  bt appairer           autorise un nouveau téléphone Bluetooth pendant 2 min");
   Console.println("  bt demarrage on|off   autorise aussi un nouveau téléphone 2 min après la mise sous tension");
   Console.println("  bt liste              téléphones Bluetooth appairés");
@@ -4600,6 +4603,8 @@ void executerCommande(const String &cmd) {
 #else
     Console.println("Mise à jour à distance désactivée (CONSOLE_DISTANTE 0).");
 #endif
+  } else if (bas == "diag tls") {   // câble USB seulement (pas dans la liste blanche)
+    diagnosticTls();
   } else if (bas == "maj oublier") {   // câble USB seulement (pas dans la liste blanche)
 #if CONSOLE_DISTANTE
     prefsOta.remove("refusee");
@@ -4662,6 +4667,67 @@ void executerCommande(const String &cmd) {
   } else {
     Console.println("Commande inconnue. Tape 'aide'.");
   }
+}
+
+// Commande « diag tls » (câble USB) : rejoue une connexion HTTPS à AirCarto en affichant ce que la bibliothèque
+// WiFiClientSecure ne montre pas (elle efface tout dès l'échec) : raison exacte du refus du certificat, chaîne
+// réellement reçue, mémoire. AUCUNE donnée n'est envoyée (ni clé, ni mesure) : poignée de main seulement.
+// Trois essais : racines d'AirCarto, liste complète, puis SANS vérification (pour savoir si seule la vérification
+// échoue ; rien n'est envoyé sur cette connexion, elle est fermée aussitôt).
+static void essaiTls(const char* hote, const char* racines, const char* nom) {
+  Console.printf("--- %s : mémoire libre %u, plus grand bloc %u\n", nom, (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
+  IPAddress ip;
+  if (!WiFi.hostByName(hote, ip)) { Console.println("    nom introuvable (DNS)"); return; }
+  sslclient_context* ctx = new sslclient_context;
+  ssl_init(ctx);
+  ctx->socket = -1;
+  ctx->handshake_timeout = 15000;
+  int ret = start_ssl_client(ctx, ip, 443, hote, 8000, racines, false, nullptr, nullptr, nullptr, nullptr,
+                             racines == nullptr, nullptr);
+  char texte[200];
+  if (ret >= 0) {
+    Console.printf("    %s : connexion OK (%s, %s)\n", ip.toString().c_str(), mbedtls_ssl_get_version(&ctx->ssl_ctx),
+                   mbedtls_ssl_get_ciphersuite(&ctx->ssl_ctx));
+  } else {
+    mbedtls_strerror(ret, texte, sizeof(texte));
+    Console.printf("    %s : ÉCHEC %d : %s\n", ip.toString().c_str(), ret, texte);
+  }
+  uint32_t drapeaux = mbedtls_ssl_get_verify_result(&ctx->ssl_ctx);
+  if (racines != nullptr && drapeaux != 0 && drapeaux != (uint32_t)-1) {
+    char info[400];
+    mbedtls_x509_crt_verify_info(info, sizeof(info), "    raison : ", drapeaux);
+    Console.printf("    drapeaux 0x%08lx\n%s", (unsigned long)drapeaux, info);
+  }
+  // chaîne reçue du serveur
+  const mbedtls_x509_crt* c = nullptr;
+  if (ctx->ssl_ctx.session_negotiate) c = ctx->ssl_ctx.session_negotiate->peer_cert;
+  if (c == nullptr && ctx->ssl_ctx.session) c = ctx->ssl_ctx.session->peer_cert;
+  for (int i = 0; c != nullptr && i < 5; c = c->next, i++) {
+    if (c->raw.len == 0) continue;
+    char sujet[120], emetteur[120];
+    mbedtls_x509_dn_gets(sujet, sizeof(sujet), &c->subject);
+    mbedtls_x509_dn_gets(emetteur, sizeof(emetteur), &c->issuer);
+    Console.printf("    reçu %d : %s | émis par %s | clé %u bits | fin %04d-%02d-%02d\n", i, sujet, emetteur,
+                   (unsigned)mbedtls_pk_get_bitlen(&c->pk), c->valid_to.year, c->valid_to.mon, c->valid_to.day);
+  }
+  stop_ssl_socket(ctx, racines, nullptr, nullptr);
+  delete ctx;
+}
+
+void diagnosticTls() {
+  if (!reseauOK()) { Console.println("diag tls : pas de Wi-Fi."); return; }
+  if (mutexTls && xSemaphoreTake(mutexTls, pdMS_TO_TICKS(20000)) != pdTRUE) {
+    Console.println("diag tls : une autre connexion HTTPS est en cours, réessaie.");
+    return;
+  }
+  Console.printf("Diagnostic HTTPS vers api.aircarto.fr (version %lu). Aucune donnée n'est envoyée.\n", (unsigned long)FW_VERSION);
+  essaiTls("api.aircarto.fr", RACINES_AIRCARTO, "1) racines d'AirCarto (RACINES_AIRCARTO)");
+  esp_task_wdt_reset();
+  essaiTls("api.aircarto.fr", RACINES_TLS, "2) liste complète (RACINES_TLS)");
+  esp_task_wdt_reset();
+  essaiTls("api.aircarto.fr", nullptr, "3) SANS vérification (diagnostic seulement)");
+  if (mutexTls) xSemaphoreGive(mutexTls);
+  Console.println("Fin du diagnostic : copie toutes ces lignes.");
 }
 
 // Commandes acceptées par Bluetooth et par la console à distance : rien qui touche aux mots de passe, à la clé,
