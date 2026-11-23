@@ -4,6 +4,13 @@ name = "mair-relais"
 main = "src/index.js"
 compatibility_date = "2025-10-01"
 
+# Adresses publiques du relais
+# - workers_dev : https://mair-relais.astraor.workers.dev (utilisée par la carte, le site et la console) : à garder.
+# - preview_urls : adresses de prévisualisation (une par version) désactivées : elles rendraient joignables
+#   d'anciennes versions du relais avec les mêmes secrets. Ce fichier fait foi à chaque déploiement.
+workers_dev = true
+preview_urls = false
+
 # Le dépôt GitHub dont les releases contiennent firmware.bin + firmware.json
 [vars]
 DEPOT_GITHUB = "Astraor/0Capteur_Interne_Qualite_Air"
