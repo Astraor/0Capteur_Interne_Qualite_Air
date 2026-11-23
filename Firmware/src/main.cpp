@@ -125,7 +125,7 @@
 #define MASQUER_SECRETS           0  // 1 = les mots de passe saisis s'affichent en ****
 #define DOUBLE_BUFFER             1  // 1 = dessin sans scintillement | 0 si l'écran reste noir ou s'affiche mal
 #define ANIMATIONS                0  // 1 = clignement, chiffres qui glissent, sommet de courbe qui clignote | 0 = calme
-#define TRANSITION_FONDU          1  // 1 = fondu au noir (~150 ms) entre deux pages | 0 = changement sec
+#define TRANSITION_FONDU          1  // 1 = fondu au noir (~0,65 s) entre deux pages | 0 = changement sec
 #ifndef AIRCARTO_HTTPS
 #define AIRCARTO_HTTPS            1  // 1 = mesures envoyées en HTTPS (clé chiffrée, serveur vérifié) | 0 = HTTP simple
                                      //     (clé du groupe lisible sur le réseau : seulement si le HTTPS pose problème)
@@ -4005,14 +4005,15 @@ void presenter() {
 }
 
 // Transition entre deux pages : fondu au noir puis retour, en jouant sur la LUMINOSITÉ de tout l'écran
-// (aucun trait ni balayage de couleur). 4 paliers de 18 ms dans chaque sens : ~150 ms en tout.
+// (aucun trait ni balayage de couleur). 8 paliers de 40 ms dans chaque sens : ~0,65 s en tout (avant : ~150 ms).
 // sortie = true : la page affichée s'éteint ; false : la nouvelle page s'allume.
+static const int FONDU_PALIERS = 8, FONDU_PALIER_MS = 40;
 void fondu(bool sortie) {
 #if TRANSITION_FONDU
-  for (int k = 1; k <= 4; k++) {
-    int palier = sortie ? 4 - k : k;                  // sortie : 3, 2, 1, 0 | entrée : 1, 2, 3, 4
-    display.setBrightness((uint16_t)luminositeCourante * palier / 4);
-    delay(18);
+  for (int k = 1; k <= FONDU_PALIERS; k++) {
+    int palier = sortie ? FONDU_PALIERS - k : k;      // sortie : 7 ... 0 | entrée : 1 ... 8
+    display.setBrightness((uint16_t)luminositeCourante * palier / FONDU_PALIERS);
+    delay(FONDU_PALIER_MS);
   }
 #endif
 }
@@ -4286,13 +4287,17 @@ void dessinerLogo(int rangs, int lettres, int niveaux, bool eclat) {
   }
 }
 
-// Animation de démarrage (~2,7 s) : la basilique monte, le nom s'écrit, la barre se remplit, la statue scintille.
+// Animation de démarrage (~7 s) : la basilique monte, le nom s'écrit, la barre se remplit, la statue scintille, puis
+// le logo complet reste affiché 2,5 s pour qu'on ait le temps de le regarder (avant : ~2,7 s en tout, 0,5 s à la fin).
+static const uint16_t SPLASH_MONTEE_MS = 50, SPLASH_LETTRE_MS = 90, SPLASH_LETTRE_FIN_MS = 150, SPLASH_NIVEAU_MS = 180,
+                      SPLASH_SCINTILLE_MS = 200, SPLASH_FIN_MS = 2500;
 void afficherSplash() {
-  for (int r = 2; r <= 32; r += 2) { dessinerLogo(r, 0, 0, false); presenter(); delay(25); }
-  for (int l = 1; l <= 13; l++)    { dessinerLogo(32, l, 0, false); presenter(); delay(l <= 8 ? 45 : 90); }
-  for (int n = 1; n <= NB_NIVEAUX; n++) { dessinerLogo(32, 13, n, false); presenter(); delay(100); }
-  for (int k = 0; k < 4; k++)      { dessinerLogo(32, 13, NB_NIVEAUX, k % 2 == 0); presenter(); delay(130); }
-  delay(500);
+  for (int r = 2; r <= 32; r += 2) { dessinerLogo(r, 0, 0, false); presenter(); delay(SPLASH_MONTEE_MS); }
+  for (int l = 1; l <= 13; l++)    { dessinerLogo(32, l, 0, false); presenter(); delay(l <= 8 ? SPLASH_LETTRE_MS : SPLASH_LETTRE_FIN_MS); }
+  for (int n = 1; n <= NB_NIVEAUX; n++) { dessinerLogo(32, 13, n, false); presenter(); delay(SPLASH_NIVEAU_MS); }
+  for (int k = 0; k < 6; k++)      { dessinerLogo(32, 13, NB_NIVEAUX, k % 2 == 0); presenter(); delay(SPLASH_SCINTILLE_MS); }
+  dessinerLogo(32, 13, NB_NIVEAUX, false); presenter();   // logo complet, au repos (sans éclat)
+  delay(SPLASH_FIN_MS);
 }
 
 // Choisit la luminosité : réduite la nuit et sur batterie ; peut aussi éteindre l'écran (ECRAN_ETEINT_NUIT).
@@ -5106,7 +5111,7 @@ void setup() {
   display.setTextWrap(false);
   initialiserCouleurs();
   majLuminosite();
-  afficherSplash();  // écran d'accueil : logo animé LA BONNE M'AIR (~2,7 s)
+  afficherSplash();  // écran d'accueil : logo animé LA BONNE M'AIR (~7 s)
 
   // NextPM : Modbus, 8E1 (parité paire !), adresse 1
   nextpmSerial.begin(115200, SERIAL_8E1, NEXTPM_RX, NEXTPM_TX);
