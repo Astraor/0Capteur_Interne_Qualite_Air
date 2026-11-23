@@ -7,10 +7,10 @@ Deux façons de parler à la carte **sans câble USB** :
 | Où | N'importe où, eduroam compris (HTTPS sortant uniquement) | À une dizaine de mètres de la carte |
 | Journal | Gardé 7 jours (5 000 lignes), presque en direct quand la page est ouverte | En direct |
 | Commandes | Liste blanche (ci-dessous) | Même liste blanche |
-| Mise à jour du programme | Oui (`maj installer`, signée) | Non |
+| Mise à jour du programme | Oui (`maj installer`, signée) | Se lance aussi par Bluetooth ; le programme est toujours téléchargé par le Wi-Fi, via le relais |
 | Il faut | Un compte Cloudflare gratuit | Une appli « terminal BLE » |
 
-**Commandes acceptées sans câble :** `aide`, `status`, `verbose on`, `verbose off`, `calib`, `reboot`, `wifi scan`, `wifi connect`, `maj`, `maj installer`. Une par seconde au plus ; `wifi scan`, `wifi connect` et `maj` une fois par 30 s, `reboot` une fois par 5 min. `calib oui` (qui fausserait les mesures de CO₂ s'il était lancé par erreur ou par un intrus) est réservé au câble USB.
+**Commandes acceptées sans câble :** `aide`, `status`, `verbose on`, `verbose off`, `calib`, `reboot`, `wifi scan`, `wifi connect`, `maj`, `maj installer`, `diag tls`. Une par seconde au plus ; `wifi scan`, `wifi connect` et `maj` une fois par 30 s, `reboot` et `diag tls` une fois par 5 min. Dans la page console, chacune a son bouton (plus de saisie de texte). `calib oui` (qui fausserait les mesures de CO₂ s'il était lancé par erreur ou par un intrus) est réservé au câble USB.
 **Toujours au câble USB :** `wifi add/ent/del/list`, `set cle`, `set jeton`, `set relais`, `calib oui`, `oublier`, `vider_file`, `bt appairer`, `bt demarrage`, `bt liste`, `bt oublier`. La carte les refuse d'elle-même quand elles arrivent par Bluetooth ou par Internet, et ce qu'elles affichent ne quitte jamais le câble USB.
 
 ---

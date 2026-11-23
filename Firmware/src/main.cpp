@@ -24,8 +24,8 @@
  *     téléphone ne peut s'appairer que dans les 2 min qui suivent « bt appairer » tapé au câble USB (ou une mise sous
  *     tension, si « bt demarrage on ») ; les téléphones déjà appairés se reconnectent à tout moment.
  *   Par Bluetooth et à distance, SEULES les commandes sans secret, sans effacement et sans effet durable sont
- *   acceptées (aide, status, verbose, calib, reboot, wifi scan, wifi connect, maj), une par seconde au plus
- *   (wifi scan / wifi connect / maj : une fois par 30 s ; reboot : une fois par 5 min) :
+ *   acceptées (aide, status, verbose, calib, reboot, wifi scan, wifi connect, maj, diag tls), une par seconde au plus
+ *   (wifi scan / wifi connect / maj : une fois par 30 s ; reboot et diag tls : une fois par 5 min) :
  *   Wi-Fi, clé, jeton, relais, oublier, vider_file, calib oui = câble USB uniquement, et ce qu'affichent Wi-Fi,
  *   set et oublier ne quitte jamais le câble USB. (Le nom du réseau connecté, lui, apparaît dans « status ».)
  * SAISIE : ce que tu tapes s'affiche (écho), Retour arrière efface un caractère,
@@ -4385,7 +4385,7 @@ void afficherAide() {
   Console.println("  set jeton <jeton>     jeton secret de la carte auprès du relais (16 caractères au moins)");
   Console.println("  maj                   cherche une mise à jour publiée (maj installer : l'installe)");
   Console.println("  maj oublier           réautorise une version qui a échoué sur la carte");
-  Console.println("  diag tls              teste la connexion HTTPS à AirCarto et affiche la raison d'un échec");
+  Console.println("  diag tls              teste les connexions HTTPS (AirCarto, relais) et affiche la raison d'un échec");
   Console.println("  bt appairer           autorise un nouveau téléphone Bluetooth pendant 2 min");
   Console.println("  bt demarrage on|off   autorise aussi un nouveau téléphone 2 min après la mise sous tension");
   Console.println("  bt liste              téléphones Bluetooth appairés");
@@ -4397,7 +4397,7 @@ void afficherAide() {
   Console.println("  oublier               efface identifiants et clé de la carte");
   Console.println("Saisie : Retour arrière = efface 1 caractère | Ctrl+U = efface toute la ligne");
   Console.println("À distance (console du relais, Bluetooth) : aide, status, verbose, calib, reboot, wifi scan,");
-  Console.println("wifi connect, maj. Wi-Fi, clé, jeton, relais, calib oui, bt et effacements : câble USB seulement.");
+  Console.println("wifi connect, maj, diag tls. Wi-Fi, clé, jeton, relais, calib oui, bt et effacements : câble USB seulement.");
 }
 
 // Résumé de l'état de la carte (réseau, clé, file d'attente...) à la demande, commande « status ».
@@ -4697,7 +4697,7 @@ void executerCommande(const String &cmd) {
 #else
     Console.println("Mise à jour à distance désactivée (CONSOLE_DISTANTE 0).");
 #endif
-  } else if (bas == "diag tls") {   // câble USB seulement (pas dans la liste blanche)
+  } else if (bas == "diag tls") {   // aussi à distance (lecture seule, aucun secret) : une fois par 5 min
     diagnosticTls();
   } else if (bas == "maj oublier") {   // câble USB seulement (pas dans la liste blanche)
 #if CONSOLE_DISTANTE
@@ -4856,7 +4856,7 @@ void diagnosticTls() {
 bool commandeAutoriseeADistance(const String &bas) {
   static const char* const AUTORISEES[] = {
     "aide", "help", "status", "verbose on", "verbose off", "calib", "reboot",
-    "wifi scan", "wifi connect", "maj", "maj installer"
+    "wifi scan", "wifi connect", "maj", "maj installer", "diag tls"
   };
   for (const char* a : AUTORISEES) if (bas == a) return true;
   return false;
@@ -4871,6 +4871,7 @@ bool commandeSensible(const String &bas) {
 static const unsigned long ECART_COMMANDES_DISTANTES_MS = 1000UL;    // une commande par seconde (les suivantes attendent)
 static const unsigned long ECART_RESEAU_DISTANT_MS      = 30000UL;   // wifi scan / wifi connect / maj : une fois par 30 s
 static const unsigned long ECART_REBOOT_DISTANT_MS      = 300000UL;  // reboot : une fois par 5 min
+static const unsigned long ECART_DIAG_DISTANT_MS        = 300000UL;  // diag tls (~20 s de connexions) : une fois par 5 min
 static const uint32_t      MARQUE_REBOOT_DISTANT        = 0x52454244UL;
 // Mémoire RTC : garde sa valeur pendant un redémarrage logiciel (pas après une coupure de courant). Elle dit si
 // CE démarrage vient d'un « reboot » demandé à distance : un compteur en RAM repartirait de zéro à chaque redémarrage
@@ -4909,6 +4910,15 @@ bool commandeDistantePermise(const String &bas, const char* origine) {
     Console.printf("> reboot : refusé depuis %s (déjà redémarrée à distance il y a moins de %lu min).\n", origine,
                    ECART_REBOOT_DISTANT_MS / 60000UL);
     return false;
+  }
+  // diag tls : ~20 s de connexions HTTPS pendant lesquelles les envois attendent (mesures gardées) ; sans secret.
+  static unsigned long tDiagDistant = 0;
+  if (bas == "diag tls") {
+    if (tDiagDistant != 0 && now - tDiagDistant < ECART_DIAG_DISTANT_MS) {
+      Console.printf("> diag tls : refusée depuis %s (une fois par %lu min au plus).\n", origine, ECART_DIAG_DISTANT_MS / 60000UL);
+      return false;
+    }
+    tDiagDistant = now | 1UL;
   }
   if (reseau) tReseauDistant = now | 1UL;
   if (bas == "reboot") rebootDistant = MARQUE_REBOOT_DISTANT;   // relu au démarrage suivant (lireRebootDistant)
