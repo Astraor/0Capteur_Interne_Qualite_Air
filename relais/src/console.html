@@ -4,140 +4,198 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex">
-<meta name="theme-color" content="#0d1418">
+<meta name="theme-color" content="#e6edf0">
 <title>Console · La Bonne M'Air</title>
 <style>
+  /* Une station de mesure, pas un tableau de bord générique : boîtier clair couleur « brume », écran de journal
+     sombre encastré, et l'état de la carte affiché comme une case de l'indice ATMO (mêmes couleurs que le site).
+     Polices système seulement : la politique de sécurité de la page n'autorise aucun fichier extérieur. */
   :root {
-    --fond: #0d1418; --panneau: #142027; --bord: #22343e; --texte: #d7e4e8; --discret: #7f99a3;
-    --cyan: #3fe0d0; --or: #ffb547; --rouge: #ff6b6b; --vert: #4ade80; --orange: #fb923c;
-    --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --brume: #e6edf0;  --boitier: #f6f9fa; --ardoise: #15323c; --vent: #557280; --trait: #c9d6dc;
+    --ecran: #10262e;  --ecran-texte: #cfe1e6; --ecran-discret: #5f818c;
+    --atmo-bon: #50f0e6; --atmo-moyen: #50ccaa; --atmo-degrade: #f0e641; --atmo-mauvais: #ff5050;
+    --prudence: #b3261e; --prudence-fond: #fdecea;
+    --titre: Bahnschrift, "DIN Alternate", "Roboto Condensed", "Arial Narrow", "Segoe UI", system-ui, sans-serif;
+    --texte: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --r: 14px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --brume: #0e1c22; --boitier: #142830; --ardoise: #dbe8ec; --vent: #8aa6b1; --trait: #25414c;
+      --ecran: #08151a; --prudence: #ff8a80; --prudence-fond: #3a1614; }
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: var(--fond); color: var(--texte);
-    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  html, body { margin: 0; min-height: 100%; background: var(--brume); color: var(--ardoise); font: 15px/1.5 var(--texte); }
   button, input { font: inherit; color: inherit; }
   button { cursor: pointer; }
+  :focus-visible { outline: 3px solid #2b8fa3; outline-offset: 2px; }
   .cache { display: none !important; }
+  h1, h2 { font-family: var(--titre); font-weight: 600; letter-spacing: .01em; margin: 0; }
 
-  /* connexion */
-  #connexion { min-height: 100%; display: grid; place-items: center; padding: 24px; }
-  #connexion form { width: min(360px, 100%); background: var(--panneau); border: 1px solid var(--bord);
-    border-radius: 14px; padding: 22px; display: grid; gap: 14px; }
-  #connexion h1 { margin: 0; font-size: 20px; }
-  #connexion p { margin: 0; color: var(--discret); font-size: 14px; }
-  #connexion input[type=password] { width: 100%; padding: 11px 12px; border-radius: 9px; border: 1px solid var(--bord);
-    background: var(--fond); }
-  #connexion label { display: flex; gap: 8px; align-items: center; color: var(--discret); font-size: 14px; }
-  .principal { padding: 11px 14px; border-radius: 9px; border: 0; background: var(--cyan); color: #04211e; font-weight: 650; }
-  .erreur { color: var(--rouge); font-size: 14px; min-height: 1em; }
+  /* ---------- connexion */
+  #connexion { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+  #connexion form { width: min(380px, 100%); background: var(--boitier); border: 1px solid var(--trait);
+    border-radius: 20px; padding: 26px 24px; display: grid; gap: 14px; }
+  #connexion h1 { font-size: 26px; line-height: 1.1; }
+  #connexion p { margin: 0; color: var(--vent); font-size: 14px; }
+  #mdp { width: 100%; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--trait); background: var(--brume); }
+  .case { display: flex; gap: 8px; align-items: center; color: var(--vent); font-size: 14px; }
+  .principal { padding: 12px 16px; border-radius: 10px; border: 0; background: var(--ardoise); color: var(--boitier); font-weight: 600; }
+  .erreur { color: var(--prudence); font-size: 14px; min-height: 1.2em; }
 
-  /* console */
-  #console { display: flex; flex-direction: column; height: 100%; }
-  header { padding: 10px 14px calc(8px) ; border-bottom: 1px solid var(--bord); background: var(--panneau);
-    display: grid; gap: 4px; }
-  .ligne-titre { display: flex; align-items: center; gap: 10px; }
-  header h1 { margin: 0; font-size: 16px; font-weight: 650; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .pastille { width: 10px; height: 10px; border-radius: 50%; background: var(--discret); flex: none; }
-  .pastille.ok { background: var(--vert); box-shadow: 0 0 8px var(--vert); }
-  .pastille.moyen { background: var(--orange); }
-  .pastille.ko { background: var(--rouge); }
-  #etat { color: var(--discret); font-size: 13px; }
-  .petit-bouton { padding: 5px 10px; border-radius: 8px; border: 1px solid var(--bord); background: transparent; font-size: 13px; }
-  #maj { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 13px; color: var(--discret); }
-  #maj strong { color: var(--texte); font-weight: 600; }
-  #maj .principal { padding: 5px 10px; font-size: 13px; }
+  /* ---------- console : commandes à gauche, écran du journal à droite (empilés sur téléphone) */
+  #console { display: grid; grid-template-columns: minmax(320px, 400px) 1fr; gap: 16px; padding: 16px;
+    height: 100vh; height: 100dvh; }
+  .colonne { display: flex; flex-direction: column; gap: 16px; min-height: 0; overflow-y: auto; padding-bottom: 4px; }
+  .colonne > * { flex-shrink: 0; }
 
-  .outils { display: flex; gap: 8px; padding: 8px 14px; align-items: center; border-bottom: 1px solid var(--bord); }
-  .outils input[type=search] { flex: 1; min-width: 0; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--bord);
-    background: var(--fond); font-size: 14px; }
-  .outils label { display: flex; gap: 5px; align-items: center; font-size: 13px; color: var(--discret); white-space: nowrap; }
+  /* état de la carte : la case façon indice ATMO */
+  .etat { display: grid; grid-template-columns: 108px 1fr; gap: 14px; align-items: stretch; }
+  #indice { border-radius: var(--r); background: var(--trait); color: #0b2a30; display: grid; place-content: center;
+    text-align: center; padding: 12px 6px; min-height: 104px; transition: background-color .4s ease; }
+  #indice strong { font: 600 21px/1.05 var(--titre); }
+  #indice span { font-size: 12px; opacity: .8; margin-top: 4px; }
+  #indice.en-ligne { background: var(--atmo-bon); }
+  #indice.lente { background: var(--atmo-degrade); }
+  #indice.absente { background: var(--atmo-mauvais); color: #fff; }
+  .identite { display: flex; flex-direction: column; justify-content: center; gap: 2px; min-width: 0; }
+  .identite h1 { font-size: 23px; line-height: 1.1; }
+  #details { color: var(--vent); font-size: 13.5px; }
+  .session { display: flex; flex-wrap: wrap; gap: 6px 8px; margin-top: 6px; }
+  .discret { white-space: nowrap; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--trait); background: transparent; font-size: 13px; color: var(--vent); }
+  .discret:hover { color: var(--ardoise); border-color: var(--vent); }
 
-  #journal { flex: 1; overflow-y: auto; padding: 8px 0 12px; font: 12.5px/1.5 var(--mono); }
-  .l { display: grid; grid-template-columns: 62px 1fr; gap: 8px; padding: 0 14px; white-space: pre-wrap; word-break: break-word; }
-  .l time { color: #557079; }
-  .l.cmd span { color: var(--cyan); }
-  .l.err span { color: var(--rouge); }
-  .l.ok span { color: var(--vert); }
-  .l.sep span { color: var(--or); }
-  #vide { color: var(--discret); padding: 20px 14px; font: 14px/1.5 system-ui, sans-serif; }
+  /* commandes */
+  #groupes { display: grid; gap: 12px; }
+  .groupe { background: var(--boitier); border: 1px solid var(--trait); border-radius: var(--r); padding: 14px; display: grid; gap: 10px; }
+  .groupe h2 { font-size: 15px; color: var(--vent); }
+  .touches { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .touche { position: relative; text-align: left; padding: 11px 12px 10px; border-radius: 11px; border: 1px solid var(--trait);
+    background: var(--brume); display: grid; gap: 1px; min-height: 62px; overflow: hidden;
+    transition: border-color .15s, background-color .15s, transform .08s; }
+  .touche:hover:not(:disabled) { border-color: var(--vent); }
+  .touche:active:not(:disabled) { transform: scale(.98); }
+  .touche b { font-weight: 600; font-size: 14.5px; line-height: 1.25; }
+  .touche small { color: var(--vent); font-size: 12.5px; }
+  .touche.large { grid-column: 1 / -1; }
+  .touche:disabled { cursor: default; opacity: .55; }
+  .touche.prudente b { color: var(--prudence); }
+  .touche.a-confirmer { background: var(--prudence-fond); border-color: var(--prudence); }
+  .touche.a-confirmer b { color: var(--prudence); }
+  /* une commande envoyée : la touche se remplit jusqu'à ce que la carte la prenne */
+  .touche::after { content: ""; position: absolute; left: 0; bottom: 0; height: 3px; width: 0; background: #2b8fa3; }
+  .touche.envoyee::after { animation: attente 8s linear forwards; }
+  .touche.recue::after { width: 100%; background: var(--atmo-moyen); transition: opacity .6s .8s; opacity: 0; }
+  @keyframes attente { from { width: 0; } to { width: 92%; } }
+  #retour { font-size: 13.5px; color: var(--vent); min-height: 1.4em; padding: 0 4px; margin: -6px 0 -6px; }
+  #retour.err { color: var(--prudence); }
 
-  footer { border-top: 1px solid var(--bord); background: var(--panneau); padding: 8px 10px calc(10px + env(safe-area-inset-bottom)); display: grid; gap: 8px; }
-  .raccourcis { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
-  .raccourcis::-webkit-scrollbar { display: none; }
-  .raccourcis button { flex: none; padding: 5px 11px; border-radius: 999px; border: 1px solid var(--bord); background: var(--fond);
-    font: 12.5px var(--mono); }
-  .raccourcis button.prudence { border-color: #5a3b2a; color: var(--orange); }
-  form#saisie { display: flex; gap: 8px; }
-  #commande { flex: 1; min-width: 0; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--bord); background: var(--fond);
-    font: 14px var(--mono); }
-  #message { font-size: 13px; color: var(--discret); min-height: 1em; padding: 0 2px; }
-  #message.err { color: var(--rouge); }
+  /* écran du journal */
+  .ecran { background: var(--ecran); color: var(--ecran-texte); border-radius: 18px; display: flex; flex-direction: column;
+    min-height: 0; overflow: hidden; box-shadow: inset 0 0 0 1px #ffffff10; }
+  .ecran-haut { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid #ffffff14; }
+  .ecran-haut h2 { font-size: 15px; flex: 1; }
+  .ecran .case { color: var(--ecran-discret); font-size: 13px; }
+  .ecran .discret { border-color: #ffffff24; color: var(--ecran-discret); }
+  .ecran .discret:hover { color: var(--ecran-texte); }
+  #journal { flex: 1; overflow-y: auto; padding: 10px 0 14px; font: 12.5px/1.55 var(--mono); }
+  .l { display: grid; grid-template-columns: 64px 1fr; gap: 10px; padding: 0 16px; white-space: pre-wrap; word-break: break-word; }
+  .l time { color: var(--ecran-discret); }
+  .l.cmd span { color: #7fd6e3; }
+  .l.err span { color: #ff8f8f; }
+  .l.ok span { color: #7ee0b0; }
+  .l.sep span { color: var(--atmo-degrade); }
+  #vide { color: var(--ecran-discret); padding: 20px 16px; font: 14px/1.5 var(--texte); max-width: 60ch; }
+
+  @media (max-width: 860px) {
+    #console { grid-template-columns: 1fr; height: auto; padding: 12px 12px calc(12px + env(safe-area-inset-bottom)); }
+    .colonne { overflow: visible; }
+    .ecran { height: 70vh; height: 70dvh; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::after { transition: none !important; animation: none !important; }
+  }
 </style>
 </head>
 <body>
 
 <section id="connexion">
   <form id="formConnexion" autocomplete="on">
-    <h1>Console de la carte</h1>
-    <p>Journal en direct et commandes sans danger. Wi-Fi, clé et jeton : seulement au câble USB. Le mot de passe n’est pas gardé sur l’appareil : seulement une session (12 h, ou 30 jours si tu restes connecté).</p>
+    <h1>La Bonne M'Air<br>console de la carte</h1>
+    <p>Suivre la carte et lui envoyer des commandes sans danger. Wi-Fi, clé et jeton se règlent seulement au câble USB.</p>
     <input type="text" name="username" autocomplete="username" value="console" hidden>
     <input id="mdp" type="password" placeholder="Mot de passe de la console" autocomplete="current-password" required>
-    <label><input id="souvenir" type="checkbox"> Rester connecté sur cet appareil</label>
-    <button class="principal" type="submit">Ouvrir</button>
-    <div class="erreur" id="erreurConnexion"></div>
+    <label class="case"><input id="souvenir" type="checkbox"> Rester connecté sur cet appareil (30 jours)</label>
+    <button class="principal" type="submit">Ouvrir la console</button>
+    <div class="erreur" id="erreurConnexion" role="alert"></div>
   </form>
 </section>
 
-<section id="console" class="cache">
-  <header>
-    <div class="ligne-titre">
-      <span class="pastille" id="pastille"></span>
-      <h1>La Bonne M'Air · console</h1>
-      <button class="petit-bouton" id="partout" title="Déconnecter tous les appareils (téléphone perdu, mot de passe partagé…)">Partout</button>
-      <button class="petit-bouton" id="deconnexion" title="Fermer la session sur cet appareil">Quitter</button>
-    </div>
-    <div id="etat">Connexion…</div>
-    <div id="maj"></div>
-  </header>
-  <div class="outils">
-    <input type="search" id="filtre" placeholder="Filtrer le journal…">
-    <label><input type="checkbox" id="suivre" checked> Suivre</label>
-    <button class="petit-bouton" id="effacer" title="Vider le journal gardé par le relais">Vider</button>
+<main id="console" class="cache">
+  <div class="colonne">
+    <section class="etat" aria-live="polite">
+      <div id="indice"><strong id="indiceMot">…</strong><span id="indiceAge"></span></div>
+      <div class="identite">
+        <h1>La Bonne M'Air</h1>
+        <div id="details">Connexion au relais…</div>
+        <div class="session">
+          <button class="discret" id="deconnexion" title="Fermer la session sur cet appareil">Quitter</button>
+          <button class="discret" id="partout" title="Téléphone perdu, mot de passe partagé…">Déconnecter partout</button>
+        </div>
+      </div>
+    </section>
+    <div id="retour" role="status"></div>
+    <div id="groupes"></div>
   </div>
-  <div id="journal"><div id="vide">Aucune ligne pour l'instant. La carte envoie son journal toutes les 30 s, puis toutes les 2 s tant que cette page est ouverte.</div></div>
-  <footer>
-    <div class="raccourcis" id="raccourcis">
-      <button data-c="status">status</button>
-      <button data-c="verbose on">verbose on</button>
-      <button data-c="verbose off">verbose off</button>
-      <button data-c="wifi scan">wifi scan</button>
-      <button data-c="wifi connect">wifi connect</button>
-      <button data-c="maj">maj</button>
-      <button data-c="aide">aide</button>
-      <button data-c="reboot" class="prudence">reboot</button>
+
+  <section class="ecran" aria-label="Journal de la carte">
+    <div class="ecran-haut">
+      <h2>Journal de la carte</h2>
+      <label class="case"><input type="checkbox" id="suivre" checked> Suivre</label>
+      <button class="discret" id="effacer" title="Vider le journal gardé par le relais">Vider</button>
     </div>
-    <form id="saisie" autocomplete="off">
-      <input id="commande" placeholder="Commande (aide, status…)" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send">
-      <button class="principal" type="submit">Envoyer</button>
-    </form>
-    <div id="message"></div>
-  </footer>
-</section>
+    <div id="journal"><div id="vide">Rien pour l'instant. La carte envoie son journal toutes les 30 s, puis toutes les 2 s tant que cette page est ouverte.</div></div>
+  </section>
+</main>
 
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
-const PRUDENCE = {
-  "reboot": "Redémarrer la carte ?",
-  "maj installer": "Installer la dernière version publiée ? La carte redémarrera (retour automatique à l'ancienne version en cas de problème).",
-};
-// Ancienne version : le mot de passe était gardé en clair dans le navigateur. On l'efface.
-localStorage.removeItem("mdp"); sessionStorage.removeItem("mdp");
-// Le navigateur ne garde plus qu'un jeton de session (12 h, ou 30 jours avec « Rester connecté »),
-// révocable avec « Quitter » / « Partout », et annulé si le mot de passe change.
+
+// Les touches : uniquement les commandes que la carte et le relais acceptent à distance (liste blanche).
+// attente : délai imposé par la carte entre deux envois (la touche reste grisée pendant ce temps).
+const GROUPES = [
+  { titre: "Consulter", touches: [
+    { c: "status", nom: "État complet", aide: "Wi-Fi, envois, capteurs, version" },
+    { c: "aide", nom: "Liste des commandes", aide: "Ce que la carte sait faire" },
+  ] },
+  { titre: "Journal détaillé", touches: [
+    { c: "verbose on", nom: "Activer", aide: "Chaque mesure et chaque envoi" },
+    { c: "verbose off", nom: "Couper", aide: "Messages importants seulement" },
+  ] },
+  { titre: "Wi-Fi", touches: [
+    { c: "wifi scan", nom: "Chercher les réseaux", aide: "Réseaux visibles par la carte", attente: 30 },
+    { c: "wifi connect", nom: "Se reconnecter", aide: "Refait la connexion", attente: 30 },
+  ] },
+  { titre: "Capteur de CO₂", touches: [
+    { c: "calib", nom: "Procédure de calibrage", aide: "Affiche les étapes (la confirmation se fait au câble USB)", large: true },
+  ] },
+  { titre: "Programme", touches: [
+    { c: "maj", nom: "Chercher une mise à jour", aide: "Compare avec la dernière version publiée", attente: 30 },
+    { c: "maj installer", id: "toucheInstaller", nom: "Installer la mise à jour", aide: "…", attente: 30, prudente: true,
+      question: "Appuie encore pour installer : la carte redémarre" },
+    { c: "reboot", nom: "Redémarrer la carte", aide: "Mesures gardées en mémoire", attente: 300, prudente: true, large: true,
+      question: "Appuie encore pour redémarrer" },
+  ] },
+];
+
+localStorage.removeItem("mdp"); sessionStorage.removeItem("mdp");   // (très ancienne version : mot de passe gardé)
+// Le navigateur ne garde qu'un jeton de session (12 h, ou 30 jours), révocable et annulé si le mot de passe change.
 let jeton = localStorage.getItem("jeton") || sessionStorage.getItem("jeton") || "";
-let dernierId = 0, minuterie = null, echecs = 0, carte = {}, publiee = null;
-const historique = []; let posHistorique = -1;
+let dernierId = 0, minuterie = null, echecs = 0, carte = {}, publiee = null, enAttente = 0;
+const toucheDe = {};          // commande -> bouton
+const bloqueeJusqua = {};     // commande -> instant (ms) où elle redevient possible
+let toucheEnvoyee = null;     // la dernière touche envoyée, jusqu'à ce que la carte la prenne
 
 async function api(chemin, options = {}) {
   const entetes = { ...(options.headers || {}) };
@@ -149,10 +207,7 @@ async function api(chemin, options = {}) {
   if (!r.ok) throw new Error(corps.erreur || "erreur " + r.status);
   return corps;
 }
-
-function oublierJeton() {
-  localStorage.removeItem("jeton"); sessionStorage.removeItem("jeton"); jeton = "";
-}
+function oublierJeton() { localStorage.removeItem("jeton"); sessionStorage.removeItem("jeton"); jeton = ""; }
 function deconnecter(msg) {
   oublierJeton();
   clearTimeout(minuterie);
@@ -172,8 +227,7 @@ $("formConnexion").addEventListener("submit", async (e) => {
     $("mdp").value = "";
     demarrer();
   } catch (err) {
-    if (err.message === "401") $("erreurConnexion").textContent = "Mot de passe refusé.";
-    else $("erreurConnexion").textContent = err.message;
+    $("erreurConnexion").textContent = err.message === "401" ? "Mot de passe refusé." : err.message;
   }
 });
 async function quitter(partout) {
@@ -184,22 +238,99 @@ async function quitter(partout) {
 $("deconnexion").addEventListener("click", () => quitter(false));
 $("partout").addEventListener("click", () => quitter(true));
 
-function demarrer() {
-  $("connexion").classList.add("cache"); $("console").classList.remove("cache");
-  dernierId = 0; $("journal").replaceChildren($("vide") || document.createElement("div"));
-  rafraichir(); verifierPubliee();
-  setTimeout(() => $("commande").focus(), 50);
+// ---------- touches
+function construireTouches() {
+  const zone = $("groupes");
+  zone.replaceChildren();
+  for (const g of GROUPES) {
+    const s = document.createElement("section");
+    s.className = "groupe";
+    const h = document.createElement("h2"); h.textContent = g.titre;
+    const grille = document.createElement("div"); grille.className = "touches";
+    for (const t of g.touches) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "touche" + (t.large ? " large" : "") + (t.prudente ? " prudente" : "");
+      const nom = document.createElement("b"); nom.textContent = t.nom;
+      const aide = document.createElement("small"); aide.textContent = t.aide;
+      b.append(nom, aide);
+      b.dataset.c = t.c;
+      t.bouton = b; t.elAide = aide;
+      toucheDe[t.c] = t;
+      b.addEventListener("click", () => appui(t));
+      grille.append(b);
+    }
+    s.append(h, grille);
+    zone.append(s);
+  }
 }
 
-// ----- journal
-function heure(t) {
-  return new Date(t).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+// Commande « prudente » : premier appui = demande de confirmation sur la touche elle-même (4 s), second = envoi.
+function appui(t) {
+  if (t.prudente && !t.bouton.classList.contains("a-confirmer")) {
+    t.bouton.classList.add("a-confirmer");
+    t.elAide.textContent = t.question;
+    clearTimeout(t.minuterieConfirmation);
+    t.minuterieConfirmation = setTimeout(() => { t.bouton.classList.remove("a-confirmer"); majTouches(); }, 4000);
+    return;
+  }
+  clearTimeout(t.minuterieConfirmation);
+  t.bouton.classList.remove("a-confirmer");
+  envoyer(t);
 }
+
+function retour(txt, erreur) { const m = $("retour"); m.textContent = txt; m.className = erreur ? "err" : ""; }
+
+async function envoyer(t) {
+  try {
+    await api("/api/commande", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ texte: t.c }) });
+    if (t.attente) bloqueeJusqua[t.c] = Date.now() + t.attente * 1000;
+    if (toucheEnvoyee) toucheEnvoyee.bouton.classList.remove("envoyee", "recue");
+    toucheEnvoyee = t;
+    enAttente = Math.max(enAttente, 1);   // au prochain relevé, 0 en attente = la carte l'a prise
+    void t.bouton.offsetWidth;            // relance l'animation si on renvoie la même commande
+    t.bouton.classList.add("envoyee");
+    retour("« " + t.nom + " » envoyée : la carte la prend à son prochain échange (2 s si elle est en ligne).");
+    majTouches();
+    rafraichir();
+  } catch (e) { if (e.message !== "401") retour(e.message, true); }
+}
+
+// État des touches : délais entre deux envois, installation possible ou non.
+function majTouches() {
+  const maintenant = Date.now();
+  for (const t of Object.values(toucheDe)) {
+    if (t.bouton.classList.contains("a-confirmer")) continue;
+    const reste = Math.ceil(((bloqueeJusqua[t.c] || 0) - maintenant) / 1000);
+    let aide = t.aide, inactive = reste > 0;
+    if (t.c === "maj installer") {
+      const installee = Number(carte.version) || 0;
+      if (!publiee) { aide = "Aucune version publiée"; inactive = true; }
+      else if (installee && publiee.version <= installee) { aide = "La carte est à jour (" + installee + ")"; inactive = true; }
+      else aide = "Version " + publiee.version + " publiée";
+    }
+    if (reste > 0) aide = "Possible dans " + (reste >= 60 ? Math.floor(reste / 60) + " min " + String(reste % 60).padStart(2, "0") : reste + " s");
+    t.bouton.disabled = inactive;
+    t.elAide.textContent = aide;
+  }
+}
+setInterval(() => { if (jeton) majTouches(); }, 1000);
+
+function demarrer() {
+  $("connexion").classList.add("cache"); $("console").classList.remove("cache");
+  dernierId = 0;
+  $("journal").replaceChildren($("vide") || document.createElement("div"));
+  construireTouches();
+  rafraichir(); verifierPubliee();
+}
+
+// ---------- journal
+function heure(t) { return new Date(t).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }); }
 function classeLigne(txt) {
   if (/^(>|»)/.test(txt)) return "cmd";
   if (/^──/.test(txt)) return "sep";
   if (/^\[sécurité\]/.test(txt)) return "err";
-  if (/erreur|en échec|refusée?\b|REFUSÉE|ANNULÉE|impossible(?!s)|injoignable|perdue\(s\)/i.test(txt)) return "err";
+  if (/erreur|échec|échoué|refusée?\b|REFUSÉE|ANNULÉE|impossible(?!s)|injoignable|perdue\(s\)/i.test(txt)) return "err";
   if (/validée|installée|appairé|connecté à|à jour/i.test(txt)) return "ok";
   return "";
 }
@@ -207,7 +338,6 @@ function ajouterLignes(lignes) {
   const j = $("journal"), vide = $("vide");
   if (lignes.length && vide) vide.remove();
   const enBas = j.scrollHeight - j.scrollTop - j.clientHeight < 40;
-  const f = $("filtre").value.trim().toLowerCase();
   const frag = document.createDocumentFragment();
   for (const l of lignes) {
     const d = document.createElement("div");
@@ -215,8 +345,6 @@ function ajouterLignes(lignes) {
     const t = document.createElement("time"); t.textContent = heure(l.t);
     const s = document.createElement("span"); s.textContent = l.txt;
     d.append(t, s);
-    d.dataset.txt = l.txt.toLowerCase();
-    if (f && !d.dataset.txt.includes(f)) d.classList.add("cache");
     frag.append(d);
     dernierId = Math.max(dernierId, l.id);
   }
@@ -224,13 +352,10 @@ function ajouterLignes(lignes) {
   while (j.children.length > 3000) j.firstElementChild.remove();
   if ($("suivre").checked && (enBas || lignes.length)) j.scrollTop = j.scrollHeight;
 }
-$("filtre").addEventListener("input", () => {
-  const f = $("filtre").value.trim().toLowerCase();
-  for (const d of $("journal").querySelectorAll(".l")) d.classList.toggle("cache", !!f && !d.dataset.txt.includes(f));
-});
 $("effacer").addEventListener("click", async () => {
   if (!confirm("Vider le journal gardé par le relais ?")) return;
-  try { await api("/api/effacer", { method: "POST" }); $("journal").replaceChildren(); dernierId = 0; } catch (e) { message(e.message, true); }
+  try { await api("/api/effacer", { method: "POST" }); $("journal").replaceChildren(); dernierId = 0; }
+  catch (e) { if (e.message !== "401") retour(e.message, true); }
 });
 
 function duree(s) {
@@ -241,17 +366,32 @@ function duree(s) {
 }
 function afficherEtat(rep) {
   carte = rep.carte || {};
-  const p = $("pastille");
-  p.className = "pastille";
-  if (!carte.vue) { $("etat").textContent = "La carte n'a encore jamais joint le relais (set relais / set jeton au câble USB)."; p.classList.add("ko"); return; }
+  const indice = $("indice");
+  indice.className = "";
+  if (!carte.vue) {
+    indice.classList.add("absente"); $("indiceMot").textContent = "Jamais vue"; $("indiceAge").textContent = "";
+    $("details").textContent = "La carte n'a encore jamais joint le relais : set relais et set jeton au câble USB.";
+    return;
+  }
   const age = Math.max(0, Math.round((rep.maintenant - carte.vue) / 1000));
-  p.classList.add(age < 70 ? "ok" : age < 600 ? "moyen" : "ko");
-  const morceaux = [age < 70 ? "en ligne" : "silencieuse", "vue il y a " + duree(age)];
+  if (age < 70) { indice.classList.add("en-ligne"); $("indiceMot").textContent = "En ligne"; }
+  else if (age < 600) { indice.classList.add("lente"); $("indiceMot").textContent = "Silencieuse"; }
+  else { indice.classList.add("absente"); $("indiceMot").textContent = "Hors ligne"; }
+  $("indiceAge").textContent = "vue il y a " + duree(age);
+  const morceaux = [];
   if (carte.version) morceaux.push("version " + carte.version);
   if (carte.uptime) morceaux.push("allumée depuis " + duree(carte.uptime + age));
-  if (rep.commandesEnAttente) morceaux.push(rep.commandesEnAttente + " commande(s) en attente");
-  $("etat").textContent = morceaux.join(" · ");
-  afficherMaj();
+  if (rep.commandesEnAttente) morceaux.push(rep.commandesEnAttente + " commande" + (rep.commandesEnAttente > 1 ? "s" : "") + " en attente");
+  $("details").textContent = morceaux.join(", ");
+  // la carte a pris les commandes en attente : la touche envoyée passe au vert
+  if (toucheEnvoyee && enAttente > 0 && rep.commandesEnAttente === 0) {
+    toucheEnvoyee.bouton.classList.remove("envoyee");
+    toucheEnvoyee.bouton.classList.add("recue");
+    retour("« " + toucheEnvoyee.nom + " » reçue par la carte : la réponse s'affiche dans le journal.");
+    toucheEnvoyee = null;
+  }
+  enAttente = rep.commandesEnAttente || 0;
+  majTouches();
 }
 
 async function rafraichir() {
@@ -265,57 +405,18 @@ async function rafraichir() {
   } catch (e) {
     if (e.message === "401") return;
     echecs++;
-    $("etat").textContent = "Relais injoignable (" + e.message + "), nouvel essai…";
-    $("pastille").className = "pastille ko";
+    $("details").textContent = "Relais injoignable (" + e.message + "), nouvel essai…";
+    $("indice").className = "absente"; $("indiceMot").textContent = "Relais ?"; $("indiceAge").textContent = "";
   }
   if (!document.hidden) minuterie = setTimeout(rafraichir, Math.min(2000 * Math.pow(2, echecs), 30000));
 }
-// page cachée : on arrête de demander (la carte repasse à un envoi toutes les 30 s)
+// page cachée : plus de demandes (la carte repasse à un échange toutes les 30 s)
 document.addEventListener("visibilitychange", () => { if (!document.hidden && jeton) rafraichir(); });
 
-// ----- mise à jour
 async function verifierPubliee() {
   try { publiee = await api("/api/manifeste"); } catch { publiee = null; }
-  afficherMaj();
+  if (jeton) majTouches();
 }
-function afficherMaj() {
-  const zone = $("maj");
-  zone.replaceChildren();
-  if (!publiee) { zone.textContent = "Mise à jour : aucune release avec firmware.json pour l'instant."; return; }
-  const installee = Number(carte.version) || 0;
-  const s = document.createElement("span");
-  s.append("Publiée : ");
-  const b = document.createElement("strong"); b.textContent = publiee.version; s.append(b);
-  s.append(installee ? (publiee.version > installee ? " (plus récente que la carte)" : " (la carte est à jour)") : "");
-  zone.append(s);
-  if (installee && publiee.version > installee) {
-    const bouton = document.createElement("button");
-    bouton.className = "principal"; bouton.textContent = "Installer sur la carte";
-    bouton.addEventListener("click", () => envoyer("maj installer"));
-    zone.append(bouton);
-  }
-}
-
-// ----- commandes
-function message(txt, erreur) { const m = $("message"); m.textContent = txt; m.className = erreur ? "err" : ""; }
-async function envoyer(texte) {
-  texte = texte.trim().replace(/\s+/g, " ");
-  if (!texte) return;
-  const q = PRUDENCE[texte.toLowerCase()];
-  if (q && !confirm(q)) return;
-  try {
-    await api("/api/commande", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ texte }) });
-    message("« " + texte + " » envoyée : la carte la reçoit à son prochain échange (2 s si elle est en ligne).");
-    historique.unshift(texte); posHistorique = -1;
-    rafraichir();
-  } catch (e) { if (e.message !== "401") message(e.message, true); }
-}
-$("saisie").addEventListener("submit", (e) => { e.preventDefault(); envoyer($("commande").value); $("commande").value = ""; });
-$("commande").addEventListener("keydown", (e) => {
-  if (e.key === "ArrowUp" && posHistorique < historique.length - 1) { posHistorique++; $("commande").value = historique[posHistorique]; e.preventDefault(); }
-  if (e.key === "ArrowDown") { posHistorique = Math.max(-1, posHistorique - 1); $("commande").value = posHistorique >= 0 ? historique[posHistorique] : ""; e.preventDefault(); }
-});
-$("raccourcis").addEventListener("click", (e) => { const c = e.target.closest("button")?.dataset.c; if (c) envoyer(c); });
 
 if (jeton) demarrer();
 </script>
