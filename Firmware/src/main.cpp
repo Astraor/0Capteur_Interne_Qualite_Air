@@ -2310,6 +2310,13 @@ bool journalDebutLigne = true;
 SemaphoreHandle_t mutexJournal = NULL;
 volatile bool relaisConfigure = false;   // relais ET jeton présents : sinon on ne garde rien
 volatile bool consoleLive = false;       // le relais dit qu'une page console est ouverte
+// Où en est la tâche du relais (affiché par status) : pour voir tout de suite où elle attend si les échanges cessent.
+enum EtatRelais : uint8_t { RELAIS_DEMARRAGE, RELAIS_SANS_RESEAU, RELAIS_ATTENTE, RELAIS_VERROU, RELAIS_MEMOIRE,
+                            RELAIS_ECHANGE, RELAIS_MAJ };
+volatile uint8_t etatRelais = RELAIS_DEMARRAGE;
+volatile unsigned long tEtatRelais = 0;            // depuis quand (millis)
+volatile unsigned long attenteRelaisMs = 0;        // délai avant l'échange suivant
+static void changerEtatRelais(uint8_t e) { if (etatRelais != e) { etatRelais = e; tEtatRelais = millis(); } }
 volatile bool syncDemandee = false;      // envoyer tout de suite (commande reçue, mise à jour...)
 volatile uint8_t demandeMaj = 0;         // 1 = vérifier | 2 = vérifier et installer (commande « maj »)
 unsigned long tDernierSyncOK = 0;        // dernier échange réussi avec le relais (0 = jamais)
@@ -2705,8 +2712,9 @@ void tacheRelais(void* param) {
     unsigned long now = millis();
     surveillerOta();
     bool pret = relaisConfigure && reseauOK();
-    if (!pret) { consoleLive = false; continue; }
+    if (!pret) { consoleLive = false; changerEtatRelais(RELAIS_SANS_RESEAU); continue; }
     if (demandeMaj != 0) {
+      changerEtatRelais(RELAIS_MAJ);
       bool installer = (demandeMaj == 2);
       demandeMaj = 0;
       if (mutexTls && xSemaphoreTake(mutexTls, pdMS_TO_TICKS(20000)) != pdTRUE) {
@@ -2719,11 +2727,14 @@ void tacheRelais(void* param) {
       syncDemandee = true;
     }
     bool presquePlein = journalLong > JOURNAL_TAILLE / 2;
-    if (!syncDemandee && !presquePlein && now - tSync < attente) continue;
+    attenteRelaisMs = attente;
+    if (!syncDemandee && !presquePlein && now - tSync < attente) { changerEtatRelais(RELAIS_ATTENTE); continue; }
     syncDemandee = false;
     tSync = now;
+    changerEtatRelais(RELAIS_VERROU);
     if (mutexTls && xSemaphoreTake(mutexTls, pdMS_TO_TICKS(20000)) != pdTRUE) { attente = 2000; continue; }
     if (!memoireTlsOK()) {
+      changerEtatRelais(RELAIS_MEMOIRE);
       if (mutexTls) xSemaphoreGive(mutexTls);
       static unsigned long tMsgMemoire = 0;      // message au plus une fois par minute (USB, Bluetooth)
       if (tMsgMemoire == 0 || millis() - tMsgMemoire > 60000UL) {
@@ -2735,6 +2746,7 @@ void tacheRelais(void* param) {
       attente = 10000;
       continue;
     }
+    changerEtatRelais(RELAIS_ECHANGE);
     bool syncOK = synchroniserRelais();
     clientRelais.stop();    // une connexion par échange : on libère tout de suite la mémoire de la connexion chiffrée
     if (mutexTls) xSemaphoreGive(mutexTls);
@@ -4449,6 +4461,12 @@ void afficherStatus() {
     if (tDernierSyncOK == 0) Console.printf("jamais joint (dernier code %d)", dernierCodeRelais);
     else Console.printf("dernier échange il y a %lu s%s", (millis() - tDernierSyncOK) / 1000UL, consoleLive ? " | console ouverte" : "");
     Console.printf(" | %u ok / %u échecs\n", (unsigned)nbSyncOK, (unsigned)nbSyncEchecs);
+    static const char* const ETATS[] = {"démarrage", "attend le Wi-Fi", "attend l'échange suivant", "attend le verrou HTTPS",
+                                        "attend de la mémoire", "échange en cours", "mise à jour en cours"};
+    unsigned long depuis = (millis() - tEtatRelais) / 1000UL;
+    Console.printf("tâche du relais : %s depuis %lu s", etatRelais < 7 ? ETATS[etatRelais] : "?", depuis);
+    if (etatRelais == RELAIS_ATTENTE) Console.printf(" (échanges toutes les %lu s)", attenteRelaisMs / 1000UL);
+    Console.println();
   }
 #else
   Console.println();
