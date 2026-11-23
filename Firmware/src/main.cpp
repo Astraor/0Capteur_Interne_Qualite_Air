@@ -333,7 +333,12 @@ static const unsigned long ESSAI_CLE_MS              = 900000UL;  // clé refus�
 static const uint8_t       ECHECS_AVANT_RECONNEXION  = 5;         // POST sans réponse alors que « connecté » : on refait la connexion Wi-Fi
 static const unsigned long SANS_REPONSE_REBOOT_MS    = 6UL * 3600000UL;  // 6 h connecté sans aucune réponse du serveur : redémarrage
 static const unsigned long ATTENTE_SERVEUR_MAX_MS    = 300000UL;  // délai demandé par le serveur (next_push_in_s) : 5 min au plus
-static const uint32_t TLS_BLOC_MIN_OCTETS            = 45000;     // HTTPS demande ~40 Ko d'un seul tenant : sinon on attend
+// Mémoire pour une connexion HTTPS (mesurée par « diag tls » le 23/11/2026, racines en bundle) : ~47 Ko occupés pendant
+// la connexion, dont deux tampons de ~16,7 Ko d'un seul tenant, plus les calculs de la poignée de main. Réussi avec
+// 63 Ko libres ; échouait vers 58 Ko quand les racines étaient décodées en RAM (~6 Ko). En dessous : on attend.
+// (L'ancien seuil, 45 Ko d'un seul tenant, n'était plus jamais atteint après la 1re connexion : plus grand bloc ~43 Ko.)
+static const uint32_t TLS_MEMOIRE_MIN_OCTETS         = 56000;     // mémoire libre utilisable par mbedTLS, au total
+static const uint32_t TLS_BLOC_MIN_OCTETS            = 34000;     // plus grand bloc : les deux tampons doivent y tenir
 static const int      REPONSE_MAX_OCTETS             = 2048;      // réponse d'AirCarto lue au plus (quelques centaines d'octets)
 static const uint32_t WDT_TIMEOUT_S                  = 60;        // watchdog : redémarrage si la carte se fige
 
@@ -499,6 +504,11 @@ class ClientTlsDate : public WiFiClientSecure {
 // ce verrou. AirCarto attend jusqu'à 5 s (sinon l'envoi est reporté au créneau suivant), le relais jusqu'à 20 s ;
 // le relais laisse toujours au moins SYNC_LIVE_MS libres entre deux échanges, dans lesquels AirCarto passe.
 SemaphoreHandle_t mutexTls = NULL;
+// Assez de mémoire pour ouvrir une connexion HTTPS ? (mémoire « 8 bits » interne : celle que mbedTLS peut utiliser)
+bool memoireTlsOK() {
+  return heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL) >= TLS_MEMOIRE_MIN_OCTETS
+      && heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL) >= TLS_BLOC_MIN_OCTETS;
+}
 
 HardwareSerial nextpmSerial(1);  // UART n°1
 ModbusMaster nextpm;
@@ -1890,7 +1900,7 @@ ResultatPush posterAuServeur(const String &payload) {
   dejaPoste = true;
 #if AIRCARTO_HTTPS
   // Une seule connexion HTTPS à la fois : si le relais en utilise une, on attend qu'il finisse (5 s au plus, bien
-  // en dessous du watchdog). Puis HTTPS demande ~40 Ko d'un seul tenant. Sinon : on réessaie au créneau suivant,
+  // en dessous du watchdog). Puis HTTPS demande ~56 Ko libres (memoireTlsOK). Sinon : on réessaie au créneau suivant,
   // sans compter un échec (la mesure est gardée).
   if (mutexTls && xSemaphoreTake(mutexTls, pdMS_TO_TICKS(5000)) != pdTRUE) {
     nbReportsMemoire++;
@@ -1898,10 +1908,12 @@ ResultatPush posterAuServeur(const String &payload) {
     etatEnvoi = 2;
     return PUSH_REESSAYER;
   }
-  if (ESP.getMaxAllocHeap() < TLS_BLOC_MIN_OCTETS) {
+  if (!memoireTlsOK()) {
     if (mutexTls) xSemaphoreGive(mutexTls);
     nbReportsMemoire++;
-    LOG("Envoi reporté : mémoire insuffisante pour HTTPS (plus grand bloc %u octets).\n", (unsigned)ESP.getMaxAllocHeap());
+    LOG("Envoi reporté : mémoire insuffisante pour HTTPS (libre %u, plus grand bloc %u octets).\n",
+        (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
+        (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL));
     etatEnvoi = 2;
     return PUSH_REESSAYER;
   }
@@ -2675,7 +2687,7 @@ void tacheRelais(void* param) {
       if (mutexTls && xSemaphoreTake(mutexTls, pdMS_TO_TICKS(20000)) != pdTRUE) {
         Console.println("Mise à jour : une autre connexion HTTPS est en cours, réessaie.");
       } else {
-        if (ESP.getMaxAllocHeap() < TLS_BLOC_MIN_OCTETS) Console.println("Mise à jour : mémoire insuffisante, réessaie.");
+        if (!memoireTlsOK()) Console.println("Mise à jour : mémoire insuffisante, réessaie.");
         else verifierMiseAJour(installer);
         if (mutexTls) xSemaphoreGive(mutexTls);
       }
@@ -2686,7 +2698,7 @@ void tacheRelais(void* param) {
     syncDemandee = false;
     tSync = now;
     if (mutexTls && xSemaphoreTake(mutexTls, pdMS_TO_TICKS(20000)) != pdTRUE) { attente = 2000; continue; }
-    if (ESP.getMaxAllocHeap() < TLS_BLOC_MIN_OCTETS) { if (mutexTls) xSemaphoreGive(mutexTls); attente = 10000; continue; }
+    if (!memoireTlsOK()) { if (mutexTls) xSemaphoreGive(mutexTls); attente = 10000; continue; }
     bool syncOK = synchroniserRelais();
     clientRelais.stop();    // une connexion par échange : on libère tout de suite la mémoire de la connexion chiffrée
     if (mutexTls) xSemaphoreGive(mutexTls);
