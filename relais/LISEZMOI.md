@@ -44,6 +44,17 @@ pio run -t cles
 3. `wrangler deploy` affiche l'adresse du relais, du genre `https://mair-relais.<ton-nom>.workers.dev`.
    Ouvre-la : c'est la **page console**.
 
+**Sans aucune commande (tout dans le navigateur, méthode utilisée ici) :**
+
+1. *Secrets* : dash.cloudflare.com → **Workers & Pages** → `mair-relais` → **Settings** → **Variables and Secrets** →
+   **+ Add**, **Type : Secret** (jamais « Text »), nom `JETON_CARTE` puis `MOT_DE_PASSE_CONSOLE` → **Deploy**.
+   Si tu as cliqué sur **Save** : la version est seulement enregistrée ; onglet **Deployments** → la déployer à 100 %.
+2. *Déploiement automatique depuis GitHub* : **Settings** → **Builds** → **Connect** → dépôt
+   `Astraor/0Capteur_Interne_Qualite_Air`, branche `main`, Build command vide, Deploy command `npx wrangler deploy`,
+   **Preview builds décochés**, **Path : `/relais`**, **Include paths : `relais/*`**.
+   Ensuite, chaque push qui modifie `relais/` redéploie le relais tout seul (onglet **Deployments** pour suivre). Les
+   secrets restent en place d'un déploiement à l'autre ; `wrangler.toml` (dans le dépôt) fixe le reste.
+
 ### c. Le site lit les mesures par le relais
 
 La clé du groupe AirCarto était écrite dans `index.html`, donc lisible par tous sur GitHub et sur le site. Or elle sert
