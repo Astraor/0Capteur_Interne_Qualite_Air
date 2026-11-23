@@ -1,5 +1,9 @@
 #pragma once
 
+// LISTE SOURCE des racines HTTPS. La carte ne lit pas ce texte : à chaque compilation, outils/racines_bundle.py en
+// tire src/racines_bundle.h (BUNDLE_AIRCARTO, BUNDLE_TLS : nom + clé publique de chaque racine, en mémoire flash),
+// beaucoup moins gourmand en mémoire vive. Pour ajouter ou retirer une racine : modifier CE fichier, puis compiler.
+
 // Les deux racines de Let's Encrypt utiles à AirCarto, écrites une seule fois et réutilisées dans les deux listes.
 // ISRG Root YR (fin de validité 2045) : nouvelle génération (YR1, YR2, YR3), source github.com/letsencrypt/website,
 // static/certs/gen-y/root-yr.pem, empreinte SHA-256 E5:7B:7E:6F:...:EB:F4:A8:6F.

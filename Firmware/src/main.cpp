@@ -169,9 +169,12 @@
 // HTTPS vers AirCarto et vers le relais : certificats racines acceptés (Let's Encrypt, Google, SSL.com, Sectigo)
 #include <WiFiClientSecure.h>
 #include <mbedtls/error.h>          // diag tls : texte des erreurs
-#include <mbedtls/pem.h>            // diag tls : décodage des racines une par une
 #include <esp_heap_caps.h>          // diag tls : mémoire réellement utilisable par mbedTLS
-#include "racines_tls.h"
+#include "racines_tls.h"            // racines HTTPS en texte : la liste à modifier (source)
+#include "racines_bundle.h"         // les mêmes au format « bundle » (généré à la compilation par outils/racines_bundle.py)
+// Fourni par WiFiClientSecure (esp_crt_bundle.c) : choisit le bundle utilisé par la PROCHAINE connexion HTTPS. Il n'y
+// en a qu'un pour toute la carte : chaque connexion le règle juste avant de s'ouvrir, sous le verrou mutexTls.
+extern "C" void arduino_esp_crt_bundle_set(const uint8_t* x509_bundle);
 #if WIFI_ACTIVE
 #include "esp_wpa2.h"
 // eduroam : certificat de l'autorité qui signe le serveur d'authentification de l'université (facultatif mais
@@ -220,7 +223,7 @@
 // enregistrés dans la mémoire de la carte par les commandes "wifi ..." et "set cle".
 // Adresse du serveur AirCarto qui reçoit les mesures, en HTTPS : la clé du groupe (en-tête X-Group-Key) est chiffrée
 // et la réponse du serveur ne peut plus être falsifiée en route. Certificat Let's Encrypt (chaîne YR2 -> Root YR ->
-// ISRG Root X1, vérifiée le 22/11/2026) : seules ces deux racines sont acceptées (RACINES_AIRCARTO).
+// ISRG Root X1, vérifiée le 22/11/2026) : seules les racines de Let's Encrypt sont acceptées (BUNDLE_AIRCARTO).
 // AirCarto accepte les deux (http:// et https://, voir sa documentation openapi.yaml) : AIRCARTO_HTTPS choisit.
 #if AIRCARTO_HTTPS
 static const char* URL_SERVEUR  = "https://api.aircarto.fr/iut-amu/push";
@@ -468,17 +471,29 @@ void setupDisplay() {
 // relais ne partent qu'ensuite. (HTTPClient appelle connect(hote, port, délai), virtuelle : c'est elle qu'on
 // remplace.)
 bool certificatsALaDate(WiFiClientSecure &c, const char* quoi);
+// Racines : « bundle » en mémoire flash (racines_bundle.h) et non liste en texte (setCACert). Avec setCACert, la
+// carte décodait toutes les racines en mémoire vive pendant la poignée de main (~6 Ko pour AirCarto, ~18 Ko pour le
+// relais) : il ne restait plus assez de mémoire pour vérifier la signature RSA 4096 bits de la chaîne d'AirCarto
+// (« diag tls » : BIGNUM - Memory allocation failed, vu comme « not correctly signed by the trusted CA »).
+// Avec le bundle, la vérification est la même (chaîne, signatures, nom du serveur) ; seule la racine utile est lue,
+// au moment de vérifier la signature du haut de la chaîne. Bundle illisible : aucune racine, connexion refusée.
 class ClientTlsDate : public WiFiClientSecure {
  public:
   explicit ClientTlsDate(const char* q) : quoi(q) {}
+  // Pas setCACertBundle() ici : il remplacerait tout de suite le bundle commun, peut-être en pleine poignée de main de
+  // l'autre tâche. Le bundle n'est réglé qu'à l'ouverture (connect), sous le verrou mutexTls.
+  void racines(const uint8_t* b) { bundle = b; _CA_cert = nullptr; _use_insecure = false; _use_ca_bundle = (b != nullptr); }
   using WiFiClientSecure::connect;
   int connect(const char* hote, uint16_t port, int32_t delai) override {
+    if (bundle == nullptr) return 0;               // jamais sans racines
+    arduino_esp_crt_bundle_set(bundle);            // le bundle est commun à toute la carte : on remet le nôtre
     if (!WiFiClientSecure::connect(hote, port, delai)) return 0;
     if (!certificatsALaDate(*this, quoi)) { stop(); return 0; }
     return 1;
   }
  private:
   const char* quoi;
+  const uint8_t* bundle = nullptr;
 };
 // Une seule connexion HTTPS à la fois (~40 Ko de mémoire chacune) : tacheEnvoi (AirCarto) et tacheRelais se passent
 // ce verrou. AirCarto attend jusqu'à 5 s (sinon l'envoi est reporté au créneau suivant), le relais jusqu'à 20 s ;
@@ -2644,7 +2659,7 @@ void surveillerOta() {
 
 // Tâche du relais (cœur 0, priorité basse) : ses échanges HTTPS (1 à 3 s) ne ralentissent ni l'écran ni les envois.
 void tacheRelais(void* param) {
-  clientRelais.setCACert(RACINES_TLS);
+  clientRelais.racines(BUNDLE_TLS);        // 10 racines publiques (Cloudflare change d'autorité)
   clientRelais.setHandshakeTimeout(15);
   unsigned long tSync = 0, attente = 5000;   // premier échange ~5 s après le démarrage
   uint8_t echecs = 0;
@@ -4671,147 +4686,57 @@ void executerCommande(const String &cmd) {
   }
 }
 
-// Commande « diag tls » (câble USB) : rejoue une connexion HTTPS à AirCarto en affichant ce que la bibliothèque
-// WiFiClientSecure ne montre pas (elle efface tout dès l'échec). AUCUNE donnée n'est envoyée (ni clé, ni mesure).
-//  A) chaque racine lue SEULE : résultat, type de clé, empreinte SHA-256 (8 premiers octets) du certificat décodé,
-//     à comparer avec celle calculée sur PC (détecte un texte PEM abîmé ou une racine que la carte ne sait pas lire) ;
-//  B) connexion avec RACINES_AIRCARTO, puis avec la liste complète ;
-//  C) connexion SANS vérification (diagnostic seulement, fermée aussitôt), puis, sur la chaîne reçue : vérification
-//     complète par la carte et contrôle de chaque signature (montre si le calcul RSA lui-même échoue).
-// Mémoire comptée en « 8 bits » : ESP.getFreeHeap() compte aussi la mémoire IRAM, inutilisable par mbedTLS.
+// Commande « diag tls » (câble USB) : rejoue des connexions HTTPS en affichant ce que la bibliothèque
+// WiFiClientSecure ne montre pas (elle efface tout dès l'échec). AUCUNE donnée n'est envoyée (ni clé, ni mesure,
+// ni jeton) : poignée de main seulement, puis fermeture. Mémoire comptée en « 8 bits » : ESP.getFreeHeap() compte
+// aussi la mémoire IRAM, inutilisable par mbedTLS.
 static void memoireTls(const char* quand) {
-  Console.printf("    mémoire %s : utilisable %u (plus grand bloc %u) | ESP.getFreeHeap %u | pile restante %u\n", quand,
+  Console.printf("    mémoire %s : utilisable %u (plus grand bloc %u) | pile restante %u\n", quand,
                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
                  (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
-                 (unsigned)ESP.getFreeHeap(), (unsigned)uxTaskGetStackHighWaterMark(NULL));
+                 (unsigned)uxTaskGetStackHighWaterMark(NULL));
 }
 
-static void texteErreurTls(int r, char* t, size_t n) { mbedtls_strerror(r, t, n); }
-
-static void analyserRacines(const char* liste, const char* nom) {
-  Console.printf("--- A) %s, racines une par une\n", nom);
-  const char* p = liste;
-  for (int i = 0; i < 16 && (p = strstr(p, "-----BEGIN CERTIFICATE-----")) != nullptr; i++) {
-    mbedtls_pem_context pem;
-    mbedtls_pem_init(&pem);
-    size_t lu = 0;
-    int rp = mbedtls_pem_read_buffer(&pem, "-----BEGIN CERTIFICATE-----", "-----END CERTIFICATE-----",
-                                     (const unsigned char*)p, nullptr, 0, &lu);
-    if (rp != 0 || lu == 0) {
-      char t[100]; texteErreurTls(rp, t, sizeof(t));
-      Console.printf("    %d : texte PEM illisible %d : %s\n", i, rp, t);
-      mbedtls_pem_free(&pem);
-      break;
-    }
-    unsigned char h[32];
-    char e[17] = "?";
-    if (mbedtls_md(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), pem.buf, pem.buflen, h) == 0)
-      for (int k = 0; k < 8; k++) snprintf(e + 2 * k, 3, "%02X", h[k]);
-    mbedtls_x509_crt c;
-    mbedtls_x509_crt_init(&c);
-    int r = mbedtls_x509_crt_parse_der(&c, pem.buf, pem.buflen);
-    if (r == 0) {
-      char sujet[90];
-      mbedtls_x509_dn_gets(sujet, sizeof(sujet), &c.subject);
-      Console.printf("    %d OK %s | %s %u bits | %u octets | %s\n", i, sujet, mbedtls_pk_get_name(&c.pk),
-                     (unsigned)mbedtls_pk_get_bitlen(&c.pk), (unsigned)pem.buflen, e);
-    } else {
-      char t[100]; texteErreurTls(r, t, sizeof(t));
-      Console.printf("    %d ÉCHEC -0x%04X %s | %u octets | %s\n", i, (unsigned)-r, t, (unsigned)pem.buflen, e);
-    }
-    mbedtls_x509_crt_free(&c);
-    mbedtls_pem_free(&pem);
-    p += lu;
-  }
-}
-
-// Contrôles sur la chaîne reçue (connexion sans vérification) : ce que la carte calcule elle-même.
-static void verifierChaineRecue(const mbedtls_x509_crt* chaine) {
-  mbedtls_x509_crt ca;
-  mbedtls_x509_crt_init(&ca);
-  int r = mbedtls_x509_crt_parse(&ca, (const unsigned char*)RACINES_AIRCARTO, strlen(RACINES_AIRCARTO) + 1);
-  uint32_t f = 0;
-  int v = mbedtls_x509_crt_verify((mbedtls_x509_crt*)chaine, &ca, nullptr, "api.aircarto.fr", &f, nullptr, nullptr);
-  Console.printf("    vérification par la carte : lecture racines %d, résultat %d, drapeaux 0x%08lx\n", r, v, (unsigned long)f);
-  // chaque signature : certificat i signé par le certificat i+1 (et le dernier par Root YR de la liste)
-  mbedtls_x509_crt yr;
-  mbedtls_x509_crt_init(&yr);
-  static const char YR[] = CERT_ISRG_ROOT_YR;
-  int ryr = mbedtls_x509_crt_parse(&yr, (const unsigned char*)YR, sizeof(YR));
-  int i = 0;
-  for (const mbedtls_x509_crt* c = chaine; c != nullptr && c->raw.len != 0 && i < 4; c = c->next, i++) {
-    const mbedtls_x509_crt* parent = (c->next && c->next->raw.len) ? c->next : nullptr;
-    const char* nomParent = "suivant reçu";
-    if (parent == nullptr) {
-      // le dernier reçu (Root YR signée par X1) : on teste plutôt YR2 avec la Root YR de la carte, plus bas
-      break;
-    }
-    const mbedtls_md_info_t* md = mbedtls_md_info_from_type(c->sig_md);
-    unsigned char h[MBEDTLS_MD_MAX_SIZE];
-    int rh = md ? mbedtls_md(md, c->tbs.p, c->tbs.len, h) : -1;
-    int rs = rh == 0 ? mbedtls_pk_verify_ext(c->sig_pk, c->sig_opts, (mbedtls_pk_context*)&parent->pk, c->sig_md, h,
-                                             mbedtls_md_get_size(md), c->sig.p, c->sig.len) : rh;
-    char t[100] = ""; if (rs) texteErreurTls(rs, t, sizeof(t));
-    Console.printf("    signature %d par %s (clé %u bits) : %s %s\n", i, nomParent,
-                   (unsigned)mbedtls_pk_get_bitlen(&parent->pk), rs == 0 ? "OK" : "ÉCHEC", t);
-  }
-  // YR2 (2e reçu) signé par la Root YR gravée dans la carte
-  const mbedtls_x509_crt* yr2 = (chaine && chaine->next && chaine->next->raw.len) ? chaine->next : nullptr;
-  if (ryr == 0 && yr2) {
-    const mbedtls_md_info_t* md = mbedtls_md_info_from_type(yr2->sig_md);
-    unsigned char h[MBEDTLS_MD_MAX_SIZE];
-    int rh = md ? mbedtls_md(md, yr2->tbs.p, yr2->tbs.len, h) : -1;
-    int rs = rh == 0 ? mbedtls_pk_verify_ext(yr2->sig_pk, yr2->sig_opts, &yr.pk, yr2->sig_md, h, mbedtls_md_get_size(md),
-                                             yr2->sig.p, yr2->sig.len) : rh;
-    char t[100] = ""; if (rs) texteErreurTls(rs, t, sizeof(t));
-    Console.printf("    signature de YR2 par la Root YR de la carte : %s %s\n", rs == 0 ? "OK" : "ÉCHEC", t);
-  } else {
-    char t[100] = ""; texteErreurTls(ryr, t, sizeof(t));
-    Console.printf("    Root YR de la carte illisible seule : %d %s\n", ryr, t);
-  }
-  mbedtls_x509_crt_free(&yr);
-  mbedtls_x509_crt_free(&ca);
-}
-
-static void essaiTls(const char* hote, const char* racines, const char* nom) {
+// bundle == nullptr : SANS vérification (diagnostic seulement, la connexion est fermée aussitôt).
+static void essaiTls(const char* hote, const uint8_t* bundle, const char* nom) {
   Console.printf("--- %s\n", nom);
   memoireTls("avant");
   IPAddress ip;
   if (!WiFi.hostByName(hote, ip)) { Console.println("    nom introuvable (DNS)"); return; }
+  if (bundle) arduino_esp_crt_bundle_set(bundle);
   sslclient_context* ctx = new sslclient_context;
   ssl_init(ctx);
   ctx->socket = -1;
   ctx->handshake_timeout = 15000;
-  int ret = start_ssl_client(ctx, ip, 443, hote, 8000, racines, false, nullptr, nullptr, nullptr, nullptr,
-                             racines == nullptr, nullptr);
-  char texte[200];
+  int ret = start_ssl_client(ctx, ip, 443, hote, 8000, nullptr, bundle != nullptr, nullptr, nullptr, nullptr, nullptr,
+                             bundle == nullptr, nullptr);
+  char texte[160];
   if (ret >= 0) {
     Console.printf("    connexion OK (%s, %s)\n", mbedtls_ssl_get_version(&ctx->ssl_ctx), mbedtls_ssl_get_ciphersuite(&ctx->ssl_ctx));
+    memoireTls("pendant la connexion");
   } else {
     mbedtls_strerror(ret, texte, sizeof(texte));
     Console.printf("    ÉCHEC %d (-0x%04X) : %s\n", ret, (unsigned)-ret, texte);
   }
   uint32_t drapeaux = mbedtls_ssl_get_verify_result(&ctx->ssl_ctx);
-  if (racines != nullptr && drapeaux != 0 && drapeaux != (uint32_t)-1) {
-    char info[400];
+  if (bundle != nullptr && drapeaux != 0 && drapeaux != (uint32_t)-1) {
+    char info[300];
     mbedtls_x509_crt_verify_info(info, sizeof(info), "    raison : ", drapeaux);
     Console.printf("    drapeaux 0x%08lx\n%s", (unsigned long)drapeaux, info);
   }
-  // chaîne reçue du serveur
   const mbedtls_x509_crt* c = nullptr;
   if (ctx->ssl_ctx.session_negotiate) c = ctx->ssl_ctx.session_negotiate->peer_cert;
   if (c == nullptr && ctx->ssl_ctx.session) c = ctx->ssl_ctx.session->peer_cert;
-  const mbedtls_x509_crt* chaine = c;
   for (int i = 0; c != nullptr && i < 5; c = c->next, i++) {
     if (c->raw.len == 0) continue;
-    char sujet[120], emetteur[120];
+    char sujet[100], emetteur[100];
     mbedtls_x509_dn_gets(sujet, sizeof(sujet), &c->subject);
     mbedtls_x509_dn_gets(emetteur, sizeof(emetteur), &c->issuer);
-    Console.printf("    reçu %d : %s | émis par %s | clé %u bits | fin %04d-%02d-%02d\n", i, sujet, emetteur,
-                   (unsigned)mbedtls_pk_get_bitlen(&c->pk), c->valid_to.year, c->valid_to.mon, c->valid_to.day);
+    Console.printf("    reçu %d : %s | émis par %s | %s %u bits | fin %04d-%02d-%02d\n", i, sujet, emetteur,
+                   mbedtls_pk_get_name(&c->pk), (unsigned)mbedtls_pk_get_bitlen(&c->pk),
+                   c->valid_to.year, c->valid_to.mon, c->valid_to.day);
   }
-  if (racines == nullptr && ret >= 0 && chaine != nullptr) verifierChaineRecue(chaine);
-  stop_ssl_socket(ctx, racines, nullptr, nullptr);
+  stop_ssl_socket(ctx, nullptr, nullptr, nullptr);
   delete ctx;
   memoireTls("après");
 }
@@ -4822,15 +4747,24 @@ void diagnosticTls() {
     Console.println("diag tls : une autre connexion HTTPS est en cours, réessaie.");
     return;
   }
-  Console.printf("Diagnostic HTTPS v2 vers api.aircarto.fr (version %lu). Aucune donnée n'est envoyée.\n", (unsigned long)FW_VERSION);
-  memoireTls("au départ");
-  analyserRacines(RACINES_TLS, "RACINES_TLS (contient aussi les 4 d'AirCarto)");
+  Console.printf("Diagnostic HTTPS v3 (racines en bundle, version %lu). Aucune donnée n'est envoyée.\n",
+                 (unsigned long)FW_VERSION);
+  Console.printf("    bundles : AirCarto %u racines (%u octets), relais %u racines (%u octets)\n",
+                 (unsigned)(BUNDLE_AIRCARTO[0] << 8 | BUNDLE_AIRCARTO[1]), (unsigned)sizeof(BUNDLE_AIRCARTO),
+                 (unsigned)(BUNDLE_TLS[0] << 8 | BUNDLE_TLS[1]), (unsigned)sizeof(BUNDLE_TLS));
+  essaiTls("api.aircarto.fr", BUNDLE_AIRCARTO, "1) AirCarto, racines de Let's Encrypt (comme les envois)");
   esp_task_wdt_reset();
-  essaiTls("api.aircarto.fr", RACINES_AIRCARTO, "B1) connexion avec RACINES_AIRCARTO");
+  // relais : son nom seulement (https://<nom>/...), jamais le jeton
+  String hote = cfgRelais.startsWith("https://") ? cfgRelais.substring(8) : String("");
+  int fin = hote.indexOf('/');
+  if (fin >= 0) hote = hote.substring(0, fin);
+  if (hote.length() > 0 && hote.indexOf(':') < 0) {
+    essaiTls(hote.c_str(), BUNDLE_TLS, "2) relais, 10 racines (comme la console à distance)");
+  } else {
+    Console.println("--- 2) relais : pas d'adresse (set relais au câble USB), essai sauté");
+  }
   esp_task_wdt_reset();
-  essaiTls("api.aircarto.fr", RACINES_TLS, "B2) connexion avec la liste complète (RACINES_TLS)");
-  esp_task_wdt_reset();
-  essaiTls("api.aircarto.fr", nullptr, "C) connexion SANS vérification + contrôles sur la chaîne reçue");
+  essaiTls("api.aircarto.fr", nullptr, "3) AirCarto SANS vérification (diagnostic seulement)");
   if (mutexTls) xSemaphoreGive(mutexTls);
   Console.println("Fin du diagnostic : copie toutes ces lignes.");
 }
@@ -5116,9 +5050,9 @@ void setup() {
   esp_task_wdt_init(WDT_TIMEOUT_S, true);
   esp_task_wdt_add(NULL);
 #if AIRCARTO_HTTPS
-  // HTTPS vers AirCarto : seules les racines de Let's Encrypt sont acceptées (RACINES_AIRCARTO), le nom
+  // HTTPS vers AirCarto : seules les racines de Let's Encrypt sont acceptées (BUNDLE_AIRCARTO), le nom
   // api.aircarto.fr et la date du certificat sont vérifiés ; poignée de main 10 s au plus.
-  clientAircarto.setCACert(RACINES_AIRCARTO);
+  clientAircarto.racines(BUNDLE_AIRCARTO);   // racines de Let's Encrypt seulement
   clientAircarto.setHandshakeTimeout(10);
 #endif
   // réseau + fichier hors ligne, cœur 1 comme loop() ; pile agrandie (8 -> 12 Ko) pour la poignée de main HTTPS
