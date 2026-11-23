@@ -336,9 +336,12 @@ static const unsigned long ATTENTE_SERVEUR_MAX_MS    = 300000UL;  // délai dema
 // Mémoire pour une connexion HTTPS (mesurée par « diag tls » le 23/11/2026, racines en bundle) : ~47 Ko occupés pendant
 // la connexion, dont deux tampons de ~16,7 Ko d'un seul tenant, plus les calculs de la poignée de main. Réussi avec
 // 63 Ko libres ; échouait vers 58 Ko quand les racines étaient décodées en RAM (~6 Ko). En dessous : on attend.
-// (L'ancien seuil, 45 Ko d'un seul tenant, n'était plus jamais atteint après la 1re connexion : plus grand bloc ~43 Ko.)
+// Plus grand bloc : il en faut un pour le premier tampon ; le second se loge dans un autre bloc ou le reste du premier.
+// Exiger les deux d'un seul tenant bloquait tout : après quelques heures, le plus grand bloc tombe vers 35 Ko (43 Ko au
+// premier envoi), et l'ancien seuil de 45 Ko arrêtait les envois ET la console à distance, sans message.
+// Si la mémoire manque malgré tout pendant la poignée de main, la connexion échoue proprement et sera retentée.
 static const uint32_t TLS_MEMOIRE_MIN_OCTETS         = 56000;     // mémoire libre utilisable par mbedTLS, au total
-static const uint32_t TLS_BLOC_MIN_OCTETS            = 34000;     // plus grand bloc : les deux tampons doivent y tenir
+static const uint32_t TLS_BLOC_MIN_OCTETS            = 18000;     // plus grand bloc : au moins un tampon de ~16,7 Ko
 static const int      REPONSE_MAX_OCTETS             = 2048;      // réponse d'AirCarto lue au plus (quelques centaines d'octets)
 static const uint32_t WDT_TIMEOUT_S                  = 60;        // watchdog : redémarrage si la carte se fige
 
@@ -2720,7 +2723,18 @@ void tacheRelais(void* param) {
     syncDemandee = false;
     tSync = now;
     if (mutexTls && xSemaphoreTake(mutexTls, pdMS_TO_TICKS(20000)) != pdTRUE) { attente = 2000; continue; }
-    if (!memoireTlsOK()) { if (mutexTls) xSemaphoreGive(mutexTls); attente = 10000; continue; }
+    if (!memoireTlsOK()) {
+      if (mutexTls) xSemaphoreGive(mutexTls);
+      static unsigned long tMsgMemoire = 0;      // message au plus une fois par minute (USB, Bluetooth)
+      if (tMsgMemoire == 0 || millis() - tMsgMemoire > 60000UL) {
+        tMsgMemoire = millis() | 1UL;
+        Console.printf("Relais : échange reporté, mémoire insuffisante pour HTTPS (libre %u, plus grand bloc %u octets).\n",
+                       (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
+                       (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL));
+      }
+      attente = 10000;
+      continue;
+    }
     bool syncOK = synchroniserRelais();
     clientRelais.stop();    // une connexion par échange : on libère tout de suite la mémoire de la connexion chiffrée
     if (mutexTls) xSemaphoreGive(mutexTls);
