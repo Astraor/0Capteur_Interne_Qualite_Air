@@ -101,7 +101,7 @@
 //    quand son délai est écoulé (lecture des capteurs chaque seconde, une mesure toutes les 10 s, etc.).
 // 3. Quatre acteurs travaillent en parallèle (plus la pile Bluetooth) :
 //    - loop()       : capteurs, animations, écran, commandes (USB, Bluetooth, relais) ;
-//    - refreshTask  : rafraîchit l'écran LED en continu (cœur 0, réveillée par un timer toutes les 4 ms) ;
+//    - refreshTask  : rafraîchit l'écran LED en continu (cœur 1 avec loop, réveillée par un timer toutes les 4 ms) ;
 //    - tacheEnvoi   : envoie les mesures au serveur ; sans réseau, les range dans un fichier en flash
 //                     puis les renvoie quand le réseau revient ;
 //    - tacheRelais  : console à distance et mises à jour (HTTPS vers ton relais Cloudflare, cœur 0).
@@ -151,6 +151,7 @@
 #error "Ce programme est écrit pour ESP32 Arduino 2.x : timerBegin(), esp_task_wdt_init() et esp_wpa2.h changent en 3.x. Dans platformio.ini : platform = espressif32@^6.0.0"
 #endif
 #include <WiFi.h>
+#include <esp_wifi.h>               // esp_wifi_scan_stop : arrêt d'un scan bloqué
 #include <HTTPClient.h>
 #include <LittleFS.h>
 #include <Preferences.h>
@@ -188,8 +189,7 @@
 #endif
 #if CONSOLE_DISTANTE
 // Console à distance et mise à jour : écriture du nouveau programme, vérification de signature
-#include <Update.h>
-#include <esp_ota_ops.h>
+#include <esp_ota_ops.h>         // écriture du nouveau programme (esp_ota_begin efface l'emplacement en une fois)
 #include <mbedtls/pk.h>
 #include <mbedtls/md.h>
 #endif
@@ -322,6 +322,9 @@ static const unsigned long WIFI_TIMEOUT_PSK_MS       = 20000UL;   // délai max 
 static const unsigned long WIFI_TIMEOUT_EAP_MS       = 35000UL;   // eduroam est plus lent (authentification ENT)
 static const unsigned long WIFI_SCAN_MAX_MS          = 12000UL;   // un scan des réseaux visibles ne dure jamais plus
 static const unsigned long WIFI_PAUSE_MS             = 30000UL;   // aucun réseau connu joignable : nouvel essai après 30 s
+static const unsigned long WIFI_REESSAI_MS           = 2000UL;    // 1er essai raté : le même réseau est retenté 2 s après
+                                                                  // (après un redémarrage, beaucoup de box refusent le 1er)
+static const unsigned long WIFI_LOG_ECHEC_MS         = 600000UL;  // échecs en arrière-plan : une ligne au journal / 10 min
 static const unsigned long WIFI_RESULTAT_MS          = 3000UL;    // durée d'affichage de "CONNECTE" / "ECHEC" à l'écran
 static const unsigned long WIFI_REBOOT_MS            = 3600000UL; // 1 h sans Wi-Fi : on redémarre la carte
 static const uint32_t HEAP_MIN_OCTETS                = 25000;     // en dessous : redémarrage (fuite mémoire ?)
@@ -434,9 +437,17 @@ PxMATRIX display(64, 32, P_LAT, P_OE, P_A, P_B, P_C, P_D, P_E);
 
 // L'écran n'allume que 2 lignes sur 32 à la fois : il faut le redessiner sans
 // arrêt, toutes les 4 ms. Un timer réveille une tâche qui s'en charge, en
-// parallèle du reste du programme. Ce bloc se recopie tel quel.
+// parallèle du reste du programme.
+// Cœur 1 (celui de loop) et non plus cœur 0 : chaque ligne reste allumée 15 à 120 µs, mesurés en boucle ; sur le
+// cœur 0, les interruptions du Wi-Fi et du Bluetooth (très nombreuses pendant un scan, une connexion ou le
+// téléchargement d'une mise à jour) allongeaient au hasard ces durées : lignes plus claires par instants, donc
+// scintillement au démarrage et pendant la mise à jour. Autre effet : loop() (qui dessine) ne tourne jamais PENDANT
+// un rafraîchissement, donc elle ne peut plus redessiner un tampon que l'écran est encore en train d'afficher.
 hw_timer_t* timer = NULL;
 SemaphoreHandle_t refreshSem;
+volatile bool rafraichissementEnCours = false;   // un envoi à l'écran est en cours (presenter attend sa fin)
+volatile uint32_t nbRafraichissements = 0;
+volatile bool ecranSuspendu = false;             // écran éteint, rafraîchissement arrêté (effacement de la flash)
 
 void IRAM_ATTR onTimer() {
   BaseType_t woken = pdFALSE;
@@ -447,10 +458,16 @@ void IRAM_ATTR onTimer() {
 void refreshTask(void* param) {
   for (;;) {
     if (xSemaphoreTake(refreshSem, portMAX_DELAY)) {
+      if (ecranSuspendu) continue;   // le dernier envoi a laissé les LED éteintes : écran noir, sans clignoter
+      rafraichissementEnCours = true;
       display.display(30);  // durée d'allumage de chaque ligne, en µs
+      rafraichissementEnCours = false;
+      nbRafraichissements++;
     }
   }
 }
+
+static const BaseType_t COEUR_ECRAN = 1;   // cœur de refreshTask (le même que loop : voir plus haut)
 
 void setupDisplay() {
   display.begin(16);  // balayage 1/16
@@ -459,8 +476,9 @@ void setupDisplay() {
   display.setBrightness(255);     // luminosité : 0 à 255, ici le maximum
   display.clearDisplay();
   // Le timer « donne » ce sémaphore toutes les 4 ms ; refreshTask l'attend, se réveille et rafraîchit l'écran.
+  // (le timer est créé ici, depuis setup, donc sur le cœur 1 lui aussi : réveil sans passer d'un cœur à l'autre)
   refreshSem = xSemaphoreCreateBinary();
-  xTaskCreatePinnedToCore(refreshTask, "refresh", 4096, NULL, configMAX_PRIORITIES - 1, NULL, 0);  // priorité max, cœur 0
+  xTaskCreatePinnedToCore(refreshTask, "refresh", 4096, NULL, configMAX_PRIORITIES - 1, NULL, COEUR_ECRAN);  // priorité max
   timer = timerBegin(0, 80, true);        // 80 MHz / 80 : un tic par µs
   timerAttachInterrupt(timer, &onTimer, true);
   timerAlarmWrite(timer, 4000, true);     // toutes les 4000 µs, en boucle
@@ -495,8 +513,10 @@ class ClientTlsDate : public WiFiClientSecure {
     bundleCourant = bundle;                        // commun à toute la carte : on remet le nôtre (sous mutexTls)
     if (!WiFiClientSecure::connect(hote, port, delai)) return 0;
     if (!certificatsALaDate(*this, quoi)) { stop(); return 0; }
+    tOuverture = millis() | 1UL;
     return 1;
   }
+  unsigned long tOuverture = 0;   // fin de la poignée de main (la requête part juste après) ; 0 = pas ouverte
  private:
   const char* quoi;
   const uint8_t* bundle = nullptr;
@@ -613,7 +633,10 @@ unsigned long tChangementSecteur = 0;
 // Réseau et envoi
 // REJETE : le serveur a refusé la mesure (400/413) | INVALIDE : écartée sur la carte, SANS envoi (ligne illisible,
 // heure inconnue) : ne consomme pas le créneau de 10 s | ATTENDRE : l'heure NTP manque encore
-enum ResultatPush { PUSH_OK, PUSH_REESSAYER, PUSH_REJETE, PUSH_INVALIDE, PUSH_CLE_INVALIDE, PUSH_ATTENDRE };
+// REPORTE : rien n'a été accepté pour une raison passagère côté carte ou « trop tôt » (connexion HTTPS du relais en
+// cours, mémoire, refus 429) : une mesure fraîche reste en mémoire vive pour le créneau suivant, SANS passer par la
+// flash. Avant, elle y était rangée : le nuage de la page ÉTAT affichait « 1 » alors que tout allait bien.
+enum ResultatPush { PUSH_OK, PUSH_REESSAYER, PUSH_REJETE, PUSH_INVALIDE, PUSH_CLE_INVALIDE, PUSH_ATTENDRE, PUSH_REPORTE };
 // Mesures fraîches en attente d'envoi (RAM) : loop() les dépose, la tâche d'envoi les prend.
 // Protégées par mutexEnvoi. Au-delà de NB_PENDANTES, la plus ancienne est sacrifiée.
 #define NB_PENDANTES 4
@@ -623,7 +646,7 @@ SemaphoreHandle_t mutexEnvoi = NULL;
 volatile bool demandeVider = false;  // commande "vider_file" : la tâche d'envoi s'en charge
 unsigned long tAttenteHeure = 0;     // depuis quand une mesure attend l'heure NTP (0 = personne n'attend)
 unsigned long tEssaiNtp = 0;         // dernier essai d'une mesure qui attend l'heure NTP
-unsigned long tDernierPush = 0;      // DÉBUT du dernier POST (c'est ce que le serveur compte)
+unsigned long tDernierPush = 0;      // dernier POST : fin de sa poignée de main HTTPS (= son arrivée au serveur)
 bool dejaPoste = false;              // aucun POST depuis le démarrage : le premier part tout de suite
 unsigned long ecartMinMs = ECART_PUSH_MIN_MS;   // délai demandé par le serveur (next_push_in_s, 10 s au moins)
 unsigned long margePushMs = MARGE_PUSH_INIT_MS; // marge ajoutée, ajustée selon les refus 429
@@ -656,7 +679,7 @@ uint8_t nbReseaux = 0;
 int8_t dernierReseau = -1;  // dernier réseau qui a fonctionné : essayé en premier à force égale
 
 // Machine à états de la connexion (gererWiFi, appelée à chaque tour de loop, jamais bloquante)
-enum EtatWifi { WIFI_INACTIF, WIFI_SCAN, WIFI_CONNEXION, WIFI_CONNECTE, WIFI_PAUSE };
+enum EtatWifi { WIFI_INACTIF, WIFI_SCAN, WIFI_CONNEXION, WIFI_REESSAI, WIFI_CONNECTE, WIFI_PAUSE };
 EtatWifi etatWifi = WIFI_INACTIF;
 int8_t candidats[NB_WIFI_MAX];      // réseaux à essayer, dans l'ordre (le plus fort d'abord)
 // Point d'accès PRÉCIS vu au scan pour chaque candidat (adresse BSSID + canal), avec la bonne sécurité : la carte se
@@ -672,6 +695,8 @@ bool identiteReelle[NB_WIFI_MAX] = {false};   // eduroam : l'identité anonyme a
 uint8_t bssidRefusAnonyme[NB_WIFI_MAX][6];    // premier point d'accès qui a refusé l'identité anonyme
 bool refusAnonymeVu[NB_WIFI_MAX] = {false};
 uint8_t nbCandidats = 0, idxCandidat = 0;
+uint8_t essaiCandidat = 0;          // 0 = 1er essai du candidat courant | 1 = 2e (dernier) essai
+unsigned long tDebutCandidat = 0;   // début du 1er essai du candidat courant (secondes de l'écran de connexion)
 int8_t reseauCourant = -1;          // réseau en cours d'essai ou connecté
 bool rescannerApresEchec = false;   // après une coupure : on retente le même réseau, puis on rescanne
 unsigned long tEtatWifi = 0;        // début de l'état courant
@@ -1032,16 +1057,22 @@ void surDeconnexion(WiFiEvent_t ev, WiFiEventInfo_t info) {
   if (r != WIFI_REASON_ASSOC_LEAVE) raisonDeco = r;  // ASSOC_LEAVE = c'est nous qui avons coupé
 }
 
+// Raisons 208 / 209 (protection des trames de gestion : la box garde l'ancienne connexion de la carte) : en chiffres,
+// les noms WIFI_REASON_ASSOC_COMEBACK_TIME_TOO_LONG / SA_QUERY_TIMEOUT n'existent pas avant Arduino-ESP32 2.0.10.
+static const uint8_t RAISON_BOX_OCCUPEE = 208, RAISON_BOX_SA_QUERY = 209;
+
 // Texte court (écran, 6 caractères max) et explication (moniteur série) de la raison d'un échec
 const char* raisonCourte(uint8_t r) {
   switch (r) {
     case 0:                                  return "DELAI";
     case WIFI_REASON_NO_AP_FOUND:            return "ABSENT";
     case WIFI_REASON_BEACON_TIMEOUT:         return "PERDU";
+    case WIFI_REASON_AUTH_EXPIRE:            // la box n'a pas répondu à temps (fréquent au 1er essai après un redémarrage)
+    case WIFI_REASON_HANDSHAKE_TIMEOUT:      return "DELAI";
+    case RAISON_BOX_OCCUPEE:
+    case RAISON_BOX_SA_QUERY:                return "OCCUPE";
     case WIFI_REASON_AUTH_FAIL:
-    case WIFI_REASON_AUTH_EXPIRE:
     case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
-    case WIFI_REASON_HANDSHAKE_TIMEOUT:
     case WIFI_REASON_802_1X_AUTH_FAILED:     return "MDP ?";
     default:                                 return "REFUS";
   }
@@ -1053,10 +1084,12 @@ const char* raisonLongue(uint8_t r) {
     case WIFI_REASON_NO_AP_FOUND:            return "réseau introuvable (hors de portée ? nom exact ?)";
     case WIFI_REASON_BEACON_TIMEOUT:         return "signal perdu (borne éteinte ou trop loin)";
     case WIFI_REASON_802_1X_AUTH_FAILED:     return "identifiant ou mot de passe ENT refusé (ou ca_eduroam.h faux, ou identité anonyme refusée : EDUROAM_IDENTITE_ANONYME 0)";
-    case WIFI_REASON_AUTH_FAIL:
     case WIFI_REASON_AUTH_EXPIRE:
-    case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
-    case WIFI_REASON_HANDSHAKE_TIMEOUT:      return "mot de passe refusé (ou mauvais type : wifi add / wifi ent ?)";
+    case WIFI_REASON_HANDSHAKE_TIMEOUT:      return "la box n'a pas répondu à temps (fréquent au 1er essai après un redémarrage)";
+    case RAISON_BOX_OCCUPEE:
+    case RAISON_BOX_SA_QUERY:                return "la box garde encore l'ancienne connexion de la carte (après un redémarrage)";
+    case WIFI_REASON_AUTH_FAIL:              return "mot de passe refusé (ou mauvais type : wifi add / wifi ent ?)";
+    case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT: return "clé refusée : mot de passe faux, ou box pas encore prête (fréquent au 1er essai après un redémarrage)";
     case WIFI_REASON_ASSOC_FAIL:
     case WIFI_REASON_CONNECTION_FAIL:        return "le point d'accès refuse la connexion";
     default:                                 return "refusé par le réseau";
@@ -1072,9 +1105,12 @@ void lancerConnexion(int8_t i) {
 #if WIFI_ACTIVE
   const ReseauWifi &r = reseaux[i];
   // Point d'accès précis vu au scan (sinon : n'importe lequel de ce nom, seulement pour un Wi-Fi à mot de passe)
+  // 2e essai d'un Wi-Fi à mot de passe : n'importe quel point d'accès de ce nom (la box a pu changer de canal depuis
+  // le scan, et le pilote rescanne alors tous les canaux). Un réseau entreprise reste attaché au point d'accès vu.
   uint8_t bssid[6];
   int32_t canal = 0;
-  bool avecBssid = (idxCandidat < nbCandidats && candidats[idxCandidat] == i && candBssidOk[idxCandidat]);
+  bool avecBssid = (idxCandidat < nbCandidats && candidats[idxCandidat] == i && candBssidOk[idxCandidat])
+                   && !(essaiCandidat > 0 && !estEntreprise(i));
   if (avecBssid) { memcpy(bssid, candBssid[idxCandidat], 6); canal = candCanal[idxCandidat]; }
   bssidCourantOk = avecBssid;
   if (avecBssid) { memcpy(bssidCourant, bssid, 6); canalCourant = canal; }
@@ -1113,11 +1149,31 @@ void lancerConnexion(int8_t i) {
   }
   etatWifi = WIFI_CONNEXION;
   tEtatWifi = millis();
+  if (essaiCandidat == 0) tDebutCandidat = tEtatWifi;
   aRedessiner = true;
   if (wifiInteractif || verbose)
-    Console.printf("Wi-Fi : connexion à %s (%s, essai %u/%u)...\n", nomAffichable(r.ssid).c_str(), typeReseau(i),
-                  (unsigned)(idxCandidat + 1), (unsigned)nbCandidats);
+    Console.printf("Wi-Fi : connexion à %s (%s, réseau %u/%u, essai %u/2)...\n", nomAffichable(r.ssid).c_str(), typeReseau(i),
+                  (unsigned)(idxCandidat + 1), (unsigned)nbCandidats, (unsigned)(essaiCandidat + 1));
 #endif
+}
+
+// Connexion ou 2e essai en cours (écran de connexion, page Wi-Fi)
+bool wifiEnConnexion() {
+  return etatWifi == WIFI_CONNEXION || etatWifi == WIFI_REESSAI;
+}
+
+// Essais ratés en arrière-plan (sans écran de connexion ni « verbose on ») : une ligne au journal quand la raison
+// change, au plus une toutes les 10 min sinon. On voit ainsi, aussi à distance, pourquoi la carte ne se connecte pas.
+void journaliserEchecWifi(uint8_t r) {
+  static uint8_t rPrec = 0xFF;
+  static unsigned long tPrec = 0;
+  if (wifiInteractif || verbose || reseauCourant < 0) return;   // déjà écrit par gererWiFi
+  unsigned long now = millis();
+  if (r == rPrec && tPrec != 0 && now - tPrec < WIFI_LOG_ECHEC_MS) return;
+  rPrec = r;
+  tPrec = now | 1UL;
+  Console.printf("Wi-Fi : essai raté sur %s : %s (code %u). Nouvel essai automatique.\n",
+                 nomAffichable(reseaux[reseauCourant].ssid).c_str(), raisonLongue(r), (unsigned)r);
 }
 
 // Lance une recherche des réseaux visibles (asynchrone : la carte continue de tourner)
@@ -1150,6 +1206,7 @@ bool essayableSansScan(uint8_t i) {
 void preparerCandidats(int n) {
   nbCandidats = 0;
   idxCandidat = 0;
+  essaiCandidat = 0;
   rescannerApresEchec = false;
   for (uint8_t k = 0; k < NB_WIFI_MAX; k++) candBssidOk[k] = false;
   if (n < 0) {  // scan raté : on essaie les Wi-Fi à mot de passe, le dernier réseau qui a marché d'abord
@@ -1293,7 +1350,9 @@ void gererWiFi(unsigned long now) {
     case WIFI_SCAN: {
       int n = WiFi.scanComplete();
       if (n == WIFI_SCAN_RUNNING && now - tEtatWifi < WIFI_SCAN_MAX_MS) return;
-      if (n == WIFI_SCAN_RUNNING) n = -1;  // scan bloqué : on fait sans
+      // Scan raté ou bloqué (la bibliothèque abandonne au bout de 6 s, le pilote peut encore scanner) : on l'arrête
+      // vraiment, sinon la connexion qui suit tombe en plein scan et échoue.
+      if (n < 0) { esp_wifi_scan_stop(); WiFi.scanDelete(); n = -1; }
       preparerCandidats(n);
       if (nbCandidats == 0) { finTentatives(now); return; }
       lancerConnexion(candidats[0]);
@@ -1302,13 +1361,14 @@ void gererWiFi(unsigned long now) {
 
     case WIFI_CONNEXION: {
       if (WiFi.status() == WL_CONNECTED) { connexionReussie(now); return; }
-      // Mauvais mot de passe / réseau absent : inutile d'attendre la fin du délai
+      // Le pilote a donné la raison de l'échec (réseau absent, refus, délai de la box...) : la tentative est finie
+      // (reconnexion automatique coupée), inutile d'attendre la fin du délai. Sinon : délai écoulé sans nouvelles.
       uint8_t r = raisonDeco;
-      bool refusNet = (r == WIFI_REASON_NO_AP_FOUND || r == WIFI_REASON_AUTH_FAIL ||
-                       r == WIFI_REASON_802_1X_AUTH_FAILED || r == WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT);
-      if (!refusNet && now - tEtatWifi < delaiConnexion(reseauCourant)) return;
+      if (r == 0 && now - tEtatWifi < delaiConnexion(reseauCourant)) return;
       if (wifiInteractif || verbose)
-        Console.printf("Wi-Fi : échec sur %s : %s\n", nomAffichable(reseaux[reseauCourant].ssid).c_str(), raisonLongue(r));
+        Console.printf("Wi-Fi : échec sur %s (essai %u/2) : %s (code %u)\n", nomAffichable(reseaux[reseauCourant].ssid).c_str(),
+                      (unsigned)(essaiCandidat + 1), raisonLongue(r), (unsigned)r);
+      else journaliserEchecWifi(r);
 #if EDUROAM_IDENTITE_ANONYME
       // Repli sur l'identifiant réel seulement si DEUX points d'accès différents ont refusé l'identité anonyme : un faux
       // point d'accès isolé ne peut pas, en refusant exprès, obliger la carte à dévoiler ton identifiant en clair.
@@ -1324,10 +1384,28 @@ void gererWiFi(unsigned long now) {
         }
       }
 #endif
+      // 1er essai raté : le MÊME réseau est retenté 2 s plus tard. Après un redémarrage de la carte, la box croit
+      // encore l'ancienne connexion ouverte et refuse souvent le 1er essai (délai, « occupé »), le 2e passe. C'est
+      // ce que faisait à la main « wifi connect » ; avant, la carte attendait 30 s, puis ne refaisait qu'UN essai,
+      // refusé à son tour (le pilote ne retente plus seul : reconnexion automatique coupée).
+      WiFi.disconnect(false, false);
+      // (sauf réseau introuvable alors qu'il n'avait pas été vu au scan : essai « à l'aveugle », inutile de doubler)
+      if (essaiCandidat == 0 && !(r == WIFI_REASON_NO_AP_FOUND && !bssidCourantOk)) {
+        etatWifi = WIFI_REESSAI;
+        tEtatWifi = now;
+        return;
+      }
+      essaiCandidat = 0;
       if (++idxCandidat < nbCandidats) { lancerConnexion(candidats[idxCandidat]); return; }
       finTentatives(now);
       return;
     }
+
+    case WIFI_REESSAI:
+      if (now - tEtatWifi < WIFI_REESSAI_MS) return;
+      essaiCandidat = 1;
+      lancerConnexion(candidats[idxCandidat]);
+      return;
 
     case WIFI_CONNECTE:
       if (demandeReconnexion) {   // connecté en apparence, mais plus rien ne passe : on refait la connexion
@@ -1343,6 +1421,7 @@ void gererWiFi(unsigned long now) {
       // on retente d'abord le même réseau ; s'il ne revient pas, on rescanne
       nbCandidats = 1;
       idxCandidat = 0;
+      essaiCandidat = 0;
       candidats[0] = reseauCourant;
       candBssidOk[0] = bssidCourantOk;    // même point d'accès qu'avant la coupure
       memcpy(candBssid[0], bssidCourant, 6);
@@ -1928,8 +2007,7 @@ ResultatPush posterAuServeur(const String &payload) {
   if (mutexTls && xSemaphoreTake(mutexTls, pdMS_TO_TICKS(5000)) != pdTRUE) {
     nbReportsMemoire++;
     LOG("Envoi reporté : une autre connexion HTTPS est en cours.\n");
-    etatEnvoi = 2;
-    return PUSH_REESSAYER;
+    return PUSH_REPORTE;     // ce n'est pas un échec d'envoi : le témoin du serveur reste tel quel
   }
   if (!memoireTlsOK()) {
     if (mutexTls) xSemaphoreGive(mutexTls);
@@ -1937,8 +2015,7 @@ ResultatPush posterAuServeur(const String &payload) {
     LOG("Envoi reporté : mémoire insuffisante pour HTTPS (libre %u, plus grand bloc %u octets).\n",
         (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
         (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL));
-    etatEnvoi = 2;
-    return PUSH_REESSAYER;
+    return PUSH_REPORTE;
   }
 #endif
   // Un POST vers le serveur, avec des délais courts pour ne pas bloquer longtemps la tâche d'envoi.
@@ -1962,7 +2039,16 @@ ResultatPush posterAuServeur(const String &payload) {
 
     LOG("Envoi : %s\n", payload.c_str());
     // Envoie la requête. code = code HTTP du serveur (200 = OK, 401 = clé refusée...) ou valeur négative si le réseau a échoué.
+#if AIRCARTO_HTTPS
+    clientAircarto.tOuverture = 0;
+#endif
     code = http.POST(payload);
+#if AIRCARTO_HTTPS
+    // Le serveur compte ses 10 s à l'ARRIVÉE de la requête, c.-à-d. à la fin de la poignée de main HTTPS, dont la
+    // durée varie (0,5 à 3 s). Comptées depuis le début, deux requêtes pouvaient arriver à moins de 10 s d'écart
+    // (refus 429, mesure mise de côté). On compte donc depuis la fin de la poignée de main.
+    if (clientAircarto.tOuverture != 0) tDernierPush = clientAircarto.tOuverture;
+#endif
     if (code > 0) corps = lireReponse(http, REPONSE_MAX_OCTETS);   // quelques centaines d'octets attendus
   }
   http.end();
@@ -2031,7 +2117,7 @@ ResultatPush posterAuServeur(const String &payload) {
     if (attente > 0) tPasAvant = (millis() + (unsigned long)attente * 1000UL) | 1UL;
     if (suivant > 0) ecartMinMs = max(ECART_PUSH_MIN_MS, (unsigned long)suivant * 1000UL);
     etatEnvoi = 2;
-    return PUSH_REESSAYER;
+    return PUSH_REPORTE;     // mesure valable, juste trop tôt : elle repart au moment indiqué
   }
   if (code == 400 || code == 413) {  // cette mesure est refusée : la renvoyer ne servirait à rien
     etatEnvoi = 3;
@@ -2141,6 +2227,21 @@ void deposerMesure(const String &ligne) {
   xSemaphoreGive(mutexEnvoi);
 }
 
+// Côté tâche d'envoi : remet en TÊTE une mesure fraîche dont l'envoi a été reporté (PUSH_REPORTE). Seulement s'il
+// reste de la place pour la mesure suivante (sinon loop sacrifierait la plus ancienne) : sinon, false -> flash.
+bool remettrePendante(const String &ligne) {
+  bool ok = false;
+  xSemaphoreTake(mutexEnvoi, portMAX_DELAY);
+  if (nbPendantes < NB_PENDANTES - 1) {
+    for (int i = nbPendantes; i > 0; i--) pendantes[i] = pendantes[i - 1];
+    pendantes[0] = ligne;
+    nbPendantes++;
+    ok = true;
+  }
+  xSemaphoreGive(mutexEnvoi);
+  return ok;
+}
+
 // Côté tâche d'envoi : prend la plus ancienne mesure déposée (false s'il n'y en a pas)
 bool sortirPendante(String &ligne) {
   bool ok = false;
@@ -2230,7 +2331,8 @@ void gererEnvois(unsigned long now) {
   String ligne;
   if (sortirPendante(ligne)) {
     ResultatPush r = envoyerLigne(ligne);
-    if (r == PUSH_REESSAYER || r == PUSH_CLE_INVALIDE || r == PUSH_ATTENDRE) stockerRecord(ligne);
+    if (r == PUSH_REPORTE && remettrePendante(ligne)) return;   // rien n'est parti : elle attend en RAM le créneau suivant
+    if (r == PUSH_REESSAYER || r == PUSH_CLE_INVALIDE || r == PUSH_ATTENDRE || r == PUSH_REPORTE) stockerRecord(ligne);
     return;
   }
   if (nbLignesAttente == 0) return;
@@ -2515,7 +2617,7 @@ static bool synchroniserRelais() {
 // Reçoit le programme téléchargé morceau par morceau : calcule son empreinte et l'écrit dans l'autre emplacement.
 class FluxMaj : public Stream {
  public:
-  explicit FluxMaj(size_t total) : total(total) {
+  FluxMaj(size_t total, esp_ota_handle_t h) : total(total), ota(h) {
     mbedtls_md_init(&ctx);
     ok = mbedtls_md_setup(&ctx, mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), 0) == 0 && mbedtls_md_starts(&ctx) == 0;
   }
@@ -2523,7 +2625,7 @@ class FluxMaj : public Stream {
   size_t write(uint8_t c) override { return write(&c, 1); }
   size_t write(const uint8_t* b, size_t n) override {
     if (!ok || recu + n > total) { ok = false; return 0; }
-    if (Update.write(const_cast<uint8_t*>(b), n) != n) { ok = false; return 0; }
+    if (esp_ota_write(ota, b, n) != ESP_OK) { ok = false; return 0; }   // l'emplacement est déjà effacé : pages seulement
     mbedtls_md_update(&ctx, b, n);
     recu += n;
     majProgression = (uint8_t)(recu * 100ULL / total);
@@ -2540,6 +2642,7 @@ class FluxMaj : public Stream {
   size_t total, recu = 0;
   bool ok = false;
  private:
+  esp_ota_handle_t ota;
   mbedtls_md_context_t ctx;
 };
 
@@ -2589,33 +2692,59 @@ static void verifierMiseAJour(bool installer) {
     Console.println("Mise à jour impossible : pas d'emplacement libre assez grand (table de partitions ?).");
     return;
   }
+  // Effacement de l'emplacement en UNE fois, avant le téléchargement. Pendant un effacement, la mémoire flash est
+  // inaccessible : rien ne tourne, l'écran ne peut plus être rafraîchi. Avant (bibliothèque Update), un bloc de 64 Ko
+  // était effacé tous les 64 Ko reçus : l'écran s'éteignait une fraction de seconde une vingtaine de fois pendant la
+  // mise à jour (clignotement). Maintenant : écran éteint proprement 2 à 5 s, puis le téléchargement n'écrit plus que
+  // des pages (pauses de moins d'1 ms, invisibles) et la progression s'affiche sans à-coups.
+  Console.printf("Mise à jour : préparation de l'emplacement %s (%lu octets, écran éteint quelques secondes)...\n",
+                 cible->label, (unsigned long)taille);
+  majProgression = 0;          // écran MISE A JOUR (dessiné par loop) dès que l'écran revient
+  ecranSuspendu = true;
+  esp_ota_handle_t ota = 0;
+  esp_err_t err = esp_ota_begin(cible, taille, &ota);
+  ecranSuspendu = false;
+  if (err != ESP_OK) {
+    majProgression = 0xFF;
+    if (err == ESP_ERR_OTA_ROLLBACK_INVALID_STATE)
+      Console.println("Mise à jour : la version actuelle est encore en essai (validée 1 min après un échange avec le relais). Réessaie ensuite.");
+    else
+      Console.printf("Mise à jour : préparation impossible (%s).\n", esp_err_to_name(err));
+    return;
+  }
   String chemin = "/carte/firmware?tag=" + tag;
-  if (!ouvrirRequete(http, chemin.c_str())) { Console.println("Mise à jour : relais injoignable."); return; }
+  if (!ouvrirRequete(http, chemin.c_str())) {
+    esp_ota_abort(ota); majProgression = 0xFF;
+    Console.println("Mise à jour : relais injoignable.");
+    return;
+  }
   http.setTimeout(20000);
   code = http.GET();
-  if (code != 200) { Console.printf("Mise à jour : téléchargement refusé (code %d).\n", code); http.end(); return; }
-  Console.printf("Téléchargement de %lu octets vers %s...\n", (unsigned long)taille, cible->label);
-  if (!Update.begin(taille, U_FLASH)) {
-    Console.printf("Mise à jour : préparation impossible (%s).\n", Update.errorString());
+  if (code != 200) {
+    esp_ota_abort(ota); majProgression = 0xFF;
+    Console.printf("Mise à jour : téléchargement refusé (code %d).\n", code);
     http.end();
     return;
   }
-  majProgression = 0;
-  FluxMaj flux(taille);
+  Console.printf("Téléchargement de %lu octets vers %s...\n", (unsigned long)taille, cible->label);
+  FluxMaj flux(taille, ota);
   int ecrits = http.writeToStream(&flux);
   http.end();
   char empreinte[65];
   flux.empreinte(empreinte);
   if (ecrits != (int)taille || !flux.ok || flux.recu != taille || sha != empreinte) {
-    Update.abort();
+    esp_ota_abort(ota);
     majProgression = 0xFF;
     Console.printf("Mise à jour ANNULÉE : fichier incomplet ou modifié (%d / %lu octets). L'ancienne version reste.\n",
                    ecrits, (unsigned long)taille);
     return;
   }
-  if (!Update.end(true)) {
+  // esp_ota_end vérifie aussi l'image écrite (en-tête, somme de contrôle, empreinte ajoutée à la compilation)
+  err = esp_ota_end(ota);
+  if (err == ESP_OK) err = esp_ota_set_boot_partition(cible);
+  if (err != ESP_OK) {
     majProgression = 0xFF;
-    Console.printf("Mise à jour ANNULÉE : %s. L'ancienne version reste.\n", Update.errorString());
+    Console.printf("Mise à jour ANNULÉE : %s. L'ancienne version reste.\n", esp_err_to_name(err));
     return;
   }
   // Suivi de l'essai : la nouvelle version devra se valider (verifierDemarrageOta / surveillerOta).
@@ -3040,9 +3169,9 @@ void btEcrire(const uint8_t*, size_t) {}
 //   0..6     en-tête : nom de la mesure (cyan) à gauche, unité à droite (CO2 : flèche de tendance au milieu)
 //   8        filet sur toute la largeur, à la couleur du niveau
 //   10..23   valeur en grand (taille 2), centrée dans x 0..47 | visage 13x13 à droite (x 50..62)
-//   25..27   jauge : un segment par niveau ATMO (6 pour les PM, 4 pour le CO2), le niveau atteint allumé,
+//   25..26   jauge fine : un segment par niveau ATMO (6 pour les PM, 4 pour le CO2), le niveau atteint allumé,
 //            les autres en sourdine (on voit toute l'échelle et où l'on se trouve)
-//   28..30   curseur (triangle) sous la jauge : position exacte de la valeur dans son niveau
+//   28..30   curseur (triangle), détaché de la jauge par 1 px : position exacte de la valeur dans son niveau
 // Plus de témoins de 1 pixel dans les coins : Wi-Fi, envoi au serveur, capteurs et heure ont leur page à eux,
 // PAGE_ETAT (grandes icônes), intercalée toutes les PERIODE_ETAT_MS pendant DUREE_ETAT_MS.
 
@@ -3063,7 +3192,8 @@ uint16_t atten(uint16_t c, uint8_t k) {
 uint16_t colNiv[NB_NIVEAUX];     // pleine
 uint16_t colFond[NB_NIVEAUX];    // niveau non atteint : segment en sourdine de la jauge
 // (PxMatrix code chaque couleur sur 4 bits par canal : en dessous de ~30 %, un vert ou un violet s'éteignent presque)
-static const uint8_t SOURDINE_JAUGE = 85;   // ~33 % de la couleur pleine
+static const uint8_t SOURDINE_JAUGE = 110;  // ~43 % de la couleur pleine : on reconnaît chaque couleur de l'échelle,
+                                            // le niveau atteint (plein) ressort quand même nettement
 
 // Calcule une seule fois les couleurs pleines et atténuées de chaque niveau, à partir de PALETTE.
 void initialiserCouleurs() {
@@ -3269,22 +3399,22 @@ void dessinerFleche(int cx, int y, int dir, uint16_t c) {
   }
 }
 
-// Jauge (y 25..27) : un segment par niveau, 1 px d'écart, sur toute la largeur (x 0..63).
+// Jauge (y 25..26) : un segment par niveau, 1 px d'écart, sur toute la largeur (x 0..63).
 // Le niveau atteint est allumé à fond, les autres en sourdine : on voit toute l'échelle ATMO d'un coup d'oeil.
 // Curseur (y 28..30) : triangle à la couleur du niveau, pointé sur la position EXACTE de la valeur dans son niveau
-// (frac : 0.0 = début du segment, 1.0 = fin), plus une encoche noire dans le segment allumé, juste au-dessus.
+// (frac : 0.0 = début du segment, 1.0 = fin). Il est DÉTACHÉ de la jauge (ligne 27 vide) et la jauge reste
+// entière : l'ancien triangle collé sous une encoche noire formait un « T » qui coupait le segment et se lisait mal.
 // niv < 0 : toute la jauge en sourdine, sans curseur.
 void dessinerJauge(int nbNiveaux, int niv, float frac) {
   int xCurseur = -1;
   for (int i = 0; i < nbNiveaux; i++) {
     int xs = (i * 65) / nbNiveaux;
     int xe = ((i + 1) * 65) / nbNiveaux - 2;     // 1 px de séparation ; le dernier segment finit à x 63
-    display.fillRect(xs, 25, xe - xs + 1, 3, (i == niv) ? colNiv[i] : colFond[i]);
+    display.fillRect(xs, 25, xe - xs + 1, 2, (i == niv) ? colNiv[i] : colFond[i]);
     if (i == niv) xCurseur = xs + (int)(frac * (xe - xs) + 0.5f);
   }
   if (xCurseur < 0) return;
   uint16_t c = colNiv[niv];
-  display.drawFastVLine(xCurseur, 25, 2, 0);                   // encoche dans le segment
   int xt = constrain(xCurseur, 2, 61);                         // le triangle (5 px de large) reste dans l'écran
   display.drawPixel(xt, 28, c);
   display.drawFastHLine(xt - 1, 29, 3, c);
@@ -3400,9 +3530,9 @@ void dessinerPageMesure(const Mesure &m, const char* titre, const Echelle &e, ui
       snprintf(buf, sizeof(buf), "%lu:%02lu", reste / 60UL, reste % 60UL);
       ecrireDroite("CHAUFFE", 62, 0, 1, COL_DISCRET);
       ecrireCentre(buf, 24, 10, 2, COL_TITRE);
-      display.fillRect(0, 25, 64, 3, COL_PISTE);
+      display.fillRect(0, 25, 64, 2, COL_PISTE);       // même épaisseur que la jauge des niveaux
       int w = (t < CHAUFFE_MHZ_MS) ? (int)(64UL * t / CHAUFFE_MHZ_MS) : 64;
-      if (w > 0) display.fillRect(0, 25, w, 3, COL_TITRE);
+      if (w > 0) display.fillRect(0, 25, w, 2, COL_TITRE);
     } else {                                          // NextPM : durée inconnue
       ecrireCentre("--", 24, 10, 2, COL_DISCRET);
       ecrireCentre("DEMARRAGE", 32, 25, 1, COL_DISCRET);
@@ -3483,6 +3613,15 @@ void dessinerPageGlobal() {
   const Mesure* mp = nullptr;
   const Echelle* ep = nullptr;
   int niv = niveauIndiceATMO(&cause, &mp, &ep);
+  if (niv < 0 && mPM25.etat == CAPTEUR_ERREUR) {         // NextPM en panne : pas d'indice (avant : « ATTENTE » + sablier,
+    dessinerEntete("ATMO", -1);                          // comme s'il démarrait)
+    display.drawFastHLine(0, 8, 64, COL_ERREUR);
+    ecrireDroite("PANNE", 62, 0, 1, COL_ERREUR);
+    dessinerIconeErreur(1, 10, COL_ERREUR);
+    ecrireCentre("INDISPO", 39, 13, 1, COL_ERREUR);
+    dessinerJauge(NB_NIVEAUX, -1, 0);
+    return;
+  }
   if (niv < 0) {                                         // capteurs pas encore prêts
     dessinerEntete("ATMO", -1);
     dessinerSablier(3, 10);
@@ -3505,7 +3644,7 @@ void dessinerPageGlobal() {
     memcpy(l1, label, n);
     l1[n] = '\0';
     ecrireCentre(l1, 39, 10, 1, c);
-    ecrireCentre(espace + 1, 39, 18, 1, c);
+    ecrireCentre(espace + 1, 39, 17, 1, c);   // y 17..23 : une ligne vide (24) avant la jauge, sinon le texte la touchait
   }
   dessinerJauge(NB_NIVEAUX, niv, fractionDansNiveau(mp->valeur, niv, *ep, 0.0f));
 }
@@ -3548,7 +3687,7 @@ void dessinerPageCourbe() {
   }
   int nvAct = niveau(actuel, ECH_CO2);
   dessinerEntete("CO2", nvAct);
-  ecrireTexte("1H", 22, 0, 1, COL_DISCRET);
+  ecrireTexte("1H", 21, 0, 1, COL_DISCRET);   // x 21..31 : 3 px après CO2, 2 px avant la flèche (CO2 à 4 chiffres)
   char buf[8];
   snprintf(buf, sizeof(buf), "%d", (int)roundf(actuel));
   ecrireDroite(buf, 62, 0, 1, colNiv[nvAct]);
@@ -3650,13 +3789,13 @@ void dessinerPageWifi() {
     ecrireLigneDefilante("tape: wifi add <nom> <mdp>", 25, COL_DISCRET);
     return;
   }
-  const char* etat = (etatWifi == WIFI_SCAN) ? "RECHER" : (etatWifi == WIFI_CONNEXION) ? "CONNEX" : "ABSENT";
+  const char* etat = (etatWifi == WIFI_SCAN) ? "RECHER" : wifiEnConnexion() ? "CONNEX" : "ABSENT";
   ecrireTexte(etat, 19, 10, 1, COL_TITRE);
   char mem[16];
   snprintf(mem, sizeof(mem), "%u CONNU%s", (unsigned)nbReseaux, nbReseaux > 1 ? "S" : "");
   ecrireTexte(mem, 19, 18, 1, COL_DISCRET);
   // (19 + 8 x 6 = 67 : "5 CONNUS" déborde de 3 px à droite, sans gêne)
-  if (etatWifi == WIFI_CONNEXION && reseauCourant >= 0) ecrireLigneDefilante(reseaux[reseauCourant].ssid.c_str(), 25, COL_TITRE);
+  if (wifiEnConnexion() && reseauCourant >= 0) ecrireLigneDefilante(reseaux[reseauCourant].ssid.c_str(), 25, COL_TITRE);
   else ecrireLigneDefilante("HORS LIGNE", 25, COL_DISCRET);
 #endif
 }
@@ -3666,7 +3805,7 @@ void dessinerPageWifi() {
 bool ecranWifiActif() {
 #if WIFI_ACTIVE
   if (resultatWifiAffiche) return true;
-  return wifiInteractif && (etatWifi == WIFI_SCAN || etatWifi == WIFI_CONNEXION);
+  return wifiInteractif && (etatWifi == WIFI_SCAN || wifiEnConnexion());
 #else
   return false;
 #endif
@@ -3708,14 +3847,15 @@ void dessinerEcranConnexion() {
     snprintf(buf, sizeof(buf), "%u/%u", (unsigned)(idxCandidat + 1), (unsigned)nbCandidats);
     dessinerEnteteWifi(buf, COL_TITRE, COL_FILET);
     dessinerLogoWifi(8, 20, phase + 1, COL_TITRE, COL_ETEINT);
-    ecrireTexte("CONNEX", 19, 10, 1, COL_TITRE);
+    ecrireTexte((essaiCandidat > 0 || etatWifi == WIFI_REESSAI) ? "ESSAI 2" : "CONNEX", 19, 10, 1, COL_TITRE);
     if (reseauCourant >= 0) ecrireLigneDefilante(reseaux[reseauCourant].ssid.c_str(), 25, COL_TITRE);
   }
   // points animés (y 20..21) + secondes écoulées (y 18..24)
   int nbPoints = (int)((now / 400UL) % 4UL);
   for (int i = 0; i < nbPoints; i++) display.fillRect(19 + i * 4, 20, 2, 2, COL_TITRE);
   char sec[12];
-  snprintf(sec, sizeof(sec), "%lus", (now - tEtatWifi) / 1000UL);
+  // secondes depuis le 1er essai du réseau (elles continuent pendant le 2e essai au lieu de repartir de 0)
+  snprintf(sec, sizeof(sec), "%lus", (now - (wifiEnConnexion() ? tDebutCandidat : tEtatWifi)) / 1000UL);
   ecrireDroite(sec, 62, 18, 1, COL_DISCRET);
 #endif
 }
@@ -3802,7 +3942,7 @@ void dessinerPageEtat() {
     dessinerLogoWifi(X_TUILE[0], 20, nv, c, COL_ETEINT);
     snprintf(buf, sizeof(buf), "%d", rssi);
     mot = buf;
-  } else if (etatWifi == WIFI_SCAN || etatWifi == WIFI_CONNEXION) {
+  } else if (etatWifi == WIFI_SCAN || wifiEnConnexion()) {
     c = COL_TITRE;
     dessinerLogoWifi(X_TUILE[0], 20, 0, c, COL_ETEINT);
     mot = "...";
@@ -3998,9 +4138,17 @@ void dessinerContenu() {
 }
 
 // Envoie le tampon dessiné à l'écran (double tampon : bascule instantanée, sans scintillement)
+// Après la bascule, le prochain dessin se fait dans l'ANCIEN tampon visible : si l'écran est justement en train de
+// l'envoyer (refreshTask sur un autre cœur que l'appelant), on attend la fin de cet envoi, sinon une image à moitié
+// effacée passerait à l'écran (éclair). Avec refreshTask sur le cœur de loop, l'attente ne se produit jamais.
 void presenter() {
 #if DOUBLE_BUFFER
+  uint32_t n = nbRafraichissements;
   display.showBuffer();
+  if (rafraichissementEnCours) {
+    unsigned long t0 = millis();
+    while (nbRafraichissements == n && millis() - t0 < 10) delay(1);
+  }
 #endif
 }
 
@@ -4089,7 +4237,7 @@ bool ecranWifiAnime() {
   if (pageCourante != PAGE_WIFI) return false;
 #if WIFI_ACTIVE
   if (nbReseaux == 0) return true;
-  if (etatWifi == WIFI_CONNEXION && reseauCourant >= 0) return texteDefile(reseaux[reseauCourant].ssid.c_str());
+  if (wifiEnConnexion() && reseauCourant >= 0) return texteDefile(reseaux[reseauCourant].ssid.c_str());
 #endif
   return false;
 }
@@ -4567,7 +4715,7 @@ void listerReseaux() {
 
 void scannerReseaux() {
 #if WIFI_ACTIVE
-  if (etatWifi == WIFI_SCAN || etatWifi == WIFI_CONNEXION) {
+  if (etatWifi == WIFI_SCAN || wifiEnConnexion()) {
     Console.println("Connexion en cours : réessaie dans quelques secondes.");
     return;
   }
@@ -5134,6 +5282,12 @@ void setup() {
   mhz.autoCalibration(MHZ_ABC);  // ABC : 0 si la pièce n'est jamais aérée
 #endif
 
+#if BLUETOOTH_ACTIF
+  // Bluetooth AVANT le Wi-Fi : la radio est partagée. Démarré pendant le scan ou la connexion (comme avant), il
+  // coupait la radio au mauvais moment et le 1er essai Wi-Fi du démarrage échouait.
+  initialiserBluetooth();
+#endif
+
   // Lance la connexion Wi-Fi en arrière-plan (scan puis meilleur réseau connu) : le programme n'attend pas,
   // l'écran montre la progression (page de connexion) puis le résultat.
   initialiserWiFi();
@@ -5152,9 +5306,6 @@ void setup() {
   xTaskCreatePinnedToCore(tacheEnvoi, "envoi", 12288, NULL, 1, NULL, 1);
 #if CONSOLE_DISTANTE
   xTaskCreatePinnedToCore(tacheRelais, "relais", 12288, NULL, 1, NULL, 0); // console à distance + mise à jour (HTTPS)
-#endif
-#if BLUETOOTH_ACTIF
-  initialiserBluetooth();
 #endif
 
   aTransition = true;  // fondu du logo vers la première page

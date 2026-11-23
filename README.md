@@ -184,13 +184,13 @@ Sans câble, seules les commandes **sans secret, sans effacement et sans effet d
 
 - **Démarrage :** logo animé « LA BONNE M’AIR ».
 - **Pages (une mesure par écran, 5 s chacune) :** CO₂ · AÉRER (si CO₂ > 1 000 ppm) · PM1 · PM2.5 · PM10 · indice ATMO · courbe du CO₂ (dernière heure) · Wi-Fi (seulement hors ligne).
-- **Page de mesure :** nom et unité en haut, filet à la couleur du niveau, valeur en grand avec un visage qui change d’expression, puis la **jauge des niveaux ATMO** (6 segments pour les PM, 4 pour le CO₂) : le niveau atteint est allumé, les autres restent en sourdine, et un **curseur** ▲ indique la position exacte de la valeur dans son niveau.
+- **Page de mesure :** nom et unité en haut, filet à la couleur du niveau, valeur en grand avec un visage qui change d’expression, puis la **jauge des niveaux ATMO**, fine (6 segments pour les PM, 4 pour le CO₂) : le niveau atteint est allumé, les autres restent en sourdine, et un **curseur** ▲ détaché de la jauge, à la couleur du niveau, indique la position exacte de la valeur dans son niveau.
 - **Page ÉTAT (toutes les 15 s, pendant 3 s) :** heure et date, puis trois grandes icônes colorées (vert = OK, orange = à surveiller, rouge = problème) : **Wi-Fi** (arcs selon le signal, en dBm), **serveur** (nuage : envoi OK, nombre de mesures en attente, clé refusée) et **capteurs** (ventilateur : OK, préchauffage, panne, à calibrer). Réglable avec `PERIODE_ETAT_MS` et `DUREE_ETAT_MS`.
 - **Couleurs :** chaque valeur prend la couleur de son niveau ATMO.
 - **Alerte hors norme :** dès qu’un polluant atteint son seuil d’alerte (PM : « Mauvais », CO₂ : > 1 000 ppm), l’écran saute aussitôt sur sa page, clignote à la couleur du niveau, puis la valeur pulse ; la page revient une fois sur deux tant que l’alerte dure.
 - **Luminosité adaptée :** jour, nuit et batterie.
 - **Préchauffage du CO₂ :** compte à rebours en minutes:secondes (« 2:18 ») les 3 premières minutes après une mise sous tension (pas après un redémarrage logiciel : le capteur est resté alimenté).
-- **Bluetooth / mise à jour :** pendant un appairage, l'écran affiche le code à 6 chiffres à taper sur le téléphone ; pendant une mise à jour, « MISE A JOUR » et le pourcentage téléchargé (même la nuit, écran éteint).
+- **Bluetooth / mise à jour :** pendant un appairage, l'écran affiche le code à 6 chiffres à taper sur le téléphone ; pendant une mise à jour, « MISE A JOUR » et le pourcentage téléchargé (même la nuit, écran éteint). L'emplacement du nouveau programme est effacé d'un coup avant le téléchargement (écran noir 2 à 5 s) : plus de clignotement pendant la progression.
 - **CO₂ impossible :** une lecture sous 300 ppm est écartée (un capteur qui dérive a envoyé jusqu'à 37 ppm) ; si ça dure, la page CO₂ affiche « A CALIBRER » (commande `calib oui`, à l'air libre).
 
 ### Données envoyées
@@ -226,9 +226,11 @@ Adresse d'envoi : `https://api.aircarto.fr/iut-amu/push` (HTTPS : la clé du gro
 ### Robustesse
 
 - **Mode hors ligne :** jusqu’à ~400 Ko (~10 h) de mesures stockées en flash, renvoyées automatiquement (le serveur impose 10 s entre deux envois : ~100 mesures en retard se rattrapent en ~20 min).
-- **Tâches séparées :** l’envoi réseau tourne dans sa propre tâche, l’écran est rafraîchi sur le cœur 0 : l’affichage ne se fige jamais pendant un envoi.
+- **Tâches séparées :** l’envoi réseau tourne dans sa propre tâche ; l’écran est rafraîchi sur le cœur 1, à l'écart du Wi-Fi et du Bluetooth (cœur 0) dont les interruptions faisaient scintiller l'écran au démarrage et pendant une mise à jour.
 - **Sécurités :** watchdog (60 s), redémarrage si la mémoire libre passe sous 25 Ko ou si elle est trop morcelée (plus grand bloc sous 10 Ko), heure NTP avec passage heure d’été / d’hiver.
-- **Wi-Fi :** la carte ne redémarre que si un réseau connu est **visible** depuis 1 h sans que la connexion réussisse (pile Wi-Fi bloquée) ; une borne éteinte la nuit ne provoque plus de redémarrage toutes les heures.
+- **Wi-Fi :** chaque réseau est essayé **deux fois** (2 s d'écart) : après un redémarrage de la carte, beaucoup de box refusent le premier essai (elles gardent l'ancienne connexion) et acceptent le second ; avant, il fallait taper `wifi connect`. Le Bluetooth démarre avant le Wi-Fi (radio partagée). Les essais ratés en arrière-plan sont notés au journal (une ligne par raison, au plus toutes les 10 min).
+- **Wi-Fi bloqué :** la carte ne redémarre que si un réseau connu est **visible** depuis 1 h sans que la connexion réussisse (pile Wi-Fi bloquée) ; une borne éteinte la nuit ne provoque plus de redémarrage toutes les heures.
+- **Envoi reporté sans fausse alerte :** une mesure qui n'a pas pu partir pour une raison passagère (connexion HTTPS du relais en cours, mémoire, refus 429 « trop tôt ») attend en mémoire vive le créneau suivant au lieu d'aller en flash ; le nuage de la page ÉTAT n'affiche plus « 1 » alors que la carte est connectée. Les 10 s du serveur sont comptées depuis la fin de la poignée de main HTTPS (son arrivée réelle au serveur), ce qui évite les refus 429.
 - **Anti-blocage des envois** (pannes trouvées en simulation sur plusieurs jours) :
   - clé refusée (401) : nouvel essai toutes les 15 min, au lieu d'un arrêt définitif jusqu'au débranchement ;
   - Wi-Fi « connecté » mais plus rien ne passe : reconnexion après 5 envois sans réponse, redémarrage après 6 h sans aucune réponse du serveur ;
