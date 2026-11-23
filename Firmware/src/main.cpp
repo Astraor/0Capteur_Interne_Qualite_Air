@@ -1401,10 +1401,10 @@ const char* texteCauseRedemarrage(esp_reset_reason_t r) {
     case ESP_RST_PANIC:     return "plantage";
     case ESP_RST_INT_WDT:   return "programme bloqué (chien de garde des interruptions)";
     case ESP_RST_TASK_WDT:  return "programme bloqué (chien de garde des tâches)";
-    case ESP_RST_WDT:       return "autre chien de garde";
+    case ESP_RST_WDT:       return "blocage grave (chien de garde matériel)";
     case ESP_RST_DEEPSLEEP: return "réveil de veille profonde";
     case ESP_RST_BROWNOUT:  return "baisse de tension";
-    case ESP_RST_SDIO:      return "SDIO";
+    case ESP_RST_SDIO:      return "SDIO (jamais sur cette carte)";
     default:                return "inconnue";
   }
 }
@@ -5013,8 +5013,8 @@ void setup() {
   Console.printf("\n=== La Bonne M'Air | cause du redémarrage : %d (%s) ===\n", (int)esp_reset_reason(),
                  texteCauseRedemarrage(esp_reset_reason()));
   Console.println("    0 inconnue | 1 mise sous tension | 2 bouton reset | 3 redémarrage voulu par le programme");
-  Console.println("    4 plantage | 5 et 6 programme bloqué (chien de garde) | 7 autre chien de garde");
-  Console.println("    8 réveil de veille profonde | 9 baisse de tension (alimentation trop faible) | 10 SDIO");
+  Console.println("    4 plantage | 5 et 6 programme bloqué (chien de garde) | 7 blocage grave (chien de garde matériel)");
+  Console.println("    8 réveil de veille profonde | 9 baisse de tension (alimentation trop faible) | 10 SDIO (jamais sur cette carte)");
 
   mutexEnvoi = xSemaphoreCreateMutex();  // avant tout : loop() et la tâche d'envoi s'en servent
   mutexCommandes = xSemaphoreCreateMutex();   // commandes reçues par Bluetooth / relais
