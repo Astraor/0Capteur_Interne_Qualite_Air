@@ -172,9 +172,7 @@
 #include <esp_heap_caps.h>          // diag tls : mémoire réellement utilisable par mbedTLS
 #include "racines_tls.h"            // racines HTTPS en texte : la liste à modifier (source)
 #include "racines_bundle.h"         // les mêmes au format « bundle » (généré à la compilation par outils/racines_bundle.py)
-// Fourni par WiFiClientSecure (esp_crt_bundle.c) : choisit le bundle utilisé par la PROCHAINE connexion HTTPS. Il n'y
-// en a qu'un pour toute la carte : chaque connexion le règle juste avant de s'ouvrir, sous le verrou mutexTls.
-extern "C" void arduino_esp_crt_bundle_set(const uint8_t* x509_bundle);
+#include "verif_bundle.h"           // vérification par bundle (bundleCourant : réglé avant chaque connexion, sous mutexTls)
 #if WIFI_ACTIVE
 #include "esp_wpa2.h"
 // eduroam : certificat de l'autorité qui signe le serveur d'authentification de l'université (facultatif mais
@@ -488,13 +486,13 @@ bool certificatsALaDate(WiFiClientSecure &c, const char* quoi);
 class ClientTlsDate : public WiFiClientSecure {
  public:
   explicit ClientTlsDate(const char* q) : quoi(q) {}
-  // Pas setCACertBundle() ici : il remplacerait tout de suite le bundle commun, peut-être en pleine poignée de main de
-  // l'autre tâche. Le bundle n'est réglé qu'à l'ouverture (connect), sous le verrou mutexTls.
+  // Le bundle n'est réglé qu'à l'ouverture (connect), sous le verrou mutexTls : l'autre tâche peut être en pleine
+  // poignée de main avec le sien.
   void racines(const uint8_t* b) { bundle = b; _CA_cert = nullptr; _use_insecure = false; _use_ca_bundle = (b != nullptr); }
   using WiFiClientSecure::connect;
   int connect(const char* hote, uint16_t port, int32_t delai) override {
     if (bundle == nullptr) return 0;               // jamais sans racines
-    arduino_esp_crt_bundle_set(bundle);            // le bundle est commun à toute la carte : on remet le nôtre
+    bundleCourant = bundle;                        // commun à toute la carte : on remet le nôtre (sous mutexTls)
     if (!WiFiClientSecure::connect(hote, port, delai)) return 0;
     if (!certificatsALaDate(*this, quoi)) { stop(); return 0; }
     return 1;
@@ -4777,7 +4775,7 @@ static void essaiTls(const char* hote, const uint8_t* bundle, const char* nom) {
   memoireTls("avant");
   IPAddress ip;
   if (!WiFi.hostByName(hote, ip)) { Console.println("    nom introuvable (DNS)"); return; }
-  if (bundle) arduino_esp_crt_bundle_set(bundle);
+  if (bundle) bundleCourant = bundle;
   sslclient_context* ctx = new sslclient_context;
   ssl_init(ctx);
   ctx->socket = -1;
@@ -4821,7 +4819,7 @@ void diagnosticTls() {
     Console.println("diag tls : une autre connexion HTTPS est en cours, réessaie.");
     return;
   }
-  Console.printf("Diagnostic HTTPS v3 (racines en bundle, version %lu). Aucune donnée n'est envoyée.\n",
+  Console.printf("Diagnostic HTTPS v4 (racines en bundle, version %lu). Aucune donnée n'est envoyée.\n",
                  (unsigned long)FW_VERSION);
   Console.printf("    bundles : AirCarto %u racines (%u octets), relais %u racines (%u octets)\n",
                  (unsigned)(BUNDLE_AIRCARTO[0] << 8 | BUNDLE_AIRCARTO[1]), (unsigned)sizeof(BUNDLE_AIRCARTO),
@@ -4840,6 +4838,8 @@ void diagnosticTls() {
   esp_task_wdt_reset();
   essaiTls("api.aircarto.fr", nullptr, "3) AirCarto SANS vérification (diagnostic seulement)");
   if (mutexTls) xSemaphoreGive(mutexTls);
+  Console.printf("Vérifications par bundle depuis le démarrage : %lu (0 = vérification La Bonne M'Air pas branchée)\n",
+                 (unsigned long)nbVerifsBundle);
   Console.println("Fin du diagnostic : copie toutes ces lignes.");
 }
 
