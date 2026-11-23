@@ -71,11 +71,13 @@
   .groupe h2 { font-size: 15px; color: var(--vent); }
   .touches { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .touche { position: relative; text-align: left; padding: 11px 12px 10px; border-radius: 11px; border: 1px solid var(--trait);
-    background: var(--brume); display: grid; gap: 1px; min-height: 62px; overflow: hidden;
+    background: var(--brume); display: grid; align-content: start; gap: 1px; min-height: 62px; overflow: hidden;
     transition: border-color .15s, background-color .15s, transform .08s; }
   .touche:hover:not(:disabled) { border-color: var(--vent); }
   .touche:active:not(:disabled) { transform: scale(.98); }
   .touche b { font-weight: 600; font-size: 14.5px; line-height: 1.25; }
+  .touche code { justify-self: start; margin-top: 3px; padding: 1px 6px; border-radius: 6px; font: 12px/1.5 var(--mono);
+    background: var(--boitier); border: 1px solid var(--trait); color: var(--ardoise); }
   .touche small { color: var(--vent); font-size: 12.5px; }
   .touche.large { grid-column: 1 / -1; }
   .touche:disabled { cursor: default; opacity: .55; }
@@ -93,7 +95,8 @@
   /* écran du journal */
   .ecran { background: var(--ecran); color: var(--ecran-texte); border-radius: 18px; display: flex; flex-direction: column;
     min-height: 0; overflow: hidden; box-shadow: inset 0 0 0 1px #ffffff10; }
-  .ecran-haut { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid #ffffff14; }
+  .ecran-haut { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 12px 16px; border-bottom: 1px solid #ffffff14; }
+  .l.masquee { display: none; }
   .ecran-haut h2 { font-size: 15px; flex: 1; }
   .ecran .case { color: var(--ecran-discret); font-size: 13px; }
   .ecran .discret { border-color: #ffffff24; color: var(--ecran-discret); }
@@ -139,8 +142,8 @@
         <h1>La Bonne M'Air</h1>
         <div id="details">Connexion au relais…</div>
         <div class="session">
-          <button class="discret" id="deconnexion" title="Fermer la session sur cet appareil">Quitter</button>
-          <button class="discret" id="partout" title="Téléphone perdu, mot de passe partagé…">Déconnecter partout</button>
+          <button class="discret" id="deconnexion" title="Fermer la session sur cet appareil">Se déconnecter</button>
+          <button class="discret" id="partout" title="Téléphone perdu, mot de passe partagé…">Déconnecter tous les appareils</button>
         </div>
       </div>
     </section>
@@ -151,7 +154,9 @@
   <section class="ecran" aria-label="Journal de la carte">
     <div class="ecran-haut">
       <h2>Journal de la carte</h2>
+      <label class="case"><input type="checkbox" id="erreursSeules"> Erreurs seulement</label>
       <label class="case"><input type="checkbox" id="suivre" checked> Suivre</label>
+      <button class="discret" id="copier" title="Copier les lignes affichées (pour les transmettre)">Copier</button>
       <button class="discret" id="effacer" title="Vider le journal gardé par le relais">Vider</button>
     </div>
     <div id="journal"><div id="vide">Rien pour l'instant. La carte envoie son journal toutes les 30 s, puis toutes les 2 s tant que cette page est ouverte.</div></div>
@@ -166,8 +171,7 @@ const $ = (id) => document.getElementById(id);
 // attente : délai imposé par la carte entre deux envois (la touche reste grisée pendant ce temps).
 const GROUPES = [
   { titre: "Consulter", touches: [
-    { c: "status", nom: "État complet", aide: "Wi-Fi, envois, capteurs, version" },
-    { c: "aide", nom: "Liste des commandes", aide: "Ce que la carte sait faire" },
+    { c: "status", nom: "État complet", aide: "Wi-Fi, envois, capteurs, version, mémoire", large: true },
   ] },
   { titre: "Journal détaillé", touches: [
     { c: "verbose on", nom: "Activer", aide: "Chaque mesure et chaque envoi" },
@@ -180,9 +184,13 @@ const GROUPES = [
   { titre: "Capteur de CO₂", touches: [
     { c: "calib", nom: "Procédure de calibrage", aide: "Affiche les étapes (la confirmation se fait au câble USB)", large: true },
   ] },
+  { titre: "Diagnostic", touches: [
+    { c: "diag tls", nom: "Tester les connexions chiffrées", aide: "AirCarto et relais : certificats, mémoire (~20 s)",
+      attente: 300, large: true },
+  ] },
   { titre: "Programme", touches: [
     { c: "maj", nom: "Chercher une mise à jour", aide: "Compare avec la dernière version publiée", attente: 30 },
-    { c: "maj installer", id: "toucheInstaller", nom: "Installer la mise à jour", aide: "…", attente: 30, prudente: true,
+    { c: "maj installer", nom: "Installer la mise à jour", aide: "…", attente: 30, prudente: true,
       question: "Appuie encore pour installer : la carte redémarre" },
     { c: "reboot", nom: "Redémarrer la carte", aide: "Mesures gardées en mémoire", attente: 300, prudente: true, large: true,
       question: "Appuie encore pour redémarrer" },
@@ -253,7 +261,9 @@ function construireTouches() {
       b.className = "touche" + (t.large ? " large" : "") + (t.prudente ? " prudente" : "");
       const nom = document.createElement("b"); nom.textContent = t.nom;
       const aide = document.createElement("small"); aide.textContent = t.aide;
-      b.append(nom, aide);
+      const commande = document.createElement("code"); commande.textContent = t.c;
+      b.append(nom, aide, commande);
+      b.title = "Envoie « " + t.c + " » à la carte";
       b.dataset.c = t.c;
       t.bouton = b; t.elAide = aide;
       toucheDe[t.c] = t;
@@ -345,6 +355,7 @@ function ajouterLignes(lignes) {
     const t = document.createElement("time"); t.textContent = heure(l.t);
     const s = document.createElement("span"); s.textContent = l.txt;
     d.append(t, s);
+    if ($("erreursSeules").checked && !d.classList.contains("err")) d.classList.add("masquee");
     frag.append(d);
     dernierId = Math.max(dernierId, l.id);
   }
@@ -352,6 +363,18 @@ function ajouterLignes(lignes) {
   while (j.children.length > 3000) j.firstElementChild.remove();
   if ($("suivre").checked && (enBas || lignes.length)) j.scrollTop = j.scrollHeight;
 }
+$("erreursSeules").addEventListener("change", () => {
+  const seules = $("erreursSeules").checked;
+  for (const d of $("journal").querySelectorAll(".l")) d.classList.toggle("masquee", seules && !d.classList.contains("err"));
+  if ($("suivre").checked) $("journal").scrollTop = $("journal").scrollHeight;
+});
+$("copier").addEventListener("click", async () => {
+  const lignes = [...$("journal").querySelectorAll(".l:not(.masquee)")].map((d) => d.textContent.replace(/^(\d\d:\d\d:\d\d)/, "$1  "));
+  const texte = lignes.join("\n");
+  if (!texte) { retour("Rien à copier : le journal est vide."); return; }
+  try { await navigator.clipboard.writeText(texte); retour(lignes.length + " ligne" + (lignes.length > 1 ? "s" : "") + " copiée" + (lignes.length > 1 ? "s" : "") + " dans le presse-papiers."); }
+  catch { retour("Copie refusée par le navigateur : sélectionne les lignes à la main.", true); }
+});
 $("effacer").addEventListener("click", async () => {
   if (!confirm("Vider le journal gardé par le relais ?")) return;
   try { await api("/api/effacer", { method: "POST" }); $("journal").replaceChildren(); dernierId = 0; }
