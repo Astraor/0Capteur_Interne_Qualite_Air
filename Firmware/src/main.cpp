@@ -1392,6 +1392,23 @@ void surveillerEnvois(unsigned long now) {
 #endif
 }
 
+// Cause du dernier redémarrage, en clair (numéros d'esp_reset_reason, ESP-IDF 4.4)
+const char* texteCauseRedemarrage(esp_reset_reason_t r) {
+  switch (r) {
+    case ESP_RST_POWERON:   return "mise sous tension";
+    case ESP_RST_EXT:       return "bouton reset";
+    case ESP_RST_SW:        return "redémarrage voulu par le programme";
+    case ESP_RST_PANIC:     return "plantage";
+    case ESP_RST_INT_WDT:   return "programme bloqué (chien de garde des interruptions)";
+    case ESP_RST_TASK_WDT:  return "programme bloqué (chien de garde des tâches)";
+    case ESP_RST_WDT:       return "autre chien de garde";
+    case ESP_RST_DEEPSLEEP: return "réveil de veille profonde";
+    case ESP_RST_BROWNOUT:  return "baisse de tension";
+    case ESP_RST_SDIO:      return "SDIO";
+    default:                return "inconnue";
+  }
+}
+
 // Pendant une connexion HTTPS (AirCarto, relais, mise à jour), mbedTLS occupe ~47 Ko : il ne reste qu'environ 17 Ko
 // libres et un plus grand bloc d'environ 12 Ko (« diag tls »). Ce n'est ni une fuite ni un morcellement : la mémoire
 // revient à la fermeture. On ne juge donc la mémoire que hors connexion (verrou mutexTls libre), et seulement après
@@ -4351,7 +4368,8 @@ void afficherAide() {
 void afficherStatus() {
   Console.println("--------- STATUS ---------");
   Console.printf("device_id : %s\n", deviceId.c_str());
-  Console.printf("redémarrage : cause %d | boot %u\n", (int)esp_reset_reason(), (unsigned)bootId);
+  Console.printf("redémarrage : cause %d (%s) | boot %u\n", (int)esp_reset_reason(),
+                 texteCauseRedemarrage(esp_reset_reason()), (unsigned)bootId);
   Console.printf("uptime / mémoire : %lu s | %u octets libres (plus grand bloc : %u)\n", millis() / 1000UL,
                 (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
   if (reseauOK()) {
@@ -4992,7 +5010,11 @@ void setup() {
   // Liaison série avec l'ordinateur (moniteur série à 115200 bauds).
   Serial.begin(115200);
   delay(10);
-  Console.printf("\n=== Station ModuleAir | cause du redémarrage : %d ===\n", (int)esp_reset_reason());
+  Console.printf("\n=== La Bonne M'Air | cause du redémarrage : %d (%s) ===\n", (int)esp_reset_reason(),
+                 texteCauseRedemarrage(esp_reset_reason()));
+  Console.println("    0 inconnue | 1 mise sous tension | 2 bouton reset | 3 redémarrage voulu par le programme");
+  Console.println("    4 plantage | 5 et 6 programme bloqué (chien de garde) | 7 autre chien de garde");
+  Console.println("    8 réveil de veille profonde | 9 baisse de tension (alimentation trop faible) | 10 SDIO");
 
   mutexEnvoi = xSemaphoreCreateMutex();  // avant tout : loop() et la tâche d'envoi s'en servent
   mutexCommandes = xSemaphoreCreateMutex();   // commandes reçues par Bluetooth / relais
