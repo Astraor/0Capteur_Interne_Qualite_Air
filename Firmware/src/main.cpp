@@ -2479,7 +2479,7 @@ static bool synchroniserRelais() {
   uint32_t base = 0;
   size_t n = journalExtraire(paquet, sizeof(paquet), &base);
   HTTPClient http;
-  if (!ouvrirRequete(http, "/carte/sync")) return false;
+  if (!ouvrirRequete(http, "/carte/sync")) { dernierCodeRelais = HTTPC_ERROR_CONNECTION_REFUSED; return false; }
   char v[24];
   http.addHeader("Content-Type", "text/plain; charset=utf-8");
   snprintf(v, sizeof(v), "%lu", millis());                 http.addHeader("X-Millis", v);
@@ -2749,6 +2749,13 @@ void tacheRelais(void* param) {
       consoleLive = false;
       if (echecs < 10) echecs++;
       attente = min(SYNC_ERREUR_MAX_MS, SYNC_REPOS_MS * echecs);   // 30 s, 60 s, 90 s... jusqu'à 5 min
+      // Visible (USB, Bluetooth, puis journal à distance dès que le relais répond) : sans ce message, un relais
+      // injoignable ressemblait à une console qui ignore les commandes.
+      char err[96] = "";
+      if (dernierCodeRelais < 0) clientRelais.lastError(err, sizeof(err));
+      Console.printf("Relais : échange échoué (%d : %s%s%s), nouvel essai dans %lu s.\n", dernierCodeRelais,
+                     dernierCodeRelais < 0 ? HTTPClient::errorToString(dernierCodeRelais).c_str() : "réponse HTTP",
+                     err[0] ? " | TLS : " : "", err, attente / 1000UL);
     }
   }
 }
