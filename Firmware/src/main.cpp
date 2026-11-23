@@ -1392,18 +1392,23 @@ void surveillerEnvois(unsigned long now) {
 #endif
 }
 
+// Pendant une connexion HTTPS (AirCarto, relais, mise à jour), mbedTLS occupe ~47 Ko : il ne reste qu'environ 17 Ko
+// libres et un plus grand bloc d'environ 12 Ko (« diag tls »). Ce n'est ni une fuite ni un morcellement : la mémoire
+// revient à la fermeture. On ne juge donc la mémoire que hors connexion (verrou mutexTls libre), et seulement après
+// 3 constats de suite (45 s), pour ne pas redémarrer sur un creux passager.
 void verifierMemoire() {
-  // Mémoire morcelée : assez de mémoire libre au total, mais plus aucun bloc assez grand pour un envoi HTTP
-  if (ESP.getMaxAllocHeap() < BLOC_MIN_OCTETS) {
-    Console.printf("Mémoire morcelée (plus grand bloc libre : %u octets) : redémarrage.\n", (unsigned)ESP.getMaxAllocHeap());
-    delay(100);
-    ESP.restart();
-  }
-  if (ESP.getFreeHeap() < HEAP_MIN_OCTETS) {
-    Console.printf("Mémoire libre trop basse (%u octets) : redémarrage.\n", (unsigned)ESP.getFreeHeap());
-    delay(100);
-    ESP.restart();
-  }
+  static uint8_t constats = 0;
+  if (mutexTls && xSemaphoreTake(mutexTls, 0) != pdTRUE) return;   // connexion HTTPS en cours : on ne juge pas
+  uint32_t bloc = ESP.getMaxAllocHeap(), libre = ESP.getFreeHeap();
+  if (mutexTls) xSemaphoreGive(mutexTls);
+  if (bloc >= BLOC_MIN_OCTETS && libre >= HEAP_MIN_OCTETS) { constats = 0; return; }
+  if (++constats < 3) return;
+  if (bloc < BLOC_MIN_OCTETS)
+    Console.printf("Mémoire morcelée (plus grand bloc libre : %u octets) : redémarrage.\n", (unsigned)bloc);
+  else
+    Console.printf("Mémoire libre trop basse (%u octets) : redémarrage.\n", (unsigned)libre);
+  delay(100);
+  ESP.restart();
 }
 
 // =====================================================================
