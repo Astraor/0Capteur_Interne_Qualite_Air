@@ -6,10 +6,11 @@
 <title>La Bonne M’air · Qualité de l’air en direct</title>
 <meta name="description" content="Mesures en direct de notre capteur de qualité de l'air : particules fines, température, humidité et CO2.">
 <meta name="theme-color" content="#0e1b24">
-<!-- Logo : le clocher de Notre-Dame de la Garde et sa statue dorée, enveloppés d'un souffle d'air.
-     Dans l'onglet, le souffle prend la couleur du niveau ATMO de la dernière mesure (voir majFavicon). -->
-<link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32.png">
-<link rel="icon" type="image/svg+xml" sizes="any" href="img/logo.svg" id="favicon">
+<!-- Logo « M’ » : un M massif percé de deux arcs comme les arcades de Notre-Dame de la Garde, et pour apostrophe la statue
+     dorée de la Bonne Mère. Onglet : img/favicon.svg (dessiné pour 16 et 32 px), dont le fond prend la couleur du niveau
+     ATMO de la dernière mesure (voir majFavicon) ; favicon.ico pour les anciens navigateurs ; apple-touch-icon (iPhone). -->
+<link rel="icon" href="img/favicon.ico" sizes="32x32">
+<link rel="icon" type="image/svg+xml" href="img/favicon.svg" id="favicon">
 <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
 
 <script>
@@ -3760,23 +3761,27 @@ function ecrireTextesBandeau() {
   ajusterHero();
 }
 
-// Logo de l'onglet : le souffle d'air du logo prend la couleur ATMO du verdict (bleu de l'affiche sinon).
-// img/logo.svg est lu une seule fois, puis recoloré en mémoire.
-const FAVICON_SOUFFLE = "#4fa8e0";
-let faviconModele = null, faviconCouleur = null;
-function majFavicon(couleur) {
-  faviconCouleur = couleur || null;
+// Logo de l'onglet (img/favicon.svg) : comme le bandeau, son fond prend la couleur ATMO du verdict et le M celle du texte
+// posé sur ce fond. La statue reste dorée sur fond sombre ; sur fond clair l'or ne se verrait pas, elle prend donc la
+// couleur du texte. Sans verdict : le logo tel quel. Le fichier est lu une seule fois, puis recoloré en mémoire.
+const FAVICON = "img/favicon.svg";
+const FAVICON_REPERES = /#0e1b24|#f3eee2|#ecbb48/gi;   // fond (et coupe autour de l'Enfant), M, statue : voir favicon.svg
+let faviconModele = null, faviconCouleurs = null;
+function majFavicon(couleurs) {
+  faviconCouleurs = couleurs || null;
   const lien = document.getElementById("favicon");
   if (!lien) return;
   const poser = () => {
-    lien.href = faviconCouleur && typeof faviconModele === "string" && faviconModele
-      ? "data:image/svg+xml," + encodeURIComponent(faviconModele.split(FAVICON_SOUFFLE).join(faviconCouleur))
-      : "img/logo.svg";
+    if (!faviconCouleurs || typeof faviconModele !== "string" || !faviconModele) { lien.href = FAVICON; return; }
+    const { ciel, texte } = faviconCouleurs;
+    const statue = texte.toLowerCase() === "#0e1b24" ? texte : "#ecbb48";   // texte foncé = fond clair
+    const table = { "#0e1b24": ciel, "#f3eee2": texte, "#ecbb48": statue };
+    lien.href = "data:image/svg+xml," + encodeURIComponent(faviconModele.replace(FAVICON_REPERES, c => table[c.toLowerCase()]));
   };
-  if (faviconCouleur && faviconModele === null) {
-    faviconModele = fetch("img/logo.svg")
+  if (faviconCouleurs && faviconModele === null) {
+    faviconModele = fetch(FAVICON)
       .then(r => (r.ok ? r.text() : ""), () => "")
-      .then(t => { faviconModele = t; poser(); });
+      .then(t => { faviconModele = t.replace(/<!--[\s\S]*?-->/g, ""); poser(); });
     return;
   }
   if (faviconModele instanceof Promise) return;   // poser() sera appelé à l'arrivée du fichier
@@ -3787,7 +3792,7 @@ function majBandeau(cle, fabrique, couleurs, indiceGrains) {
   bandeauCourant = { fabrique };
   if (cle === verdictAffiche) { document.title = fabrique().titre; return; }
   verdictAffiche = cle;
-  majFavicon(couleurs === NEUTRE ? null : couleurs.ciel);
+  majFavicon(couleurs === NEUTRE ? null : couleurs);
 
   const hero = document.getElementById("hero");
   hero.style.setProperty("--ciel", couleurs.ciel);

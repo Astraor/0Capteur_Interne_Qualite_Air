@@ -87,7 +87,7 @@ Sans réseau, la mesure est rangée en flash puis renvoyée plus tard avec son �
 │   ├── fr.js                   # Textes en français (langue d'origine)
 │   ├── en.js                   # Anglais
 │   └── ja.js                   # Japonais
-├── img/                        # Affiche « La Bonne M'air » (900 px et 1696 px)
+├── img/                        # Affiche (900 et 1696 px), logo M’ (logo.svg, favicon.svg / .ico, icône iPhone)
 ├── patch-lang.js               # Outil : met à jour des clés de traduction dans les 3 langues
 ├── Firmware/
 │   ├── platformio.ini          # Configuration PlatformIO
