@@ -164,12 +164,19 @@
 #if DOUBLE_BUFFER
 #define double_buffer  // à définir AVANT l'include de PxMatrix : active showBuffer()
 #endif
+// Taille des tampons d'image de PxMatrix, réservés pour 64 x 64 par défaut : l'écran fait 64 x 32. À la bonne
+// taille, ~6 Ko de mémoire vive en plus (double tampon), sans rien changer à l'affichage. (À définir AVANT l'include.)
+#define PxMATRIX_MAX_WIDTH  64
+#define PxMATRIX_MAX_HEIGHT 32
 #include <PxMatrix.h>
 // Police : la 5x7 intégrée à Adafruit GFX, en taille 1 (textes) et 2 (valeurs)
 
 // HTTPS vers AirCarto et vers le relais : certificats racines acceptés (Let's Encrypt, Google, SSL.com, Sectigo)
 #include <WiFiClientSecure.h>
 #include <mbedtls/error.h>          // diag tls : texte des erreurs
+#if __has_include(<mbedtls/ssl_internal.h>)
+#include <mbedtls/ssl_internal.h>   // MBEDTLS_SSL_IN/OUT_BUFFER_LEN : taille exacte des tampons d'une connexion
+#endif
 #include <esp_heap_caps.h>          // diag tls : mémoire réellement utilisable par mbedTLS
 #include "racines_tls.h"            // racines HTTPS en texte : la liste à modifier (source)
 #include "racines_bundle.h"         // les mêmes au format « bundle » (généré à la compilation par outils/racines_bundle.py)
@@ -346,6 +353,7 @@ static const unsigned long ATTENTE_SERVEUR_MAX_MS    = 300000UL;  // délai dema
 // Exiger les deux d'un seul tenant bloquait tout : après quelques heures, le plus grand bloc tombe vers 35 Ko (43 Ko au
 // premier envoi), et l'ancien seuil de 45 Ko arrêtait les envois ET la console à distance, sans message.
 // Si la mémoire manque malgré tout pendant la poignée de main, la connexion échoue proprement et sera retentée.
+// Ces seuils servent quand la réserve HTTPS n'est pas en place ; avec elle, voir memoireTlsOK (réserve comptée).
 static const uint32_t TLS_MEMOIRE_MIN_OCTETS         = 56000;     // mémoire libre utilisable par mbedTLS, au total
 static const uint32_t TLS_BLOC_MIN_OCTETS            = 18000;     // plus grand bloc : au moins un tampon de ~16,7 Ko
 static const int      REPONSE_MAX_OCTETS             = 2048;      // réponse d'AirCarto lue au plus (quelques centaines d'octets)
@@ -530,10 +538,98 @@ class ClientTlsDate : public WiFiClientSecure {
 // ce verrou. AirCarto attend jusqu'à 5 s (sinon l'envoi est reporté au créneau suivant), le relais jusqu'à 20 s ;
 // le relais laisse toujours au moins SYNC_LIVE_MS libres entre deux échanges, dans lesquels AirCarto passe.
 SemaphoreHandle_t mutexTls = NULL;
+TaskHandle_t hTacheLoop = NULL, hTacheEnvoi = NULL, hTacheRelais = NULL;   // pile restante (commande status)
+// ---------- Réserve mémoire des connexions HTTPS ----------
+// Une connexion HTTPS demande deux tampons de ~16,7 Ko d'un seul tenant (réception, émission). Pris puis rendus à
+// chaque échange (AirCarto toutes les 10 s quand des mesures sont en retard, relais toutes les 2 à 30 s), ils
+// morcelaient la mémoire : de petits blocs alloués pendant la connexion restaient ensuite au milieu de leur place.
+// Après quelques heures : 60 Ko libres mais plus un seul bloc de 17 Ko (« échange reporté, mémoire insuffisante »),
+// et quand la connexion partait quand même, la vérification du certificat manquait de mémoire en pleine poignée de
+// main (« X509 - A fatal error occurred... vrfy callback failed »).
+// Désormais ces tampons sont réservés UNE FOIS, au démarrage (mémoire encore d'un seul tenant) ; mbedTLS les reçoit à
+// chaque connexion (mbedtls_platform_set_calloc_free) et ils ne passent plus par la mémoire générale. Toute autre
+// demande de mbedTLS va à la mémoire générale comme avant, de même qu'un grand tampon de plus si la réserve est
+// prise (eduroam qui se réauthentifie pendant un échange). Sécurité inchangée : même bibliothèque, mêmes
+// vérifications ; seule change l'adresse des tampons.
+#if defined(MBEDTLS_SSL_IN_BUFFER_LEN) && defined(MBEDTLS_SSL_OUT_BUFFER_LEN)
+static const size_t TAMPON_TLS_OCTETS = (MBEDTLS_SSL_IN_BUFFER_LEN > MBEDTLS_SSL_OUT_BUFFER_LEN)
+                                        ? MBEDTLS_SSL_IN_BUFFER_LEN : MBEDTLS_SSL_OUT_BUFFER_LEN;
+#define NB_TAMPONS_TLS ((MBEDTLS_SSL_OUT_BUFFER_LEN > 8192) ? 2 : 1)   // émission courte (4 Ko) : un seul grand
+#else
+static const size_t TAMPON_TLS_OCTETS = 16384 + 512;   // 16 Ko de contenu + en-tête et marge de chiffrement
+#define NB_TAMPONS_TLS 2
+#endif
+static const size_t TAMPON_TLS_MIN_OCTETS = 8192;      // demande plus petite : mémoire générale
+// Avec la réserve, la mémoire générale ne sert plus qu'aux calculs de la poignée de main (blocs de 3 Ko au plus).
+static const uint32_t TLS_BLOC_RESERVE_MIN_OCTETS = 6144;
+static const uint32_t BLOC_MIN_RESERVE_OCTETS     = 6144;   // verifierMemoire, réserve en place
+
+extern "C" int mbedtls_platform_set_calloc_free(void* (*)(size_t, size_t), void (*)(void*)) __attribute__((weak));
+static uint8_t* tamponsTls[NB_TAMPONS_TLS] = {};
+static volatile bool tamponTlsPris[NB_TAMPONS_TLS] = {};
+static uint8_t nbTamponsTls = 0;                    // tampons réellement réservés (0 : fonctionnement d'avant)
+static portMUX_TYPE verrouTamponsTls = portMUX_INITIALIZER_UNLOCKED;
+volatile uint32_t nbGrandsHorsReserve = 0;          // grands tampons servis par la mémoire générale (réserve prise)
+
+static void* tlsCalloc(size_t n, size_t taille) {
+  if (n != 0 && taille > SIZE_MAX / n) return nullptr;
+  size_t total = n * taille;
+  if (total > TAMPON_TLS_MIN_OCTETS && total <= TAMPON_TLS_OCTETS) {
+    for (uint8_t i = 0; i < nbTamponsTls; i++) {
+      bool libre = false;
+      portENTER_CRITICAL(&verrouTamponsTls);
+      if (!tamponTlsPris[i]) { tamponTlsPris[i] = true; libre = true; }
+      portEXIT_CRITICAL(&verrouTamponsTls);
+      if (libre) { memset(tamponsTls[i], 0, total); return tamponsTls[i]; }
+    }
+    if (nbTamponsTls > 0) nbGrandsHorsReserve++;
+  }
+  return heap_caps_calloc(n, taille, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+}
+
+static void tlsFree(void* p) {
+  if (p == nullptr) return;
+  for (uint8_t i = 0; i < nbTamponsTls; i++) {
+    if (p == tamponsTls[i]) {
+      portENTER_CRITICAL(&verrouTamponsTls);
+      tamponTlsPris[i] = false;
+      portEXIT_CRITICAL(&verrouTamponsTls);
+      return;
+    }
+  }
+  heap_caps_free(p);   // (même mémoire que l'allocateur d'origine d'ESP-IDF)
+}
+
+uint8_t tamponsTlsLibres() {
+  uint8_t n = 0;
+  for (uint8_t i = 0; i < nbTamponsTls; i++) if (!tamponTlsPris[i]) n++;
+  return n;
+}
+uint32_t octetsReserveLibres() { return (uint32_t)tamponsTlsLibres() * TAMPON_TLS_OCTETS; }
+bool reserveTlsComplete() { return nbTamponsTls == NB_TAMPONS_TLS; }
+
+// Au tout début de setup(), avant le Wi-Fi et le Bluetooth : la mémoire est encore d'un seul tenant.
+// Faux si cette version de mbedTLS ne permet pas de lui fournir sa mémoire (la carte fonctionne alors comme avant).
+bool reserverTamponsTls() {
+  if (mbedtls_platform_set_calloc_free == nullptr) return false;
+  for (uint8_t i = 0; i < NB_TAMPONS_TLS; i++) {
+    uint8_t* t = (uint8_t*)heap_caps_malloc(TAMPON_TLS_OCTETS, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (t == nullptr) break;
+    tamponsTls[nbTamponsTls++] = t;
+  }
+  if (nbTamponsTls > 0) mbedtls_platform_set_calloc_free(tlsCalloc, tlsFree);
+  return true;
+}
+
 // Assez de mémoire pour ouvrir une connexion HTTPS ? (mémoire « 8 bits » interne : celle que mbedTLS peut utiliser)
+// Réserve complète et libre : il ne faut plus, dans la mémoire générale, que la place des calculs de la poignée de
+// main (même total qu'avant, réserve comprise) et des blocs de quelques Ko. Sinon : les seuils d'avant.
 bool memoireTlsOK() {
-  return heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL) >= TLS_MEMOIRE_MIN_OCTETS
-      && heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL) >= TLS_BLOC_MIN_OCTETS;
+  uint32_t libre = heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL);
+  uint32_t bloc = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL);
+  if (reserveTlsComplete() && tamponsTlsLibres() == nbTamponsTls)
+    return libre + octetsReserveLibres() >= TLS_MEMOIRE_MIN_OCTETS && bloc >= TLS_BLOC_RESERVE_MIN_OCTETS;
+  return libre >= TLS_MEMOIRE_MIN_OCTETS && bloc >= TLS_BLOC_MIN_OCTETS;
 }
 
 HardwareSerial nextpmSerial(1);  // UART n°1
@@ -645,6 +741,7 @@ enum ResultatPush { PUSH_OK, PUSH_REESSAYER, PUSH_REJETE, PUSH_INVALIDE, PUSH_CL
 // Mesures fraîches en attente d'envoi (RAM) : loop() les dépose, la tâche d'envoi les prend.
 // Protégées par mutexEnvoi. Au-delà de NB_PENDANTES, la plus ancienne est sacrifiée.
 #define NB_PENDANTES 4
+#define TAILLE_PENDANTE 512   // place réservée au démarrage pour chaque mesure en attente (setup)
 String pendantes[NB_PENDANTES];
 uint8_t nbPendantes = 0;
 SemaphoreHandle_t mutexEnvoi = NULL;
@@ -1511,11 +1608,14 @@ const char* texteCauseRedemarrage(esp_reset_reason_t r) {
 void verifierMemoire() {
   static uint8_t constats = 0;
   if (mutexTls && xSemaphoreTake(mutexTls, 0) != pdTRUE) return;   // connexion HTTPS en cours : on ne juge pas
-  uint32_t bloc = ESP.getMaxAllocHeap(), libre = ESP.getFreeHeap();
+  // La réserve HTTPS (libre hors connexion) compte comme mémoire disponible ; avec elle, la mémoire générale n'a
+  // plus besoin de blocs de 17 Ko : le seuil de morcellement descend à BLOC_MIN_RESERVE_OCTETS.
+  uint32_t bloc = ESP.getMaxAllocHeap(), libre = ESP.getFreeHeap() + octetsReserveLibres();
   if (mutexTls) xSemaphoreGive(mutexTls);
-  if (bloc >= BLOC_MIN_OCTETS && libre >= HEAP_MIN_OCTETS) { constats = 0; return; }
+  uint32_t blocMin = reserveTlsComplete() ? BLOC_MIN_RESERVE_OCTETS : BLOC_MIN_OCTETS;
+  if (bloc >= blocMin && libre >= HEAP_MIN_OCTETS) { constats = 0; return; }
   if (++constats < 3) return;
-  if (bloc < BLOC_MIN_OCTETS)
+  if (bloc < blocMin)
     Console.printf("Mémoire morcelée (plus grand bloc libre : %u octets) : redémarrage.\n", (unsigned)bloc);
   else
     Console.printf("Mémoire libre trop basse (%u octets) : redémarrage.\n", (unsigned)libre);
@@ -2027,9 +2127,10 @@ ResultatPush posterAuServeur(const String &payload) {
   if (!memoireTlsOK()) {
     if (mutexTls) xSemaphoreGive(mutexTls);
     nbReportsMemoire++;
-    LOG("Envoi reporté : mémoire insuffisante pour HTTPS (libre %u, plus grand bloc %u octets).\n",
+    LOG("Envoi reporté : mémoire insuffisante pour HTTPS (libre %u, plus grand bloc %u octets, réserve %u/%u).\n",
         (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
-        (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL));
+        (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
+        (unsigned)tamponsTlsLibres(), (unsigned)nbTamponsTls);
     return PUSH_REPORTE;
   }
 #endif
@@ -2189,7 +2290,7 @@ bool construireRecord(String &ligne) {
     int rssi = WiFi.RSSI();
     if (rssi >= -120 && rssi <= 0) doc["rssi"] = rssi;
   }
-  doc["heap"] = ESP.getFreeHeap();
+  doc["heap"] = ESP.getFreeHeap() + octetsReserveLibres();   // disponible, réserve HTTPS libre comprise (comme avant)
 
   // CO2 : moyenne de la période (co2) et pic (x_co2_max).
   if (aCO2) {
@@ -2881,9 +2982,11 @@ void tacheRelais(void* param) {
       static unsigned long tMsgMemoire = 0;      // message au plus une fois par minute (USB, Bluetooth)
       if (tMsgMemoire == 0 || millis() - tMsgMemoire > 60000UL) {
         tMsgMemoire = millis() | 1UL;
-        Console.printf("Relais : échange reporté, mémoire insuffisante pour HTTPS (libre %u, plus grand bloc %u octets).\n",
+        Console.printf("Relais : échange reporté, mémoire insuffisante pour HTTPS (libre %u, plus grand bloc %u octets, "
+                       "réserve %u/%u).\n",
                        (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
-                       (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL));
+                       (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
+                       (unsigned)tamponsTlsLibres(), (unsigned)nbTamponsTls);
       }
       attente = 10000;
       continue;
@@ -4667,6 +4770,13 @@ void afficherStatus() {
                  texteCauseRedemarrage(esp_reset_reason()), (unsigned)bootId);
   Console.printf("uptime / mémoire : %lu s | %u octets libres (plus grand bloc : %u)\n", millis() / 1000UL,
                 (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
+  Console.printf("réserve HTTPS : %u tampon(s) de %u octets, %u libre(s) | grands tampons hors réserve : %lu\n",
+                 (unsigned)nbTamponsTls, (unsigned)TAMPON_TLS_OCTETS, (unsigned)tamponsTlsLibres(),
+                 (unsigned long)nbGrandsHorsReserve);
+  Console.printf("pile libre au plus bas : loop %u | envoi %u | relais %u octets\n",
+                 hTacheLoop ? (unsigned)uxTaskGetStackHighWaterMark(hTacheLoop) : 0u,
+                 hTacheEnvoi ? (unsigned)uxTaskGetStackHighWaterMark(hTacheEnvoi) : 0u,
+                 hTacheRelais ? (unsigned)uxTaskGetStackHighWaterMark(hTacheRelais) : 0u);
   if (reseauOK()) {
     Console.printf("WiFi : connecté à %s (%s) | IP %s | %d dBm\n", nomAffichable(WiFi.SSID()).c_str(), typeReseau(reseauCourant),
                   WiFi.localIP().toString().c_str(), WiFi.RSSI());
@@ -5032,10 +5142,10 @@ void executerCommande(const String &cmd) {
 // ni jeton) : poignée de main seulement, puis fermeture. Mémoire comptée en « 8 bits » : ESP.getFreeHeap() compte
 // aussi la mémoire IRAM, inutilisable par mbedTLS.
 static void memoireTls(const char* quand) {
-  Console.printf("    mémoire %s : utilisable %u (plus grand bloc %u) | pile restante %u\n", quand,
-                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
+  Console.printf("    mémoire %s : utilisable %u (plus grand bloc %u) | réserve HTTPS libre %u/%u | pile restante %u\n",
+                 quand, (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
                  (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
-                 (unsigned)uxTaskGetStackHighWaterMark(NULL));
+                 (unsigned)tamponsTlsLibres(), (unsigned)nbTamponsTls, (unsigned)uxTaskGetStackHighWaterMark(NULL));
 }
 
 // bundle == nullptr : SANS vérification (diagnostic seulement, la connexion est fermée aussitôt).
@@ -5345,6 +5455,15 @@ void setup() {
   mutexEnvoi = xSemaphoreCreateMutex();  // avant tout : loop() et la tâche d'envoi s'en servent
   mutexCommandes = xSemaphoreCreateMutex();   // commandes reçues par Bluetooth / relais
   mutexTls = xSemaphoreCreateMutex();         // une seule connexion HTTPS à la fois (AirCarto / relais)
+  hTacheLoop = xTaskGetCurrentTaskHandle();   // setup() et loop() tournent dans la même tâche
+  // Réserve HTTPS : avant le Wi-Fi et le Bluetooth, tant que la mémoire est d'un seul tenant.
+  if (!reserverTamponsTls())
+    Console.println("HTTPS : réserve mémoire impossible avec cette version de mbedTLS (fonctionnement d'avant).");
+  else
+    Console.printf("HTTPS : %u tampon(s) de %u octets réservés.\n", (unsigned)nbTamponsTls, (unsigned)TAMPON_TLS_OCTETS);
+  // Mesures en attente : leur place est prise maintenant, une fois pour toutes (une mesure fait ~350 octets). Prise
+  // au fil de l'eau, elle tombait n'importe où, souvent dans la place que venait de libérer une connexion HTTPS.
+  for (uint8_t i = 0; i < NB_PENDANTES; i++) pendantes[i].reserve(TAILLE_PENDANTE);
   lireRebootDistant();                        // ce démarrage vient-il d'un « reboot » demandé à distance ?
 #if CONSOLE_DISTANTE
   mutexJournal = xSemaphoreCreateMutex();     // journal à distance
@@ -5427,9 +5546,9 @@ void setup() {
   clientAircarto.setHandshakeTimeout(10);
 #endif
   // réseau + fichier hors ligne, cœur 1 comme loop() ; pile agrandie (8 -> 12 Ko) pour la poignée de main HTTPS
-  xTaskCreatePinnedToCore(tacheEnvoi, "envoi", 12288, NULL, 1, NULL, 1);
+  xTaskCreatePinnedToCore(tacheEnvoi, "envoi", 12288, NULL, 1, &hTacheEnvoi, 1);
 #if CONSOLE_DISTANTE
-  xTaskCreatePinnedToCore(tacheRelais, "relais", 12288, NULL, 1, NULL, 0); // console à distance + mise à jour (HTTPS)
+  xTaskCreatePinnedToCore(tacheRelais, "relais", 12288, NULL, 1, &hTacheRelais, 0); // console à distance + mise à jour (HTTPS)
 #endif
 
   aTransition = true;  // fondu du logo vers la première page
