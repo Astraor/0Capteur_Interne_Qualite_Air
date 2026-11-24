@@ -119,7 +119,7 @@
 #define MHZ_ACTIVE               1  // 0 = ignorer le MH-Z19C
 #define MHZ_ABC                   1  // 1 = auto-calibration ; 0 si la pièce n'est jamais aérée
 #define NEXTPM_MOYENNE_60S        0  // 0 = moyennes 10 s | 1 = moyennes 60 s
-#define ECRAN_ETEINT_NUIT         0  // 1 = écran éteint entre HEURE_NUIT_DEBUT et HEURE_NUIT_FIN
+#define ECRAN_ETEINT_NUIT         0  // 1 = écran éteint pendant la plage de nuit (commande « nuit »)
 #define AFFICHER_ETAT             1  // 1 = page ÉTAT (heure + grandes icônes Wi-Fi / serveur / capteurs) intercalée
                                      //     toutes les PERIODE_ETAT_MS pendant DUREE_ETAT_MS (voir dessinerPageEtat)
 #define MASQUER_SECRETS           0  // 1 = les mots de passe saisis s'affichent en ****
@@ -274,14 +274,19 @@ static const bool DETECTION_SECTEUR_ACTIVE = false;
 #define PIN_BOUTON -1  // GPIO libre, bouton vers GND : appui court = page suivante, long = envoi immédiat
 #define PIN_BUZZER -1  // GPIO libre, buzzer ACTIF : bip si CO2 > SEUIL_ALARME_PPM
 
-// --- Luminosité (0..255) ---
-// Luminosité de l'écran selon la situation (255 = maximum).
-static const uint8_t LUMINOSITE_JOUR     = 255;
-static const uint8_t LUMINOSITE_NUIT     = 40;
+// --- Luminosité ---
+// 10 niveaux, réglables séparément pour le jour et la nuit (commande « lum », câble USB ou Bluetooth ; gardés en
+// mémoire). PxMatrix allume chaque ligne 30 µs × luminosité / 255 : les valeurs tombent sur 1, 2, 3, 4, 6, 8, 11,
+// 15, 21 et 30 µs, soit environ +40 % par niveau, des pas que l'œil voit réguliers. (Avant : 40 / 255 la nuit,
+// soit 4 µs : l'œil percevant la lumière de façon logarithmique, l'écran paraissait à peine moins fort.)
+static const uint8_t NIVEAUX_LUMI[10]    = {9, 17, 26, 34, 51, 68, 94, 128, 179, 255};
+static const uint8_t NIVEAU_JOUR_DEFAUT  = 10;   // 255 : le maximum
+static const uint8_t NIVEAU_NUIT_DEFAUT  = 2;    // 17 : 2 µs, quinze fois moins que le jour
 static const uint8_t LUMINOSITE_BATTERIE = 60;
-// Plage de nuit (heures, 0..23) : de DEBUT inclus à FIN exclu. Peut passer minuit (ex. 22 -> 6).
-static const int HEURE_NUIT_DEBUT = 0;
-static const int HEURE_NUIT_FIN   = 7;
+// Plage de nuit par défaut (heures, 0..23) : de DEBUT inclus à FIN exclu, peut passer minuit. Avant : 0 h -> 7 h,
+// la soirée restait donc en plein jour. Réglable sans reflasher : « nuit 22 7 » (« nuit off » : jamais).
+static const uint8_t HEURE_NUIT_DEBUT_DEFAUT = 22;
+static const uint8_t HEURE_NUIT_FIN_DEFAUT   = 7;
 
 // --- Intervalles (ms) ---
 // Rythme de chaque travail : loop() lance un travail quand (maintenant - dernier passage) >= son intervalle.
@@ -303,7 +308,7 @@ static const unsigned long MARGE_PUSH_MIN_MS        = 400;        // la marge de
 static const unsigned long MARGE_PUSH_MAX_MS        = 5000;       // ... et remonte (+500 ms) à chaque refus 429 "trop rapproché"
 static const unsigned long ATTENTE_NTP_REESSAI_MS   = 2000;       // une mesure attend l'heure NTP : on réessaie toutes les 2 s
 static const unsigned long INTERVALLE_RESEAU_MS     = 15000;
-static const unsigned long INTERVALLE_LUMI_MS        = 60000;
+static const unsigned long INTERVALLE_LUMI_MS        = 10000;
 static const unsigned long INTERVALLE_HIST_MS        = MODE_DEMO ? 5000UL : 60000UL;  // un point de la courbe CO2 par minute (5 s en démo)
 static const unsigned long CHAUFFE_MHZ_MS            = 180000UL;  // MH-Z19C : environ 3 min pour se stabiliser (fiche technique)
 // CO2 plausible : l'air extérieur ne descend pas sous ~400 ppm ; 5000 = haut de la gamme du MH-Z19C.
@@ -724,6 +729,8 @@ bool aRedessiner = false;  // un seul redessin par tour de loop()
 bool aTransition = false;  // fondu à faire au prochain affichage (changement de page)
 bool ecranEteint = false;
 uint8_t luminositeCourante = 255;  // luminosité choisie par majLuminosite (le fondu y revient)
+uint8_t niveauJour = NIVEAU_JOUR_DEFAUT, niveauNuit = NIVEAU_NUIT_DEFAUT;            // 1..10 (commande « lum »)
+uint8_t heureNuitDebut = HEURE_NUIT_DEBUT_DEFAUT, heureNuitFin = HEURE_NUIT_FIN_DEFAUT;  // commande « nuit »
 unsigned long tAnim = 0;       // dernière image d'animation
 bool etatCligne = false;       // les yeux sont-ils fermés (dernière image) ?
 uint32_t phaseChauffe = 0;     // seconde affichée par le compte à rebours de préchauffage
@@ -897,16 +904,17 @@ String lireReponse(HTTPClient &http, size_t max) {
   return corps;
 }
 
-// Nuit = de HEURE_NUIT_DEBUT (inclus) à HEURE_NUIT_FIN (exclu), en heure locale.
-// Fonctionne aussi si la plage passe minuit (ex. 22 -> 6).
+// Nuit = de heureNuitDebut (inclus) à heureNuitFin (exclu), en heure locale (France, heure d'été comprise).
+// Fonctionne aussi si la plage passe minuit (ex. 22 -> 7). Début = fin : jamais la nuit.
+// Sans heure (pas encore de Wi-Fi depuis la mise sous tension) : la carte ne sait pas s'il fait nuit -> jour.
 bool estNuit() {
-  if (!heureValide()) return false;
+  if (!heureValide() || heureNuitDebut == heureNuitFin) return false;
   time_t now = time(nullptr);
   struct tm t;
   localtime_r(&now, &t);
   int h = t.tm_hour;
-  if (HEURE_NUIT_DEBUT <= HEURE_NUIT_FIN) return (h >= HEURE_NUIT_DEBUT && h < HEURE_NUIT_FIN);
-  return (h >= HEURE_NUIT_DEBUT || h < HEURE_NUIT_FIN);
+  if (heureNuitDebut < heureNuitFin) return (h >= heureNuitDebut && h < heureNuitFin);
+  return (h >= heureNuitDebut || h < heureNuitFin);
 }
 
 // Durée d'une période de mesure (la moyenne de toutes les lectures de la période est envoyée) :
@@ -939,6 +947,13 @@ void chargerConfig() {
   offsetRejeu = prefs.getULong("off", 0);
   verbose    = prefs.getBool("verbose", false);
   btAppairageDemarrage = prefs.getBool("bt_dem", false);
+  niveauJour     = prefs.getUChar("lum_j", NIVEAU_JOUR_DEFAUT);
+  niveauNuit     = prefs.getUChar("lum_n", NIVEAU_NUIT_DEFAUT);
+  heureNuitDebut = prefs.getUChar("nuit_d", HEURE_NUIT_DEBUT_DEFAUT);
+  heureNuitFin   = prefs.getUChar("nuit_f", HEURE_NUIT_FIN_DEFAUT);
+  if (niveauJour < 1 || niveauJour > 10) niveauJour = NIVEAU_JOUR_DEFAUT;
+  if (niveauNuit < 1 || niveauNuit > 10) niveauNuit = NIVEAU_NUIT_DEFAUT;
+  if (heureNuitDebut > 23 || heureNuitFin > 23) { heureNuitDebut = HEURE_NUIT_DEBUT_DEFAUT; heureNuitFin = HEURE_NUIT_FIN_DEFAUT; }
 }
 
 // La clé du groupe AirCarto doit faire exactement 32 caractères.
@@ -4448,10 +4463,18 @@ void afficherSplash() {
   delay(SPLASH_FIN_MS);
 }
 
-// Choisit la luminosité : réduite la nuit et sur batterie ; peut aussi éteindre l'écran (ECRAN_ETEINT_NUIT).
+// Choisit la luminosité : niveau de jour ou de nuit (« lum »), bridée sur batterie ; peut aussi éteindre l'écran
+// (ECRAN_ETEINT_NUIT). Appelée toutes les 10 s : la nuit commence au plus 10 s après l'heure, ou après la 1re heure
+// reçue par Internet (avant, jusqu'à 1 min plus tard).
 void majLuminosite() {
   bool nuit = estNuit();
-  uint8_t lum = nuit ? LUMINOSITE_NUIT : LUMINOSITE_JOUR;
+  static int8_t nuitAvant = -1;   // pour annoncer le passage jour / nuit (une ligne au journal)
+  if ((int8_t)nuit != nuitAvant) {
+    if (nuitAvant >= 0 || nuit)
+      Console.printf("Mode nuit : %s (luminosité %u/10)\n", nuit ? "activé" : "terminé", nuit ? niveauNuit : niveauJour);
+    nuitAvant = nuit;
+  }
+  uint8_t lum = NIVEAUX_LUMI[(nuit ? niveauNuit : niveauJour) - 1];
   if (!estSurSecteur && lum > LUMINOSITE_BATTERIE) lum = LUMINOSITE_BATTERIE;  // économie sur batterie
   bool eteint = (ECRAN_ETEINT_NUIT && nuit);
   if (eteint != ecranEteint) { ecranEteint = eteint; aRedessiner = true; }
@@ -4517,6 +4540,90 @@ void gererBuzzer(unsigned long now) {
 // =====================================================================
 // COMMANDES SÉRIE (moniteur série)
 // =====================================================================
+// ---------- Écran : luminosité et mode nuit (« lum », « nuit ») ----------
+// Câble USB et Bluetooth (téléphone appairé, donc à côté de la carte) ; jamais par la console du relais (Wi-Fi).
+static bool lireEntier(const String &s, int mini, int maxi, int &v) {
+  if (s.length() == 0 || s.length() > 2) return false;
+  for (size_t i = 0; i < s.length(); i++) if (!isDigit(s[i])) return false;
+  v = s.toInt();
+  return v >= mini && v <= maxi;
+}
+
+void afficherLuminosite() {
+  Console.printf("luminosité : jour %u/10 | nuit %u/10 | en ce moment : %s, %u/255\n", niveauJour, niveauNuit,
+                 !heureValide() ? "jour (heure pas encore reçue)" : estNuit() ? "nuit" : "jour",
+                 (unsigned)luminositeCourante);
+  if (heureNuitDebut == heureNuitFin) Console.println("mode nuit : jamais ('nuit 22 7' pour le remettre)");
+  else Console.printf("mode nuit : de %u h à %u h%s\n", heureNuitDebut, heureNuitFin, ECRAN_ETEINT_NUIT ? ", écran éteint" : "");
+}
+
+// Reconnaît une commande d'écran ; l'exécute si executer. Faux = pas une commande d'écran valide (sert aussi à la
+// liste blanche du Bluetooth : seules les formes exactes ci-dessous passent).
+//   lum                      état
+//   lum + | lum -            un niveau de plus / de moins pour la période en cours (jour ou nuit)
+//   lum jour|nuit +|-|1..10  règle l'autre période, ou un niveau précis
+//   lum defaut               jour 10, nuit 2
+//   nuit | nuit <début> <fin> | nuit off   plage de nuit (heures 0..23)
+bool commandeEcran(const String &commande, bool executer) {
+  String bas = commande;
+  bas.toLowerCase();
+  bas.trim();
+  while (bas.indexOf("  ") >= 0) bas.remove(bas.indexOf("  "), 1);
+  int sp = bas.indexOf(' ');
+  String mot = (sp < 0) ? bas : bas.substring(0, sp);
+  String reste = (sp < 0) ? String("") : bas.substring(sp + 1);
+
+  if (mot == "lum") {
+    if (reste.length() == 0) { if (executer) afficherLuminosite(); return true; }
+    if (reste == "defaut" || reste == "défaut") {
+      if (!executer) return true;
+      niveauJour = NIVEAU_JOUR_DEFAUT; niveauNuit = NIVEAU_NUIT_DEFAUT;
+      prefs.putUChar("lum_j", niveauJour); prefs.putUChar("lum_n", niveauNuit);
+      majLuminosite();
+      afficherLuminosite();
+      return true;
+    }
+    int cible = -1;                                   // -1 : période en cours | 0 : jour | 1 : nuit
+    if (reste.startsWith("jour ")) { cible = 0; reste = reste.substring(5); }
+    else if (reste.startsWith("nuit ")) { cible = 1; reste = reste.substring(5); }
+    int pas = 0, n = 0;
+    if (reste == "+") pas = 1;
+    else if (reste == "-") pas = -1;
+    else if (!lireEntier(reste, 1, 10, n)) return false;
+    if (!executer) return true;
+    if (cible < 0) cible = estNuit() ? 1 : 0;
+    uint8_t &niv = cible ? niveauNuit : niveauJour;
+    int nouveau = pas ? constrain((int)niv + pas, 1, 10) : n;
+    const char* periode = cible ? "de nuit" : "de jour";
+    if (pas && nouveau == niv) {
+      Console.printf("Luminosité %s : déjà au %s (%u/10).\n", periode, pas > 0 ? "maximum" : "minimum", niv);
+      return true;
+    }
+    if (nouveau != niv) { niv = (uint8_t)nouveau; prefs.putUChar(cible ? "lum_n" : "lum_j", niv); }
+    majLuminosite();
+    bool visible = (cible == 1) == estNuit();
+    Console.printf("Luminosité %s : %u/10%s\n", periode, niv, visible ? "" : " (appliquée à la prochaine période)");
+    return true;
+  }
+
+  if (mot == "nuit") {
+    if (reste.length() == 0) { if (executer) afficherLuminosite(); return true; }
+    int a = 0, b = 0;
+    if (reste != "off") {
+      int s2 = reste.indexOf(' ');
+      if (s2 < 0 || !lireEntier(reste.substring(0, s2), 0, 23, a) || !lireEntier(reste.substring(s2 + 1), 0, 23, b))
+        return false;
+    }
+    if (!executer) return true;
+    heureNuitDebut = (uint8_t)a; heureNuitFin = (uint8_t)b;
+    prefs.putUChar("nuit_d", heureNuitDebut); prefs.putUChar("nuit_f", heureNuitFin);
+    majLuminosite();
+    afficherLuminosite();
+    return true;
+  }
+  return false;
+}
+
 // Affiche la liste des commandes disponibles dans le moniteur série.
 void afficherAide() {
   Console.println("Commandes disponibles :");
@@ -4538,6 +4645,9 @@ void afficherAide() {
   Console.println("  bt demarrage on|off   autorise aussi un nouveau téléphone 2 min après la mise sous tension");
   Console.println("  bt liste              téléphones Bluetooth appairés");
   Console.println("  bt oublier [n]        oublie le téléphone n ('bt liste'), ou tous sans numéro");
+  Console.println("  lum                   luminosité de l'écran : lum + / lum - (période en cours, jour ou nuit),");
+  Console.println("                        lum jour|nuit <1..10> ou +/-, lum defaut");
+  Console.println("  nuit <début> <fin>    heures du mode nuit, ex. nuit 22 7 (nuit off : jamais)");
   Console.println("  reboot                redémarre la carte");
   Console.println("  verbose on|off        active/coupe l'affichage automatique des mesures");
   Console.println("  calib oui             calibrage du zéro CO2 (seulement après 20 min à l'air libre)");
@@ -4545,7 +4655,8 @@ void afficherAide() {
   Console.println("  oublier               efface identifiants et clé de la carte");
   Console.println("Saisie : Retour arrière = efface 1 caractère | Ctrl+U = efface toute la ligne");
   Console.println("À distance (console du relais, Bluetooth) : aide, status, verbose, calib, reboot, wifi scan,");
-  Console.println("wifi connect, maj, diag tls. Wi-Fi, clé, jeton, relais, calib oui, bt et effacements : câble USB seulement.");
+  Console.println("wifi connect, maj, diag tls. Bluetooth aussi (pas le relais) : lum, nuit.");
+  Console.println("Wi-Fi, clé, jeton, relais, calib oui, bt et effacements : câble USB seulement.");
 }
 
 // Résumé de l'état de la carte (réseau, clé, file d'attente...) à la demande, commande « status ».
@@ -4576,6 +4687,7 @@ void afficherStatus() {
                     : "certificat du serveur ENT : NON vérifié, mot de passe ENT exposé (voir src/ca_eduroam.h.exemple)");
 #endif
   Console.printf("heure NTP : %s | mode nuit : %s\n", heureValide() ? "valide" : "pas encore", estNuit() ? "oui" : "non");
+  afficherLuminosite();
   Console.printf("clé du groupe : %s%s\n", cleOK() ? "présente (32 car.)" : "ABSENTE ou mauvaise longueur",
                 cleInvalide ? " | REFUSÉE par le serveur (nouvel essai toutes les 15 min)" : "");
   Console.printf("dernier envoi (%s) : code HTTP %d | état %u | écart %lu ms (dont marge %lu ms)",
@@ -4809,6 +4921,10 @@ void executerCommande(const String &cmd) {
     Console.println("Redémarrage...");
     delay(200);
     ESP.restart();
+  } else if (commandeEcran(bas, true)) {
+    // lum ..., nuit ... (exécutée)
+  } else if (bas == "lum" || bas.startsWith("lum ") || bas == "nuit" || bas.startsWith("nuit ")) {
+    Console.println("Écran : lum | lum + | lum - | lum jour|nuit <1..10> | lum defaut | nuit <début> <fin> | nuit off");
   } else if (bas == "verbose on" || bas == "verbose off") {
     verbose = (bas == "verbose on");
     prefs.putBool("verbose", verbose);
@@ -5010,6 +5126,12 @@ bool commandeAutoriseeADistance(const String &bas) {
   return false;
 }
 
+// Bluetooth : il faut un téléphone appairé, à portée de la carte. Il a la liste blanche du relais, plus le réglage
+// de l'écran (« lum », « nuit »), refusé au relais : régler l'écran ne se fait pas à distance par le Wi-Fi.
+bool commandeAutoriseeBluetooth(const String &bas) {
+  return commandeAutoriseeADistance(bas) || commandeEcran(bas, false);
+}
+
 // Commande dont la sortie ne doit pas quitter le câble USB (noms de réseaux, identifiant ENT, longueurs...).
 bool commandeSensible(const String &bas) {
   return bas == "wifi" || bas.startsWith("wifi ") || bas.startsWith("set ") || bas == "oublier" || bas.startsWith("bt ");
@@ -5081,11 +5203,13 @@ void executerCommandeSource(const String &cmd, uint8_t source) {
   while (bas.indexOf("  ") >= 0) bas.remove(bas.indexOf("  "), 1);   // "verbose   on" = "verbose on"
   if (source != SOURCE_USB) {
     const char* origine = (source == SOURCE_BLUETOOTH) ? "Bluetooth" : "console à distance";
-    if (!commandeAutoriseeADistance(bas)) {
+    bool permise = (source == SOURCE_BLUETOOTH) ? commandeAutoriseeBluetooth(bas) : commandeAutoriseeADistance(bas);
+    if (!permise) {
       // on ne recopie que le premier mot : la suite peut contenir un mot de passe
       int sp = bas.indexOf(' ');
       String debut = (sp < 0) ? bas : bas.substring(0, sp) + " ...";
-      Console.printf("> %s : refusée depuis %s (réservée au câble USB). Tape 'aide'.\n", debut.c_str(), origine);
+      Console.printf("> %s : refusée depuis %s (%s). Tape 'aide'.\n", debut.c_str(), origine,
+                     commandeEcran(bas, false) ? "écran : câble USB ou Bluetooth seulement" : "réservée au câble USB");
       return;
     }
     if (!commandeDistantePermise(bas, origine)) return;
@@ -5387,7 +5511,7 @@ void loop() {
     afficher();
   }
 
-  // Toutes les minutes : ajuste la luminosité (jour / nuit / batterie).
+  // Toutes les 10 s : ajuste la luminosité (jour / nuit / batterie).
   if (now - tLumi >= INTERVALLE_LUMI_MS) {
     tLumi = now;
     majLuminosite();
