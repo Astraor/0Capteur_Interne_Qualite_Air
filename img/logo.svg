@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <!-- La Bonne M’air : un M massif percé de deux arcs en plein cintre, comme les arcades de Notre-Dame de la Garde,
-       et pour apostrophe la statue dorée de la Bonne Mère (la Vierge couronnée, l'Enfant sur le bras). -->
-  <rect width="512" height="512" rx="115" fill="#0e1b24"/>
-  <path fill="#f3eee2" d="M93.18 432.37V162.03H157.16L217 302.36L276.85 162.03H340.82V432.37H287.17V327.13A24.76 24.76 0 0 0 237.64 327.13V432.37H196.37V327.13A24.76 24.76 0 0 0 146.84 327.13V432.37Z"/><g fill="#ecbb48" transform="translate(338.24 93.93) scale(1.03182)"><path d="M35.5 27.5V9.5l7 6.5L50 2.5l7.5 13.5 7-6.5v18c-4.3-1.7-9-2.6-14.5-2.6s-10.2.9-14.5 2.6z"/><path d="M50 25.5C57.5 25.5 63 31 63 39C63 45 65 49 69 52.5C79 56 89.5 63 90 76C90.5 88 84.5 97 77.5 100C76 101 75 103 75 106C75.5 140 72.5 190 69 236L31 236C27.5 190 24.5 140 25 104C24.5 80 25 66 31 56.5C34 52 37 47 37 39C37 31 42.5 25.5 50 25.5Z"/><circle cx="77.5" cy="56.5" r="11.5" stroke="#0e1b24" stroke-width="5.0" paint-order="stroke"/></g>
-</svg>

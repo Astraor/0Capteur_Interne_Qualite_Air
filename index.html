@@ -10,7 +10,7 @@
      Onglet : img/favicon.svg, puis animé par js/logo-led.js (il s'allume comme l'écran de la carte au démarrage, la statue
      scintille, et la barre montre le niveau ATMO du verdict : voir majFavicon) ; favicon.ico pour les anciens navigateurs ;
      icone-192 / icone-512 (Android) ; apple-touch-icon (iPhone, iPad). Fabriquées par outils/icones.html.
-     Le logo « M' » (img/logo.svg) reste celui de l'écran d'entrée et du pied de page. -->
+     Le même logo, animé, est aussi dans la page : écran d'entrée, introduction, chargement, pied de page. -->
 <link rel="icon" type="image/png" sizes="192x192" href="img/icone-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="img/icone-512.png">
 <link rel="icon" href="img/favicon.ico" sizes="16x16 32x32 48x48">
@@ -28,6 +28,14 @@
      On la revoit en cliquant sur « 00 » (ordinateur) ou sur « Introduction » (téléphone) dans le sommaire.
      L'accueil (01, verdict « L'air est… ») reste affiché : la page s'ouvre dessus. */
   try { if (localStorage.getItem("intro-vue") === "1") document.documentElement.classList.add("intro-masquee"); } catch (e) {}
+  /* Visites suivantes (introduction déjà vue) : écran de chargement avec le logo LED de la carte, affiché dès la première
+     image (voir initLogosLed). Sauf animations réduites. Filet de sécurité : il disparaît au bout de 12 s quoi qu'il arrive. */
+  (function () {
+    var r = document.documentElement;
+    if (!r.classList.contains("intro-masquee") || r.classList.contains("mouvement-reduit")) return;
+    r.classList.add("charge-led");
+    setTimeout(function () { r.classList.remove("charge-led", "charge-fin"); }, 12000);
+  })();
   setTimeout(function () {
     if (!window.__pret) document.documentElement.classList.remove("js");
   }, 6000);
@@ -206,7 +214,7 @@
     background: var(--encre); color: var(--fond); text-align: center; cursor: pointer;
   }
   .ep-int { max-width: 36ch; display: grid; justify-items: center; gap: 16px; }
-  .ep-logo { width: clamp(56px, 9vh, 76px); height: auto; border-radius: 22%; box-shadow: 0 10px 30px rgba(0, 0, 0, .35), 0 0 0 1px rgba(242, 244, 240, .12); }
+  .ep-logo { display: block; width: clamp(64px, 11vh, 96px); height: auto; aspect-ratio: 1; border-radius: 14%; box-shadow: 0 10px 30px rgba(0, 0, 0, .35), 0 0 0 1px rgba(242, 244, 240, .12); }
   .ep-sur { margin: 0; font: 600 .78rem/1.3 var(--mono); letter-spacing: .08em; text-transform: uppercase; opacity: .7; }
   .ep-titre { margin: 0; font-family: var(--titre); font-weight: 800; font-stretch: 78%; font-size: clamp(2.2rem, 9vw, 4rem); line-height: 1.02; text-transform: uppercase; text-wrap: balance; }
   .ep-texte { margin: 0; font-size: 1rem; line-height: 1.5; opacity: .85; }
@@ -248,27 +256,34 @@
     html.plein-dispo .hero { padding-bottom: calc(146px + env(safe-area-inset-bottom, 0px)); }   /* laisse la place à la barre de chapitres et au bouton */
   }
   @media print { .entree-plein, .bascule-plein { display: none !important; } }
-  /* Arrivée, juste après l'écran d'entrée : le logo de la carte s'allume sur un panneau de LED, comme l'écran de la carte
-     au démarrage (js/logo-led.js), puis tout s'efface sur la page. Un clic, un toucher ou une touche le passe. */
-  .splash-led {
-    position: fixed; inset: 0; z-index: 210; display: grid; place-items: center; padding: 24px;
+  /* Logo LED de la carte (js/logo-led.js) : un panneau de LED dans son boîtier, comme l'écran de la carte. Il s'allume
+     comme la carte au démarrage (basilique, « LA BONNE M'AIR », barre des niveaux), puis la statue scintille. */
+  .module-led {
+    padding: clamp(7px, 1.4vw, 16px); border-radius: clamp(14px, 2.6vw, 28px); background: #10262e;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1), 0 0 0 1px rgba(255, 255, 255, .05), 0 30px 70px -30px rgba(0, 0, 0, .8);
+  }
+  .panneau-led { padding: clamp(4px, 1vw, 10px); border-radius: clamp(8px, 1.5vw, 15px); background: #050b0d; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .05); }
+  .panneau-led canvas { display: block; width: 100%; height: auto; aspect-ratio: 2 / 1; }
+  /* Introduction : le panneau au-dessus du nom ; il s'allume quand l'introduction se découvre (après l'écran d'entrée)
+     et se rallume quand on y revient. */
+  .ouv-led { width: min(78vw, 540px, 58vh); margin-bottom: clamp(4px, 1.5vh, 14px); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1), 0 0 0 1px rgba(255, 255, 255, .05), 0 0 90px -20px rgba(0, 255, 230, .18); }
+  @supports (height: 100dvh) { .ouv-led { width: min(78vw, 540px, 58dvh); } }
+  /* Chargement (visites suivantes, la page s'ouvre sur les mesures) : le logo s'allume le temps que les mesures
+     arrivent, puis tout s'efface sur la page. Un clic ou une touche le passe. */
+  .chargement-led {
+    position: fixed; inset: 0; z-index: 210; display: none; place-items: center; align-content: center; gap: 22px; padding: 24px;
     background: radial-gradient(120% 90% at 50% 45%, #14313b 0%, var(--encre) 55%, #070f13 100%);
     cursor: pointer; transition: opacity .6s ease;
   }
-  .splash-led.sortie { opacity: 0; pointer-events: none; }
-  .splash-module {
-    width: min(88vw, 760px, calc((100vh - 64px) * 2)); width: min(88vw, 760px, calc((100dvh - 64px) * 2));
-    padding: clamp(9px, 1.8vw, 18px); border-radius: clamp(16px, 3vw, 30px); background: #10262e;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1), 0 0 0 1px rgba(255, 255, 255, .05), 0 40px 90px -30px rgba(0, 0, 0, .8);
-    animation: splash-entree .55s cubic-bezier(.2, .8, .2, 1) both; transition: transform .6s ease;
-  }
-  .splash-led.sortie .splash-module { transform: scale(1.04); }
-  .splash-panneau { padding: clamp(5px, 1.1vw, 11px); border-radius: clamp(9px, 1.6vw, 16px); background: #050b0d; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .05); }
-  .splash-panneau canvas { display: block; width: 100%; height: auto; aspect-ratio: 2 / 1; }
-  @keyframes splash-entree { from { opacity: 0; transform: scale(.94); } }
-  html.splash-ouvert { overflow: hidden; }
-  html.splash-ouvert .bascule-plein, html.splash-ouvert .aller-mesures { visibility: hidden; }
-  @media print { .splash-led { display: none !important; } }
+  html.charge-led .chargement-led { display: grid; }
+  html.charge-fin .chargement-led { opacity: 0; pointer-events: none; }
+  html.charge-led:not(.charge-fin) { overflow: hidden; }
+  html.charge-led:not(.charge-fin) .bascule-plein { visibility: hidden; }
+  .chargement-led .module-led { width: min(86vw, 640px, calc((100vh - 120px) * 2)); width: min(86vw, 640px, calc((100dvh - 120px) * 2)); animation: led-entree .55s cubic-bezier(.2, .8, .2, 1) both; transition: transform .6s ease; }
+  html.charge-fin .chargement-led .module-led { transform: scale(1.04); }
+  .chargement-texte { margin: 0; font: 600 .78rem/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: rgba(242, 244, 240, .6); animation: attente 1.4s ease-in-out infinite; }
+  @keyframes led-entree { from { opacity: 0; transform: scale(.94); } }
+  @media print { .chargement-led { display: none !important; } }
   /* Dès que le bandeau commence à se ranger (défilement), le bouton disparaît et le doigt redevient libre. */
   .hero.hors-jeu { touch-action: auto !important; }
   .hero.hors-jeu .jeu-poussiere { visibility: hidden; pointer-events: none; }
@@ -829,12 +844,10 @@
   .js .revele.vu { opacity: 1; transform: none; }
 
   /* ---------- Dernière mesure ---------- */
-  .squelette { display: grid; gap: 18px; }
-  .squelette i {
-    display: block; height: 64px; border-radius: 2px;
-    background: linear-gradient(100deg, var(--fond-2) 30%, #f8f9f6 50%, var(--fond-2) 70%);
-    background-size: 200% 100%; animation: brillance 1.4s linear infinite;
-  }
+  /* En attendant la dernière mesure : le logo de la carte se rallume en boucle */
+  .squelette { display: grid; justify-items: center; gap: 14px; padding: 26px 0 30px; }
+  .squelette .module-led { width: min(100%, 340px); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1), 0 16px 36px -22px rgba(14, 27, 36, .5); }
+  .squelette-texte { margin: 0; font: 600 .74rem/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--doux); animation: attente 1.4s ease-in-out infinite; }
   .rangee { display: grid; grid-template-columns: minmax(170px, 250px) 1fr; gap: 14px clamp(20px, 4vw, 56px); align-items: center; padding: 24px 0; border-top: 1px solid var(--filet); }
   .rangee:first-child { border-top: 0; padding-top: 4px; }
   .rangee-tete, .stat-tete { display: grid; justify-items: start; gap: 3px; }
@@ -1139,7 +1152,7 @@
     font-size: clamp(1.9rem, 5vw, 3.2rem); line-height: 1; color: #efe9dc; text-transform: uppercase;
     display: flex; align-items: center; gap: .32em;
   }
-  .pied-logo { flex: none; width: 1.25em; height: 1.25em; border-radius: 22%; box-shadow: 0 0 0 1px rgba(242, 244, 240, .14); }
+  .pied-logo { flex: none; display: block; width: 1.25em; height: 1.25em; border-radius: 14%; box-shadow: 0 0 0 1px rgba(242, 244, 240, .14); }
   .haut { font-size: .85rem; font-weight: 700; font-stretch: 115%; text-decoration: none; border-bottom: 2px solid currentColor; padding-bottom: 3px; }
   @media (max-width: 560px) { .pied-annee { margin-left: 0 !important; flex-basis: 100%; order: 3; } }
 
@@ -1243,7 +1256,7 @@
      mais les fondus restent. Le réglage du système n'est volontairement pas suivi (voir le <head>). ---------- */
   html.mouvement-reduit { scroll-behavior: auto; }
   html.mouvement-reduit :is(.hero-disque, .tampon svg, .tampon-point, .descendre span,
-    .squelette i, .mot.attente #verdict-lettres) { animation: none; }
+    .squelette-texte, .chargement-texte, .mot.attente #verdict-lettres) { animation: none; }
   html.mouvement-reduit .statut .point .onde .anneau { display: none; }
   html.mouvement-reduit .tampon-point { transform: scale(.6667); }   /* point dessiné à 21 px : taille de repos (14 px) sans animation */
   html.mouvement-reduit .lettre { animation: fondu .6s ease both; animation-delay: calc(var(--i, 0) * 30ms + 100ms); }
@@ -1282,7 +1295,7 @@
 
 <div class="entree-plein" id="entree-plein" role="dialog" aria-modal="true" aria-labelledby="ep-titre" hidden>
   <div class="ep-int">
-    <img class="ep-logo" src="img/logo.svg" alt="La Bonne M’air" width="64" height="64" decoding="async">
+    <canvas class="ep-logo" id="ep-logo" width="96" height="96" role="img" aria-label="La Bonne M’air"></canvas>
     <p class="ep-sur" data-i18n="ep.sur">Qualité de l'air · mesures en direct</p>
     <h2 id="ep-titre" class="ep-titre" data-i18n="ep.titre">Pour une meilleure visibilité</h2>
     <p class="ep-texte" data-i18n-html="ep.texte">Touchez ou cliquez n'importe où pour passer en plein écran. <kbd>Échap</kbd> ou le bouton en bas à droite permet d'en sortir.</p>
@@ -1297,9 +1310,10 @@
   </div>
 </div>
 
-<!-- Arrivée : le logo de la carte s'allume (même animation que son écran LED au démarrage), après l'écran d'entrée -->
-<div class="splash-led" id="splash-led" aria-hidden="true" hidden>
-  <div class="splash-module"><div class="splash-panneau"><canvas id="splash-canvas"></canvas></div></div>
+<!-- Chargement (visites suivantes) : le logo de la carte s'allume le temps que les mesures arrivent -->
+<div class="chargement-led" id="chargement-led" aria-hidden="true">
+  <div class="module-led"><div class="panneau-led"><canvas id="chargement-canvas"></canvas></div></div>
+  <p class="chargement-texte" data-i18n="etat.chargement">Chargement…</p>
 </div>
 
 <button type="button" class="bascule-plein" id="bascule-plein" aria-label="Passer en plein écran" title="Passer en plein écran">
@@ -1340,6 +1354,7 @@
     </div>
 
     <div class="ouv-marque" id="ouv-marque">
+      <div class="module-led ouv-led" aria-hidden="true"><div class="panneau-led"><canvas id="ouv-led"></canvas></div></div>
       <p class="ouv-sur" data-i18n="ouv.sur">Surveillance de la qualité de l'air intérieur</p>
       <h2 class="marque-nom" id="ouverture-titre">La Bonne M’air</h2>
       <p class="ouv-sous" data-i18n="ouv.sous">Le capteur qui veille sur l’air que vous respirez.</p>
@@ -1595,9 +1610,8 @@
 
     <div class="bloc-corps revele" style="--d:1">
       <div class="squelette" id="squelette" aria-hidden="true">
-        <i></i>
-        <i></i>
-        <i></i>
+        <div class="module-led"><div class="panneau-led"><canvas id="squelette-led"></canvas></div></div>
+        <p class="squelette-texte" data-i18n="etat.chargement">Chargement…</p>
       </div>
 
       <div id="valeurs">
@@ -1752,7 +1766,7 @@
     <!-- En-tête : nom, phrase, état du capteur en direct (recopié du bandeau) -->
     <div class="pied-tete">
       <div>
-        <p class="pied-marque"><img class="pied-logo" src="img/logo.svg" alt="" width="64" height="64" loading="lazy" decoding="async">La Bonne M’air</p>
+        <p class="pied-marque"><canvas class="pied-logo" id="pied-logo" width="64" height="64" aria-hidden="true"></canvas>La Bonne M’air</p>
         <p class="pied-devise" data-i18n="pied.devise">Le capteur qui veille sur l’air que vous respirez, installé à Marseille.</p>
       </div>
       <p class="pied-statut" id="pied-statut" aria-hidden="true"><span class="point"><svg class="onde" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><circle class="coeur" cx="16" cy="16" r="5"></circle><circle class="anneau" cx="16" cy="16" r="4"></circle></svg></span><span id="pied-statut-texte">—</span></p>
@@ -1843,8 +1857,8 @@
 <script src="lang/en.js?v=20261124b"></script>
 <script src="lang/ja.js?v=20261124b"></script>
 <script src="js/i18n.js?v=20261124b"></script>
-<!-- Logo LED de la carte : onglet animé et animation d'arrivée (lancerArrivee) -->
-<script src="js/logo-led.js?v=20261124"></script>
+<!-- Logo LED de la carte : onglet animé, écran d'entrée, introduction, chargement, pied de page (initLogosLed) -->
+<script src="js/logo-led.js?v=20261124c"></script>
 
 <script>
 window.__pret = true;   // dit à la page que le script a bien démarré (voir le <head>)
@@ -4069,6 +4083,7 @@ function afficherTout() {
   animerProchain = false;
 
   document.getElementById("squelette").hidden = true;
+  finChargement();
   const plusRecent = afficherDerniere(stats, pasRef);
   tDerniere = plusRecent;
   pasAffiche = pasRef;
@@ -4226,33 +4241,61 @@ function sortirPleinEcran() {
   } catch (err) { /* déjà sorti */ }
 }
 
-// Arrivée : juste après l'écran d'entrée (plein écran ou non), le logo de la carte s'allume sur un panneau de LED, comme
-// l'écran de la carte au démarrage (js/logo-led.js : basilique, « LA BONNE M'AIR », barre des niveaux, statue qui
-// scintille), reste affiché un instant, puis s'efface sur la page (~4 s en tout). Un clic, un toucher ou une touche le
-// passe. Animations réduites (bouton du pied de page) : pas d'animation d'arrivée.
-function lancerArrivee() {
-  const voile = document.getElementById("splash-led");
-  const cv = document.getElementById("splash-canvas");
+// =====================================================================
+// Logo LED de la carte dans la page (js/logo-led.js)
+// =====================================================================
+// Le logo de démarrage de l'écran de la carte, animé, à plusieurs endroits :
+//   - écran d'entrée et pied de page : logo carré (comme l'icône d'onglet), qui s'allume quand il arrive à l'écran ;
+//   - introduction : le panneau 64 x 32 au-dessus du nom ; il s'allume quand l'introduction se découvre (écran d'entrée
+//     fermé, ou tout de suite sans écran d'entrée) et se rallume quand on remonte jusqu'à lui ;
+//   - chargement (visites suivantes, la page s'ouvre sur les mesures) : plein écran, le temps que les mesures arrivent ;
+//   - « Dernière mesure » en attente : le panneau se rallume en boucle.
+// Ensuite, la statue scintille de temps en temps (seulement quand le logo est à l'écran).
+let introLed = null, squeletteLed = null;
+const chargementLed = { logo: false, donnees: false, fini: false, ctl: null };
+
+function initLogosLed() {
   const racine = document.documentElement;
-  if (!voile) return;
-  if (!cv || !window.LogoLED || racine.classList.contains("mouvement-reduit")) { voile.remove(); return; }
-  let arreter = null, pause = 0, secours = 0, fini = false;
-  const finir = () => {
-    if (fini) return;
-    fini = true;
-    clearTimeout(pause); clearTimeout(secours);
-    document.removeEventListener("keydown", finir, true);
-    racine.classList.remove("splash-ouvert");
-    voile.classList.add("sortie");
-    setTimeout(() => { if (arreter) arreter(); voile.remove(); }, 650);
-  };
-  voile.hidden = false;
-  racine.classList.add("splash-ouvert");
-  voile.addEventListener("click", finir);
-  document.addEventListener("keydown", finir, true);
-  // le canvas n'a sa taille qu'une fois affiché ; logo complet : on le laisse admirer 1,2 s
-  requestAnimationFrame(() => { if (!fini) arreter = LogoLED.animerPanneau(cv, () => { pause = setTimeout(finir, 1200); }); });
-  secours = setTimeout(finir, LogoLED.DUREE_PANNEAU_MS + 4000);   // onglet passé en arrière-plan, etc.
+  if (!window.LogoLED) { fermerChargement(true); return; }
+  const cv = id => document.getElementById(id);
+  if (cv("ep-logo")) LogoLED.creer(cv("ep-logo"), { forme: "carre", scintiller: true, aVue: true });
+  if (cv("pied-logo")) LogoLED.creer(cv("pied-logo"), { forme: "carre", scintiller: true, aVue: true });
+  if (cv("ouv-led")) { introLed = LogoLED.creer(cv("ouv-led"), { forme: "panneau", scintiller: true }); introLed.eteindre(); }
+  if (cv("squelette-led")) squeletteLed = LogoLED.creer(cv("squelette-led"), { forme: "panneau", boucle: true, aVue: true });
+  // Écran de chargement : affiché dès la première image par le script du <head> (classe charge-led)
+  const voile = cv("chargement-led");
+  if (!racine.classList.contains("charge-led") || !voile) { fermerChargement(true); return; }
+  chargementLed.ctl = LogoLED.creer(cv("chargement-canvas"), { forme: "panneau", scintiller: true });
+  chargementLed.ctl.demarrer(() => setTimeout(() => { chargementLed.logo = true; fermerChargement(); }, 500));
+  voile.addEventListener("click", () => fermerChargement(true));
+  document.addEventListener("keydown", () => fermerChargement(true), { capture: true, once: true });
+}
+
+// Le voile de chargement part quand le logo est complet ET que les mesures (ou une erreur) sont arrivées.
+function fermerChargement(force) {
+  const c = chargementLed, racine = document.documentElement;
+  if (c.fini || (!force && !(c.logo && c.donnees))) return;
+  c.fini = true;
+  if (!racine.classList.contains("charge-led")) return;
+  racine.classList.add("charge-fin");
+  setTimeout(() => {
+    racine.classList.remove("charge-led", "charge-fin");
+    if (c.ctl) c.ctl.figer();
+    const voile = document.getElementById("chargement-led");
+    if (voile) voile.remove();
+  }, 650);
+}
+// Appelée à la première réponse (mesures, aucune mesure ou erreur).
+function finChargement() {
+  chargementLed.donnees = true;
+  fermerChargement();
+  if (squeletteLed) squeletteLed.figer();
+}
+
+// L'introduction se découvre : son logo s'allume (s'il ne l'est pas déjà, ou pour le rallumer)
+function allumerIntro() {
+  if (!introLed || document.documentElement.classList.contains("intro-masquee")) return;
+  introLed.demarrer();
 }
 
 function initPleinEcran() {
@@ -4262,8 +4305,8 @@ function initPleinEcran() {
   if (!pleinEcranDispo()) {
     if (porte) porte.remove();
     if (bascule) bascule.remove();
-    // pas d'écran d'entrée sur cet appareil (iPhone…) : l'arrivée se joue tout de suite, à la première visite
-    if (!racine.classList.contains("intro-masquee")) lancerArrivee();
+    // pas d'écran d'entrée sur cet appareil (iPhone…) : le logo de l'introduction s'allume tout de suite
+    allumerIntro();
     return;
   }
   racine.classList.add("plein-dispo");
@@ -4303,12 +4346,12 @@ function initPleinEcran() {
   // Introduction déjà vue (visite précédente) : pas d'écran d'entrée, on arrive directement sur les mesures.
   // Le bouton en bas à droite permet toujours de passer en plein écran.
   if (porte && racine.classList.contains("intro-masquee")) { porte.remove(); return; }
-  if (!porte || enPleinEcran()) return;
+  if (!porte || enPleinEcran()) { allumerIntro(); return; }
   const fermer = () => {
     if (porte.hidden) return;
     porte.hidden = true;
     racine.classList.remove("gate-ouvert");
-    lancerArrivee();
+    allumerIntro();   // l'introduction se découvre : le logo de la carte s'allume
   };
   porte.hidden = false;
   racine.classList.add("gate-ouvert");
@@ -5150,9 +5193,16 @@ function initStoryScrolling() {
   //   0,16 → 0,5  : l'affiche se dévoile (fondu, léger zoom arrière, flou qui se dissipe sur ordinateur) ;
   //   0,5  → 0,84 : la phrase « Comme la Bonne Mère… » ;
   //   0,84 → 1    : l'affiche s'efface vers le bandeau des mesures.
+  let marqueCachee = false;
   function ecrireOuverture(p) {
     const e = ouvEl;
     const sortie = borne((p - 0.1) / 0.2);
+    // on remonte jusqu'au nom après l'avoir dépassé : le logo de la carte se rallume
+    const cachee = sortie >= 1;
+    if (cachee !== marqueCachee) {
+      marqueCachee = cachee;
+      if (!cachee && introLed && introLed.etat !== "eteint" && !reduit()) introLed.demarrer();
+    }
     if (e.marque) {
       e.marque.style.opacity = (1 - sortie).toFixed(3);
       e.marque.style.scale = (1 - sortie * 0.16).toFixed(4);
@@ -5690,6 +5740,7 @@ async function rafraichir() {
     if (!resultat) {
       viderTout();
       document.getElementById("squelette").hidden = true;
+      finChargement();
       definirStatut("erreur", () => trad("statut.vide"));
       afficherVerdictVide();
       majEtat("etat erreur", () => trad("etat.aucune_mesure"));
@@ -5702,6 +5753,7 @@ async function rafraichir() {
     tDerniere = 0;   // le minuteur des « il y a X min » ne doit pas écraser ce message d'erreur
     definirStatut("erreur", () => trad("statut.indispo"));
     majEtat("etat erreur", () => trad("etat.erreur", { message: texteErreur(erreur) }));
+    finChargement();
     if (!cache) {
       document.getElementById("squelette").hidden = true;
       sectionsDonnees().forEach(s => { s.hidden = true; });
@@ -6371,6 +6423,7 @@ function revoirIntro() {
   securise(majDefilement);
   securise(majEtoilesOuverture);
   try { window.scrollTo({ top: 0, behavior: "instant" }); } catch (err) { window.scrollTo(0, 0); }
+  allumerIntro();
 }
 
 // Téléphone (< 600 px) : la barre reste collée en haut, se range quand on descend et revient quand on remonte.
@@ -6439,6 +6492,7 @@ function demarrer() {
   securise(initFigureParticules);
   securise(initEtoilesOuverture);
   securise(initBoutonAnimations);
+  securise(initLogosLed);   // avant initPleinEcran : le logo de l'introduction doit exister quand l'écran d'entrée se ferme
   securise(initPleinEcran);
   securise(initAllerMesures);
   securise(initIntroVue);

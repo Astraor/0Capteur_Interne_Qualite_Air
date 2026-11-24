@@ -5,8 +5,9 @@
    « LA BONNE M'AIR » écrit lettre à lettre, la barre des 6 niveaux qui se remplit, la statue qui scintille.
 
    Deux formats :
-   - panneau : l'écran de la carte, 64 x 32 LED (animation d'arrivée, après l'écran d'entrée) ;
-   - carré   : 32 x 32 LED pour les icônes (onglet, téléphone, tablette). Même basilique, même police, mêmes couleurs ;
+   - panneau : l'écran de la carte, 64 x 32 LED (introduction, écran de chargement, attente de la dernière mesure) ;
+   - carré   : 32 x 32 LED pour les icônes (onglet, téléphone, tablette), l'écran d'entrée et le pied de page. Même
+               basilique, même police, mêmes couleurs ;
                « M' » en grand, « AIR » en petit, et la barre des niveaux en bas à droite.
 
    Onglet : le logo carré s'anime au chargement de la page (comme la carte au démarrage), puis la statue scintille de
@@ -156,6 +157,9 @@
     if (!w || !h) return;
     if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
     const ctx = cv.getContext("2d");
+    // logo carré affiché petit (moins de 5 pixels par LED : écran d'entrée, pied de page) : dessiné comme l'icône
+    // d'onglet (carrés nets sur fond arrondi), les points ronds y seraient flous
+    if (g.l === g.h && w === h && w / g.l < 5) { peindreIcone(ctx, g, w, true); return; }
     ctx.clearRect(0, 0, w, h);
     peindre(ctx, g, 0, 0, w / g.l, "led");
   }
@@ -252,22 +256,71 @@
     return { demarrer, niveau };
   })();
 
-  // ---------- Panneau animé (animation d'arrivée) : rejoue le démarrage de la carte dans un canvas.
-  // Renvoie une fonction qui arrête l'animation. fin() est appelée quand le logo est complet.
-  function animerPanneau(cv, fin) {
-    let image = panneau({ rangs: 32, lettres: 13, niveaux: 6, eclat: false, seul: -1 });
-    const surTaille = () => peindreCanvas(cv, image);
-    window.addEventListener("resize", surTaille);
-    if (animationsReduites()) { surTaille(); if (fin) fin(); return () => window.removeEventListener("resize", surTaille); }
-    const arreter = jouer(ETAPES_PANNEAU, ([, rangs, lettres, niveaux, eclat]) => {
-      image = panneau({ rangs, lettres, niveaux, eclat, seul: -1 });
-      peindreCanvas(cv, image);
-    }, fin);
-    return () => { arreter(); window.removeEventListener("resize", surTaille); };
+  // ---------- Logos vivants dans la page (introduction, chargement, écran d'entrée, pied de page)
+  // creer(canvas, options) pilote un logo dans un canvas affiché :
+  //   forme      : "panneau" (l'écran de la carte, 64 x 32) ou "carre" (32 x 32, comme l'icône d'onglet) ;
+  //   scintiller : logo complet, la statue scintille de temps en temps (seulement s'il est à l'écran) ;
+  //   boucle     : le démarrage se rejoue sans fin (attente de données), seulement s'il est à l'écran ;
+  //   aVue       : le démarrage se joue la première fois que le logo arrive à l'écran.
+  // Méthodes : eteindre() (toutes les LED éteintes), demarrer(fin) (rejoue le démarrage de la carte ; fin() quand le
+  // logo est complet), figer() (logo complet, plus d'animation). Le canvas est repeint à chaque changement de taille.
+  // Animations réduites (bouton du pied de page) : logo complet tout de suite, sans éclat ni boucle.
+  function creer(cv, opts) {
+    opts = opts || {};
+    const estCarre = opts.forme === "carre";
+    const dessin = estCarre ? carre : panneau;
+    const etapesLogo = estCarre ? ETAPES_CARRE : ETAPES_PANNEAU;
+    const complet = { rangs: 32, lettres: estCarre ? 5 : 13, niveaux: 6, eclat: false, seul: -1 };
+    let image = dessin(complet), arreter = null, minuterie = 0, visible = false, enAttente = false, vu = false;
+    let etat = "complet";
+    const repeindre = () => peindreCanvas(cv, image);
+    const poser = (e) => { image = dessin(e); repeindre(); };
+    function stop() { if (arreter) { arreter(); arreter = null; } clearTimeout(minuterie); enAttente = false; }
+    // après le démarrage : éclats (scintiller) ou nouveau démarrage (boucle), seulement si le logo est vu
+    function suite() {
+      if (animationsReduites()) return;
+      if (opts.boucle) { minuterie = setTimeout(() => (visible && !document.hidden ? ctl.demarrer() : (enAttente = true)), 1300); return; }
+      if (!opts.scintiller) return;
+      minuterie = setTimeout(() => {
+        if (!visible || document.hidden) { enAttente = true; return; }
+        arreter = jouer([[0, 1], [140, 0], [280, 1], [420, 0]],
+          (e) => poser(Object.assign({}, complet, { eclat: e[1] === 1 })), () => { arreter = null; suite(); });
+      }, 5000 + Math.random() * 4000);
+    }
+    const ctl = {
+      eteindre() { stop(); etat = "eteint"; poser({ rangs: 0, lettres: 0, niveaux: 0, eclat: false, seul: -1 }); },
+      demarrer(fin) {
+        stop();
+        if (animationsReduites()) { etat = "complet"; poser(complet); if (fin) fin(); return; }
+        etat = "anime";
+        arreter = jouer(etapesLogo, ([, rangs, lettres, niveaux, eclat]) => poser({ rangs, lettres, niveaux, eclat, seul: -1 }),
+          () => { arreter = null; etat = "complet"; if (fin) fin(); suite(); });
+      },
+      figer() { stop(); etat = "complet"; poser(complet); },
+      get etat() { return etat; },
+    };
+    // Taille : repeint dès que le canvas change de taille (fenêtre, plein écran, élément qui réapparaît).
+    if ("ResizeObserver" in window) new ResizeObserver(repeindre).observe(cv);
+    else window.addEventListener("resize", repeindre);
+    // À l'écran ou non : les éclats et la boucle attendent que le logo soit vu.
+    if ("IntersectionObserver" in window) {
+      new IntersectionObserver(([e]) => {
+        visible = e.isIntersecting;
+        if (!visible) return;
+        if (opts.aVue && !vu) { vu = true; ctl.demarrer(); return; }
+        if (enAttente) { enAttente = false; suite(); }
+      }).observe(cv);
+    } else {
+      visible = true;
+      if (opts.aVue) ctl.demarrer();
+    }
+    document.addEventListener("visibilitychange", () => { if (!document.hidden && visible && enAttente) { enAttente = false; suite(); } });
+    if (opts.aVue) ctl.eteindre(); else repeindre();
+    return ctl;
   }
 
   window.LogoLED = {
-    panneau, carre, peindreIcone, peindreCanvas, animerPanneau,
+    panneau, carre, peindreIcone, peindreCanvas, creer,
     onglet, ETAPES_PANNEAU, ETAPES_CARRE, FOND_PANNEAU, TITRE,
     DUREE_PANNEAU_MS: ETAPES_PANNEAU[ETAPES_PANNEAU.length - 1][0],
   };
