@@ -382,6 +382,8 @@ function demarrer() {
 function heure(t) { return new Date(t).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }); }
 function classeLigne(txt) {
   if (/^(>|»)/.test(txt)) return "cmd";
+  const bilan = /(\d+) ok \/ (\d+) échecs?/.exec(txt);      // « 42 ok / 0 échecs » : rouge seulement s'il y en a
+  if (bilan) return Number(bilan[2]) > 0 ? "err" : "";
   if (/^──/.test(txt)) return "sep";
   if (/^\[sécurité\]/.test(txt)) return "err";
   if (/erreur|échec|échoué|refusée?\b|REFUSÉE|ANNULÉE|impossible(?!s)|injoignable|perdue\(s\)/i.test(txt)) return "err";
