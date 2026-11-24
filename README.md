@@ -83,12 +83,12 @@ Sans réseau, la mesure est rangée en flash puis renvoyée plus tard avec son �
 .
 ├── index.html                  # Site web (page unique : HTML + CSS + JS)
 ├── js/i18n.js                  # Moteur de traduction (sans dépendance)
-├── js/logo-led.js              # Logo LED de la carte : onglet animé, animation d'arrivée
+├── js/logo-led.js              # Logo LED de la carte : onglet, écran d'entrée, introduction, chargement, pied de page
 ├── lang/
 │   ├── fr.js                   # Textes en français (langue d'origine)
 │   ├── en.js                   # Anglais
 │   └── ja.js                   # Japonais
-├── img/                        # Affiche (900 et 1696 px), logo M’ (logo.svg), icônes LED (favicon.svg / .ico, icone-192 / 512, icône iPhone)
+├── img/                        # Affiche (900 et 1696 px), icônes LED (favicon.svg / .ico, icone-192 / 512, icône iPhone)
 ├── outils/icones.html          # Outil : fabrique les icônes de img/ depuis js/logo-led.js (non publié)
 ├── patch-lang.js               # Outil : met à jour des clés de traduction dans les 3 langues
 ├── Firmware/
@@ -276,7 +276,12 @@ Page unique, sans framework, hébergée sur **GitHub Pages** (branche `main`, ra
 - **Confort :** écran d’entrée plein écran, bouton flottant « Aller aux mesures » pour sauter l’introduction, animations réductibles, mise à jour automatique toutes les 5 min.
 - **Logo LED de la carte** (`js/logo-led.js`, même dessin pixel par pixel que l’animation de démarrage de la carte et que la console) :
   - **onglet animé** : au chargement, la basilique monte, « M’AIR » s’écrit, la barre des niveaux se remplit, la statue scintille (puis toutes les 9 s) ; dès qu’une mesure arrive, la barre n’allume que le niveau ATMO du verdict, comme la jauge de la carte ;
-  - **animation d’arrivée** : juste après l’écran plein écran (ou dès la 1re visite sur iPhone, qui n’a pas cet écran), le logo complet s’allume sur un panneau de LED 64 × 32 (~4 s, un clic ou une touche le passe ; rien si les animations sont réduites) ;
+  - **dans la page**, le même logo animé partout (rien d’animé si les animations sont réduites) :
+    - **écran d’entrée** et **pied de page** : logo carré qui s’allume en arrivant à l’écran ;
+    - **introduction** : panneau de LED 64 × 32 au-dessus du nom, qui s’allume quand l’introduction se découvre (écran d’entrée fermé, ou tout de suite sur iPhone) et se rallume quand on remonte jusqu’à lui ;
+    - **chargement** (visites suivantes, la page s’ouvre sur les mesures) : le logo s’allume en plein écran le temps que les mesures arrivent (un clic ou une touche le passe, 12 s au plus) ;
+    - **« Dernière mesure » en attente** : le panneau se rallume en boucle ;
+    - au repos, la statue scintille de temps en temps ;
   - **icônes fixes** (ordinateur, tablette, téléphone) : `favicon.svg`, `favicon.ico` (16, 32, 48 px), `icone-192.png` / `icone-512.png` (Android), `apple-touch-icon.png` (iPhone, iPad), fabriquées par `outils/icones.html`.
 - **Pied de page :** le trajet détaillé d’une mesure en 5 étapes (capteurs → carte → serveur AirCarto → relais Cloudflare → cette page), la veille GitHub Actions et la console à côté, puis les mesures (grandeurs, cadence, incertitude) et toutes les sources avec liens (FR, EN, JA).
 - **Mise à jour légère :** toutes les 5 min, le site ne redemande que les mesures arrivées depuis la requête précédente (quelques Ko au lieu de ~2,4 Mo pour 24 h ; Cloudflare compresse au passage ce que l'API AirCarto envoie brut) ; le résultat est identique à un rechargement complet.
