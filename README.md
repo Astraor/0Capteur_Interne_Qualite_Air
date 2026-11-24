@@ -179,18 +179,18 @@ Sans câble, seules les commandes **sans secret, sans effacement et sans effet d
 | `NEXTPM_MOYENNE_60S` | 0 | Moyennes NextPM sur 10 s (0) ou 60 s (1) |
 | `ECRAN_ETEINT_NUIT` | 0 | Écran éteint la nuit |
 | `DOUBLE_BUFFER` | 1 | Dessin sans scintillement |
-| `TRANSITION_FONDU` | 1 | Fondu entre les pages |
+| `TRANSITION_FONDU` | 1 | Fondu au noir entre les pages (~3 s ; ~0,7 s vers / depuis la page ÉTAT), sans bloquer la carte |
 | `ANIMATIONS` | 0 | Clignements, chiffres qui glissent |
-| `AFFICHER_ETAT` | 1 | Page ÉTAT (heure + icônes Wi-Fi / serveur / capteurs) toutes les 15 s, pendant 3 s |
+| `AFFICHER_ETAT` | 1 | Page ÉTAT (heure + icônes Wi-Fi / serveur / capteurs) toutes les 3 pages, pendant 3 s |
 | `CONSOLE_DISTANTE` | 1 | Journal, commandes et mises à jour par le relais Cloudflare |
 | `BLUETOOTH_ACTIF` | 1 | Console Bluetooth (code d'appairage affiché sur l'écran) |
 
 ### Écran LED
 
 - **Démarrage :** logo animé « LA BONNE M’AIR ».
-- **Pages (une mesure par écran, 5 s chacune) :** CO₂ · AÉRER (si CO₂ > 1 000 ppm) · PM1 · PM2.5 · PM10 · indice ATMO · courbe du CO₂ (dernière heure) · Wi-Fi (seulement hors ligne).
+- **Pages (une mesure par écran, 5 s chacune en pleine lumière, fondu au noir de ~3 s entre deux) :** CO₂ · AÉRER (si CO₂ > 1 000 ppm) · PM1 · PM2.5 · PM10 · indice ATMO · courbe du CO₂ (dernière heure) · Wi-Fi (seulement hors ligne).
 - **Page de mesure :** nom et unité en haut, filet à la couleur du niveau, valeur en grand avec un visage qui change d’expression, puis la **jauge des niveaux ATMO**, fine (6 segments pour les PM, 4 pour le CO₂) : le niveau atteint est allumé, les autres restent en sourdine, et un **curseur** ▲ détaché de la jauge, à la couleur du niveau, indique la position exacte de la valeur dans son niveau.
-- **Page ÉTAT (toutes les 15 s, pendant 3 s) :** heure et date, puis trois grandes icônes colorées (vert = OK, orange = à surveiller, rouge = problème) : **Wi-Fi** (arcs selon le signal, en dBm), **serveur** (nuage : envoi OK, nombre de mesures en attente, clé refusée) et **capteurs** (ventilateur : OK, préchauffage, panne, à calibrer). Réglable avec `PERIODE_ETAT_MS` et `DUREE_ETAT_MS`.
+- **Page ÉTAT (toutes les 3 pages, pendant 3 s, fondu court de ~0,7 s) :** heure et date, puis trois grandes icônes colorées (vert = OK, orange = à surveiller, rouge = problème) : **Wi-Fi** (arcs selon le signal, en dBm), **serveur** (nuage : envoi OK, nombre de mesures en attente, clé refusée) et **capteurs** (ventilateur : OK, préchauffage, panne, à calibrer). Réglable avec `PERIODE_ETAT_MS` et `DUREE_ETAT_MS`.
 - **Couleurs :** chaque valeur prend la couleur de son niveau ATMO.
 - **Alerte hors norme :** dès qu’un polluant atteint son seuil d’alerte (PM : « Mauvais », CO₂ : > 1 000 ppm), l’écran saute aussitôt sur sa page, clignote à la couleur du niveau, puis la valeur pulse ; la page revient une fois sur deux tant que l’alerte dure.
 - **Luminosité adaptée :** 10 niveaux réglables (`lum`), un pour le jour et un pour la nuit (22 h → 7 h par défaut, `nuit`), bridée sur batterie.
