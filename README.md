@@ -140,7 +140,7 @@ Aucun identifiant n’est écrit dans le code : tout est enregistré dans la mé
 | `maj oublier` | Réautorise une version qui a échoué sur la carte (câble USB) |
 | `bt appairer` | Autorise un **nouveau** téléphone Bluetooth pendant 2 min |
 | `bt demarrage on` / `off` | Autorise aussi un nouveau téléphone pendant 2 min après chaque mise sous tension (désactivé par défaut) |
-| `bt liste` · `bt oublier <n>` | Téléphones appairés ; en oublier **un seul** |
+| `bt liste` · `bt oublier <n>` | Téléphones appairés (**5 au maximum** en mémoire, un seul connecté à la fois) ; en oublier **un seul** |
 | `bt oublier` | Efface tous les téléphones Bluetooth appairés |
 | `lum` · `lum +` · `lum -` | Luminosité de l'écran (10 niveaux) : `+` / `-` règlent la période en cours, jour ou nuit — **câble USB ou Bluetooth** |
 | `lum jour <1..10>` · `lum nuit <1..10>` · `lum defaut` | Niveau précis de jour / de nuit (par défaut : jour 10, nuit 2), gardé en mémoire |

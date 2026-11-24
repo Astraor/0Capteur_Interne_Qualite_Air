@@ -3179,7 +3179,7 @@ class BtServeur : public NimBLEServerCallbacks {
   }
 };
 
-// Mémoire des appairages pleine (3 téléphones) : NimBLE effacerait le plus ancien pour faire de la place. Hors de la
+// Mémoire des appairages pleine (5 téléphones, CONFIG_BT_NIMBLE_MAX_BONDS) : NimBLE effacerait le plus ancien pour faire de la place. Hors de la
 // fenêtre d'appairage, on refuse : personne ne peut pousser dehors les téléphones déjà appairés.
 class BtStockage : public NimBLEDeviceCallbacks {
   int onStoreStatus(struct ble_store_status_event* e, void* arg) override {
