@@ -125,7 +125,7 @@
 #define MASQUER_SECRETS           0  // 1 = les mots de passe saisis s'affichent en ****
 #define DOUBLE_BUFFER             1  // 1 = dessin sans scintillement | 0 si l'écran reste noir ou s'affiche mal
 #define ANIMATIONS                0  // 1 = clignement, chiffres qui glissent, sommet de courbe qui clignote | 0 = calme
-#define TRANSITION_FONDU          1  // 1 = fondu au noir (~0,2 s) entre deux pages | 0 = changement sec
+#define TRANSITION_FONDU          1  // 1 = fondu au noir entre deux pages (~3 s, ~0,7 s vers / depuis ÉTAT) | 0 = sec
 #ifndef AIRCARTO_HTTPS
 #define AIRCARTO_HTTPS            1  // 1 = mesures envoyées en HTTPS (clé chiffrée, serveur vérifié) | 0 = HTTP simple
                                      //     (clé du groupe lisible sur le réseau : seulement si le HTTPS pose problème)
@@ -425,10 +425,20 @@ static const uint8_t PALETTE[NB_NIVEAUX][3] = {
 // en deux lignes à l'espace ("TRES" / "MAUVAIS").
 static const char* LABELS_NIVEAU[NB_NIVEAUX] = {"BON", "MOYEN", "DEGRADE", "MAUVAIS", "TRES MAUVAIS", "EXTREM. MAUVAIS"};
 
-// --- Écran : page ÉTAT et animations ---
-// Page ÉTAT (icônes) : revient après PERIODE_ETAT_MS passées sur les autres pages (3 pages de 5 s), reste DUREE_ETAT_MS.
-// Les mesures gardent ainsi 5 secondes sur 6 ; l'état (Wi-Fi, envoi, capteurs) change rarement : un coup d'oeil suffit.
-static const unsigned long PERIODE_ETAT_MS = 15000;
+// --- Écran : fondu entre les pages, page ÉTAT et animations ---
+// Fondu au noir entre deux pages : l'ancienne s'éteint en FONDU_DEMI_MS, la nouvelle s'allume en FONDU_DEMI_MS
+// (~3 s en tout). Vers ou depuis la page ÉTAT (icônes), et du logo de démarrage à la 1re page : ~0,7 s.
+// Le fondu ne compte pas dans la durée d'une page : chacune reste ensuite INTERVALLE_PAGE_MS en pleine lumière.
+#if TRANSITION_FONDU
+static const unsigned long FONDU_DEMI_MS       = 1500;
+static const unsigned long FONDU_COURT_DEMI_MS = 350;
+#else
+static const unsigned long FONDU_DEMI_MS       = 0;
+static const unsigned long FONDU_COURT_DEMI_MS = 0;
+#endif
+// Page ÉTAT (icônes) : revient après 3 pages de mesure (PERIODE_ETAT_MS, fondus compris), reste DUREE_ETAT_MS.
+// L'état (Wi-Fi, envoi, capteurs) change rarement : un coup d'oeil suffit.
+static const unsigned long PERIODE_ETAT_MS = 3 * INTERVALLE_PAGE_MS + 4 * FONDU_DEMI_MS;
 static const unsigned long DUREE_ETAT_MS   = 3000;
 static const unsigned long ANIM_PAS_MS = 40;           // une image d'animation toutes les 40 ms (25 i/s)
 
@@ -826,6 +836,19 @@ bool aRedessiner = false;  // un seul redessin par tour de loop()
 bool aTransition = false;  // fondu à faire au prochain affichage (changement de page)
 bool ecranEteint = false;
 uint8_t luminositeCourante = 255;  // luminosité choisie par majLuminosite (le fondu y revient)
+// Fondu en cours (sans bloquer loop() : majFondu() avance à chaque tour) : 0 = aucun, 1 = l'ancienne page s'éteint,
+// 2 = la nouvelle s'allume. allongementPage : durée du fondu qui a amené la page courante (ajoutée à sa durée).
+uint8_t phaseFondu = 0;
+unsigned long tFondu = 0, demiFondu = 0, allongementPage = 0;
+bool fonduCourt = false;          // prochain fondu court (~0,7 s) : logo de démarrage, fin du code Bluetooth
+uint8_t pageAvantFondu = 0;       // page quittée (ÉTAT -> fondu court)
+
+// Arrête net un fondu (alerte, code Bluetooth, écran Wi-Fi, nuit) : pleine luminosité tout de suite.
+void arreterFondu() {
+  if (phaseFondu != 0) display.setBrightness(luminositeCourante);
+  phaseFondu = 0;
+  allongementPage = 0;
+}
 uint8_t niveauJour = NIVEAU_JOUR_DEFAUT, niveauNuit = NIVEAU_NUIT_DEFAUT;            // 1..10 (commande « lum »)
 uint8_t heureNuitDebut = HEURE_NUIT_DEBUT_DEFAUT, heureNuitFin = HEURE_NUIT_FIN_DEFAUT;  // commande « nuit »
 unsigned long tAnim = 0;       // dernière image d'animation
@@ -4137,6 +4160,7 @@ void declencherAlerte(uint8_t i, int niv, const char* nom, unsigned long now) {
   dernierePageAlerte = pageCourante;
   tPage = now;                  // la page reste affichée une durée complète
   aTransition = false;          // pas de fondu : le changement doit sauter aux yeux
+  arreterFondu();
   if (!ecranEteint) {
     tFlashDebut = now;
     if (tFlashDebut == 0) tFlashDebut = 1;
@@ -4271,39 +4295,75 @@ void presenter() {
 }
 
 // Transition entre deux pages : fondu au noir puis retour, en jouant sur la LUMINOSITÉ de tout l'écran
-// (aucun trait ni balayage de couleur). 5 paliers de 20 ms dans chaque sens : ~0,2 s en tout (avant : ~0,65 s).
-// sortie = true : la page affichée s'éteint ; false : la nouvelle page s'allume.
-static const int FONDU_PALIERS = 5, FONDU_PALIER_MS = 20;
-void fondu(bool sortie) {
-#if TRANSITION_FONDU
-  for (int k = 1; k <= FONDU_PALIERS; k++) {
-    int palier = sortie ? FONDU_PALIERS - k : k;      // sortie : 7 ... 0 | entrée : 1 ... 8
-    display.setBrightness((uint16_t)luminositeCourante * palier / FONDU_PALIERS);
-    delay(FONDU_PALIER_MS);
+// (aucun trait ni balayage de couleur), SANS bloquer loop() (capteurs, console, Bluetooth continuent pendant le fondu).
+// Luminosité en carré de l'avancement : l'œil voit une baisse régulière (une variation linéaire semble finir d'un coup).
+void lumiFondu(unsigned long t, bool sortie) {
+  uint32_t f = demiFondu ? (uint32_t)255 * t / demiFondu : 255;   // 0..255
+  if (f > 255) f = 255;
+  if (sortie) f = 255 - f;
+  display.setBrightness((uint16_t)((uint32_t)luminositeCourante * f * f / 65025UL));
+}
+
+// Lance le fondu vers la page courante (déjà choisie) : l'ancienne image reste affichée et s'éteint ;
+// la nouvelle sera dessinée dans le noir par majFondu().
+void demarrerFondu() {
+  bool court = fonduCourt || pageAvantFondu == PAGE_ETAT || pageCourante == PAGE_ETAT;
+  fonduCourt = false;
+  unsigned long demi = court ? FONDU_COURT_DEMI_MS : FONDU_DEMI_MS;
+  if (demi == 0) { arreterFondu(); dessinerContenu(); presenter(); return; }   // TRANSITION_FONDU 0 : changement sec
+  unsigned long now = millis();
+  unsigned long dejaNoir = 0;   // fondu précédent pas fini (bouton) : on repart de la luminosité où il en était
+  if (phaseFondu != 0 && demiFondu) {
+    unsigned long t = now - tFondu;
+    if (t < demiFondu) dejaNoir = (phaseFondu == 2) ? demi - demi * t / demiFondu : demi * t / demiFondu;
+    else if (phaseFondu == 1) dejaNoir = demi;   // déjà au noir
   }
-#endif
+  demiFondu = demi;
+  tFondu = now - dejaNoir;
+  phaseFondu = 1;
+  allongementPage = 2 * demi;
+}
+
+// Appelée à chaque tour de loop() : fait avancer le fondu en cours.
+void majFondu(unsigned long now) {
+  if (phaseFondu == 0) return;
+  unsigned long t = now - tFondu;
+  if (phaseFondu == 1) {
+    if (t < demiFondu) { lumiFondu(t, true); return; }
+    display.setBrightness(0);
+    dessinerContenu();   // nouvelle page, dessinée dans le noir
+    presenter();
+    phaseFondu = 2;
+    tFondu = now;
+    t = 0;
+  }
+  if (t < demiFondu) { lumiFondu(t, false); return; }
+  display.setBrightness(luminositeCourante);
+  phaseFondu = 0;
 }
 
 void afficher() {
   // Écran éteint (mode nuit) : on affiche du noir (sauf code Bluetooth / mise à jour, qu'il faut pouvoir lire).
-  if (ecranEteint && !ecranSpecialActif()) { display.clearDisplay(); presenter(); return; }
+  if (ecranEteint && !ecranSpecialActif()) {
+    aTransition = false; arreterFondu();
+    display.clearDisplay(); presenter(); return;
+  }
   // pas de fondu sur l'écran de connexion, ni sur le code Bluetooth / la mise à jour : page fixe
-  if (ecranWifiActif() || ecranSpecialActif()) aTransition = false;
+  if (ecranWifiActif() || ecranSpecialActif()) { aTransition = false; arreterFondu(); }
   if (aTransition) {
     aTransition = false;
-    fondu(true);
-    dessinerContenu();
-    presenter();
-    fondu(false);
+    demarrerFondu();
     return;
   }
+  if (phaseFondu == 1) return;   // l'ancienne page s'éteint encore : la nouvelle sera dessinée au noir
   dessinerContenu();
   presenter();
 }
 
-// Durée d'affichage de la page courante : la page ÉTAT est courte, les autres durent INTERVALLE_PAGE_MS.
+// Durée d'affichage de la page courante : la page ÉTAT est courte, les autres durent INTERVALLE_PAGE_MS
+// (plus le fondu qui l'a amenée, pour qu'elle reste toute cette durée en pleine lumière).
 unsigned long dureePage() {
-  return (pageCourante == PAGE_ETAT) ? DUREE_ETAT_MS : INTERVALLE_PAGE_MS;
+  return ((pageCourante == PAGE_ETAT) ? DUREE_ETAT_MS : INTERVALLE_PAGE_MS) + allongementPage;
 }
 
 // Passe à la page suivante qui est active (saute AERER, COURBE et WIFI quand elles n'ont rien à montrer)
@@ -4317,6 +4377,8 @@ void pageSuivante() {
   unsigned long now = millis();
   aTransition = true;
   aRedessiner = true;
+  pageAvantFondu = pageCourante;
+  allongementPage = 0;
   if (pageCourante == PAGE_ETAT) {
     tFinEtat = now;
   } else if (AFFICHER_ETAT && now - tFinEtat >= PERIODE_ETAT_MS) {
@@ -4583,7 +4645,7 @@ void majLuminosite() {
   bool eteint = (ECRAN_ETEINT_NUIT && nuit);
   if (eteint != ecranEteint) { ecranEteint = eteint; aRedessiner = true; }
   luminositeCourante = lum;
-  display.setBrightness(lum);
+  if (phaseFondu == 0) display.setBrightness(lum);   // pendant un fondu, majFondu() y revient tout seul
 }
 
 // =====================================================================
@@ -5552,7 +5614,8 @@ void setup() {
   xTaskCreatePinnedToCore(tacheRelais, "relais", 12288, NULL, 1, &hTacheRelais, 0); // console à distance + mise à jour (HTTPS)
 #endif
 
-  aTransition = true;  // fondu du logo vers la première page
+  aTransition = true;  // fondu (court) du logo vers la première page
+  fonduCourt = true;
   afficher();          // première page : CO2 en préchauffage
   Console.println("Prêt. Tape 'aide' pour la liste des commandes.");
 }
@@ -5625,10 +5688,12 @@ void loop() {
   static uint32_t signatureSpeciale = 0;
   uint32_t sig = ecranSpecialActif() ? (codeAppairage ^ ((uint32_t)majProgression << 24)) + 1 : 0;
   if (sig != signatureSpeciale) {
-    if (sig == 0) aTransition = true;   // code / mise à jour terminés : retour en douceur à la page en cours
+    if (sig == 0) { aTransition = true; fonduCourt = true; }   // code / mise à jour finis : retour en douceur (~0,7 s)
     signatureSpeciale = sig;
     aRedessiner = true;
   }
+
+  majFondu(now);   // fondu entre deux pages : un cran par tour
 
   // Un seul redessin, même si lecture + changement de page + animation tombent ensemble
   if (aRedessiner) {
