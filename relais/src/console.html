@@ -6,6 +6,9 @@
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#e6edf0">
 <title>Console · La Bonne M'Air</title>
+<!-- Icône d'onglet : le logo LED de la carte (version carrée, comme le site ; fabriquée par outils/icones.html).
+     Écrite dans la page (data:) : la politique de sécurité n'autorise aucun fichier extérieur. -->
+<link rel="icon" type="image/png" sizes="64x64" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEkUlEQVR4AexYTYgcRRR+VZlZyPbOHgQh4MGDB4+KJ8FLQFA8RYQcTEAJeBNRD4t6UxEVxKM3SUIgEQwSIYeg4MFLCCKCuQWWDTktIZPJz+wsm+3MdOqbzTdTqeneqsluOl09u+y3r+p7r16/91X1D6sl72d+/pVG0vq8Mb/wu8FqM2llRParZADnVbao3eCc6eUzMT3ltfqoAElyoDnfOtkQ/a8S+U4pdcjgQN7CGDjUbvC26eV79GR6Oy6mR7t2CtBo7k8+MUFXRMn7ZpFZY4eJbJ7oDkHWnZOvqh32pOQYemzuX/jI1DnsffjHHI9nM6W/MV0vGketf9FjptWXpufhyR4KYFQ5oZQkeZ2XtdPp2hWxkVfLdpy9FmPGYmwDvBJ5piH7fsZYm3viZaXUm5jMEpSSt9C7bg7koGzzM3esJcA2IdG60LsWrV6NtoOdFm5615JVUwD7vsXY7RWcDdcfNDe9a1HyfFBwHYNM79rXl+8t4PP78pflby68KIB7Pa8A7oK6zb0CzD18Cxxtn5M80L/bwmC3bNj3O8a2D+Oi68MHFPm9AhQtrAvvFeDwD6cEKGoYPqDIX3XeK0DVG5i2Pjc+WICzS+8JwAQYA5zHaoMFiLVBX917AvgUqrs/+ATgSQ9QEIwBzmO1wQLE2qCv7kIBsLuALwH9iAU4j8UWChBLAzut0yvAGTkrIdhpIb71+J634YsP9XsFCE0Ua5xXgObSebFxRA4LYHMY11aAWBsLrdt7AkITxRq3J0CsO7dbddf+BPiE8gqArzsbTGhzGJN/XGu/4zGeNg/W2Ahd7xUgNFGscV4BQr4CEVNbAWJtLLRu7wnAV18IQi/oi0v/6gpQFAdfHhif57M5xtF6BWBgXa1XANzfIdipQNyl5ustATh388IHkMcY4JwWXB7cvF4BmLCudiQA3uU22HDI/Y8Yxts5MCZfZLkj3C3GcU4/+d22IwF2O3Es+SYECLnfQ2KetgA8Oa7lyWJ9EwLQMSt2QgDczwD+ywNgHALEAoydVkB3pzifNg/j3Z1254ybEICOWbETAvD+pgCc+6wbz3mo5Q65NnR9URzzFZ2oCQGKEsXCT1vnhAC8h/EOBzj3WcQCjJu2kNB4dyfdeVGeopMwIUBRgrryGrsGPKkGkRsoys+dCfUz3rVcT55z17r+vRNwZv0LKQPuTlRlvncCytqJ9KvnBOD1+PSmJb/5f1dsjPh3DW9hxPcMb2HMfyibvTHIn+7dFRta1voDOmfN3pH2QMuFdkf+bEtpqJDK19XVjpZ0sFyhmkot5ZZeXdZyd/CtDLJSL1yFi6VyT270V77Wstw9L537l6pQVJk1/Lfvj0un5NMLW6/Bm+k7slnuMeAXGS2bn3upJTZG/C+GtzDiE8NbGPM/yVwyBvmjyaIcSVrtH/uH3gC3JcC19VXp9I+DmAVkki2ZPrsGsiUARpfvfCArawdlbTB0gKobskwupv30hX6vd5K9jQUAs7zxt1zsLKrr6W/qdv+aEWPdvCXgqSy2K8w82m+Zpv8RyU6bB/3H99e7r8nGxoq95gEAAAD//48n8rUAAAAGSURBVAMAnH8YGfgpKoYAAAAASUVORK5CYII=">
 <style>
   /* Une station de mesure, pas un tableau de bord générique : boîtier clair couleur « brume », écran de journal
      sombre encastré, et l'état de la carte affiché comme une case de l'indice ATMO (mêmes couleurs que le site).
@@ -126,6 +129,15 @@
   #journal { flex: 1; overflow-y: auto; padding: 10px 0 14px; font: 12.5px/1.55 var(--mono); }
   .l { display: grid; grid-template-columns: 64px 1fr; gap: 10px; padding: 0 16px; white-space: pre-wrap; word-break: break-word; }
   .l time { color: var(--ecran-discret); }
+  /* intertitre de chaque jour (le relais garde jusqu'à 7 jours de journal) : collé en haut de l'écran tant qu'on lit
+     les lignes de ce jour, puis poussé par le suivant */
+  .jour { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 10px; padding: 6px 16px 5px;
+    margin-top: 6px; background: var(--ecran); font: 600 12.5px/1.4 var(--texte); }
+  .jour:first-child { margin-top: -10px; padding-top: 10px; }
+  .jour span { padding: 2px 10px; border-radius: 999px; background: #ffffff14; color: var(--ecran-texte); white-space: nowrap; }
+  .jour.auj span { background: #00ffe621; color: #9ff5ec; }
+  .jour::after { content: ""; flex: 1; height: 1px; background: #ffffff1c; }
+  .jour.masquee { display: none; }
   .l.cmd span { color: #7fd6e3; }
   .l.err span { color: #ff8f8f; }
   .l.ok span { color: #7ee0b0; }
@@ -368,18 +380,76 @@ function majTouches() {
     t.elAide.textContent = aide;
   }
 }
-setInterval(() => { if (jeton) majTouches(); }, 1000);
+setInterval(() => {
+  if (jeton) majTouches();
+  const k = cleJour(Date.now());
+  if (k !== jourCourant) { jourCourant = k; renommerJours(); }
+}, 1000);
 
 function demarrer() {
   $("connexion").classList.add("cache"); $("console").classList.remove("cache");
-  dernierId = 0;
+  dernierId = 0; jourDernier = 0;
   $("journal").replaceChildren($("vide") || document.createElement("div"));
   construireTouches();
   rafraichir(); verifierPubliee();
 }
 
 // ---------- journal
-function heure(t) { return new Date(t).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }); }
+// Le relais garde jusqu'à 7 jours de lignes : chaque jour a son intertitre (« Aujourd'hui · mardi 24 novembre 2026 »),
+// collé en haut de l'écran pendant qu'on lit ses lignes. Au survol de l'heure : la date complète. « Copier » écrit la date
+// devant chaque ligne.
+const FMT_HEURE = new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+const FMT_JOUR = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+const FMT_DATE = new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
+function heure(t) { return FMT_HEURE.format(t); }
+function cleJour(t) { const d = new Date(t); return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate(); }
+function nomJour(t) {
+  const auj = new Date(), k = cleJour(t);
+  const hier = new Date(auj.getFullYear(), auj.getMonth(), auj.getDate() - 1);
+  const date = FMT_JOUR.format(t);
+  if (k === cleJour(auj)) return "Aujourd'hui · " + date;
+  if (k === cleJour(hier)) return "Hier · " + date;
+  return date.charAt(0).toUpperCase() + date.slice(1);
+}
+let jourDernier = 0;              // jour de la dernière ligne affichée (un intertitre à chaque changement)
+let jourCourant = cleJour(Date.now());
+function separateur(t) {
+  const d = document.createElement("div");
+  d.className = "jour" + (cleJour(t) === cleJour(Date.now()) ? " auj" : "");
+  d.dataset.t = t;
+  const s = document.createElement("span"); s.textContent = nomJour(t);
+  d.append(s);
+  return d;
+}
+// Minuit passé, page restée ouverte : « Aujourd'hui » devient « Hier ».
+function renommerJours() {
+  for (const s of $("journal").querySelectorAll(".jour")) {
+    const t = Number(s.dataset.t);
+    s.firstElementChild.textContent = nomJour(t);
+    s.classList.toggle("auj", cleJour(t) === jourCourant);
+  }
+}
+// « Erreurs seulement » : un jour sans aucune ligne affichée perd aussi son intertitre.
+function filtrerJours() {
+  for (const s of $("journal").querySelectorAll(".jour")) {
+    let n = s.nextElementSibling, visible = false;
+    while (n && !n.classList.contains("jour")) {
+      if (!n.classList.contains("masquee")) { visible = true; break; }
+      n = n.nextElementSibling;
+    }
+    s.classList.toggle("masquee", !visible);
+  }
+}
+// Après avoir retiré les plus vieilles lignes : la 1re ligne restante retrouve l'intertitre de son jour, et un intertitre
+// qui n'a plus de lignes disparaît.
+function reparerJours() {
+  const j = $("journal"), premier = j.firstElementChild;
+  if (premier && premier.classList.contains("l")) j.prepend(separateur(Number(premier.dataset.t)));
+  for (const s of [...j.querySelectorAll(".jour")]) {
+    const n = s.nextElementSibling;
+    if (!n || n.classList.contains("jour")) s.remove();
+  }
+}
 function classeLigne(txt) {
   if (/^(>|»)/.test(txt)) return "cmd";
   const bilan = /(\d+) ok \/ (\d+) échecs?/.exec(txt);      // « 42 ok / 0 échecs » : rouge seulement s'il y en a
@@ -396,9 +466,15 @@ function ajouterLignes(lignes) {
   const enBas = j.scrollHeight - j.scrollTop - j.clientHeight < 40;
   const frag = document.createDocumentFragment();
   for (const l of lignes) {
+    const k = cleJour(l.t);
+    if (k !== jourDernier) { frag.append(separateur(l.t)); jourDernier = k; }
     const d = document.createElement("div");
     d.className = "l " + classeLigne(l.txt);
-    const t = document.createElement("time"); t.textContent = heure(l.t);
+    d.dataset.t = l.t;
+    const t = document.createElement("time");
+    t.textContent = heure(l.t);
+    t.dateTime = new Date(l.t).toISOString();
+    t.title = FMT_JOUR.format(l.t) + " à " + heure(l.t);
     const s = document.createElement("span"); s.textContent = l.txt;
     d.append(t, s);
     if ($("erreursSeules").checked && !d.classList.contains("err")) d.classList.add("masquee");
@@ -406,16 +482,24 @@ function ajouterLignes(lignes) {
     dernierId = Math.max(dernierId, l.id);
   }
   j.append(frag);
-  while (j.children.length > 3000) j.firstElementChild.remove();
+  if (j.children.length > 3000) {
+    while (j.children.length > 3000) j.firstElementChild.remove();
+    reparerJours();
+  }
+  if ($("erreursSeules").checked) filtrerJours();
   if ($("suivre").checked && (enBas || lignes.length)) j.scrollTop = j.scrollHeight;
 }
 $("erreursSeules").addEventListener("change", () => {
   const seules = $("erreursSeules").checked;
   for (const d of $("journal").querySelectorAll(".l")) d.classList.toggle("masquee", seules && !d.classList.contains("err"));
+  filtrerJours();
   if ($("suivre").checked) $("journal").scrollTop = $("journal").scrollHeight;
 });
 $("copier").addEventListener("click", async () => {
-  const lignes = [...$("journal").querySelectorAll(".l:not(.masquee)")].map((d) => d.textContent.replace(/^(\d\d:\d\d:\d\d)/, "$1  "));
+  const lignes = [...$("journal").querySelectorAll(".l:not(.masquee)")].map((d) => {
+    const t = Number(d.dataset.t);
+    return FMT_DATE.format(t) + " " + heure(t) + "  " + d.lastElementChild.textContent;
+  });
   const texte = lignes.join("\n");
   if (!texte) { retour("Rien à copier : le journal est vide."); return; }
   try { await navigator.clipboard.writeText(texte); retour(lignes.length + " ligne" + (lignes.length > 1 ? "s" : "") + " copiée" + (lignes.length > 1 ? "s" : "") + " dans le presse-papiers."); }
@@ -423,7 +507,7 @@ $("copier").addEventListener("click", async () => {
 });
 $("effacer").addEventListener("click", async () => {
   if (!confirm("Vider le journal gardé par le relais ?")) return;
-  try { await api("/api/effacer", { method: "POST" }); $("journal").replaceChildren(); dernierId = 0; }
+  try { await api("/api/effacer", { method: "POST" }); $("journal").replaceChildren(); dernierId = 0; jourDernier = 0; }
   catch (e) { if (e.message !== "401") retour(e.message, true); }
 });
 
