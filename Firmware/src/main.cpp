@@ -125,7 +125,7 @@
 #define MASQUER_SECRETS           0  // 1 = les mots de passe saisis s'affichent en ****
 #define DOUBLE_BUFFER             1  // 1 = dessin sans scintillement | 0 si l'écran reste noir ou s'affiche mal
 #define ANIMATIONS                0  // 1 = clignement, chiffres qui glissent, sommet de courbe qui clignote | 0 = calme
-#define TRANSITION_FONDU          1  // 1 = fondu au noir (~0,65 s) entre deux pages | 0 = changement sec
+#define TRANSITION_FONDU          1  // 1 = fondu au noir (~0,2 s) entre deux pages | 0 = changement sec
 #ifndef AIRCARTO_HTTPS
 #define AIRCARTO_HTTPS            1  // 1 = mesures envoyées en HTTPS (clé chiffrée, serveur vérifié) | 0 = HTTP simple
                                      //     (clé du groupe lisible sur le réseau : seulement si le HTTPS pose problème)
@@ -4271,9 +4271,9 @@ void presenter() {
 }
 
 // Transition entre deux pages : fondu au noir puis retour, en jouant sur la LUMINOSITÉ de tout l'écran
-// (aucun trait ni balayage de couleur). 8 paliers de 40 ms dans chaque sens : ~0,65 s en tout (avant : ~150 ms).
+// (aucun trait ni balayage de couleur). 5 paliers de 20 ms dans chaque sens : ~0,2 s en tout (avant : ~0,65 s).
 // sortie = true : la page affichée s'éteint ; false : la nouvelle page s'allume.
-static const int FONDU_PALIERS = 8, FONDU_PALIER_MS = 40;
+static const int FONDU_PALIERS = 5, FONDU_PALIER_MS = 20;
 void fondu(bool sortie) {
 #if TRANSITION_FONDU
   for (int k = 1; k <= FONDU_PALIERS; k++) {
@@ -4287,7 +4287,8 @@ void fondu(bool sortie) {
 void afficher() {
   // Écran éteint (mode nuit) : on affiche du noir (sauf code Bluetooth / mise à jour, qu'il faut pouvoir lire).
   if (ecranEteint && !ecranSpecialActif()) { display.clearDisplay(); presenter(); return; }
-  if (ecranWifiActif()) aTransition = false;  // pas de fondu sur l'écran de connexion
+  // pas de fondu sur l'écran de connexion, ni sur le code Bluetooth / la mise à jour : page fixe
+  if (ecranWifiActif() || ecranSpecialActif()) aTransition = false;
   if (aTransition) {
     aTransition = false;
     fondu(true);
@@ -5610,8 +5611,9 @@ void loop() {
   }
 
   // Toutes les 5 s (3 s pour la page ÉTAT) : page suivante de l'écran, avec un fondu
-  // (en pause pendant l'écran de connexion Wi-Fi).
-  if (ecranWifiActif()) tPage = now;
+  // (en pause pendant l'écran de connexion Wi-Fi, le code Bluetooth et la mise à jour : la page reste fixe,
+  // sans fondu ni redessin toutes les 5 s, et la rotation reprend où elle en était).
+  if (ecranWifiActif() || ecranSpecialActif()) tPage = now;
   if (now - tPage >= dureePage()) {
     tPage = now;
     pageSuivante();
@@ -5622,7 +5624,11 @@ void loop() {
   // Code Bluetooth ou progression d'une mise à jour : redessin dès que ça change (ou que ça disparaît)
   static uint32_t signatureSpeciale = 0;
   uint32_t sig = ecranSpecialActif() ? (codeAppairage ^ ((uint32_t)majProgression << 24)) + 1 : 0;
-  if (sig != signatureSpeciale) { signatureSpeciale = sig; aRedessiner = true; }
+  if (sig != signatureSpeciale) {
+    if (sig == 0) aTransition = true;   // code / mise à jour terminés : retour en douceur à la page en cours
+    signatureSpeciale = sig;
+    aRedessiner = true;
+  }
 
   // Un seul redessin, même si lecture + changement de page + animation tombent ensemble
   if (aRedessiner) {
