@@ -142,6 +142,9 @@ Aucun identifiant n’est écrit dans le code : tout est enregistré dans la mé
 | `bt demarrage on` / `off` | Autorise aussi un nouveau téléphone pendant 2 min après chaque mise sous tension (désactivé par défaut) |
 | `bt liste` · `bt oublier <n>` | Téléphones appairés ; en oublier **un seul** |
 | `bt oublier` | Efface tous les téléphones Bluetooth appairés |
+| `lum` · `lum +` · `lum -` | Luminosité de l'écran (10 niveaux) : `+` / `-` règlent la période en cours, jour ou nuit — **câble USB ou Bluetooth** |
+| `lum jour <1..10>` · `lum nuit <1..10>` · `lum defaut` | Niveau précis de jour / de nuit (par défaut : jour 10, nuit 2), gardé en mémoire |
+| `nuit 22 7` · `nuit off` | Heures du mode nuit (par défaut 22 h → 7 h, heure de France) ; `off` : jamais |
 | `aide` | Liste des commandes |
 
 La carte se connecte seule au meilleur réseau connu visible, sans redémarrage.
@@ -154,7 +157,7 @@ Le moniteur série est aussi disponible **sans câble** (mode d'emploi complet :
 - **par Bluetooth**, à côté de la carte : appairage avec le code à 6 chiffres affiché sur l'écran. Un nouveau téléphone n'est accepté que dans les 2 min qui suivent un `bt appairer` (câble USB), ou une mise sous tension si tu as activé `bt demarrage on` : quelqu'un qui voit l'écran depuis la pièce ne peut pas s'appairer à ton insu ;
 - **mises à jour** : `maj installer` télécharge la dernière release GitHub, vérifie sa **signature** (ECDSA, clé privée restée sur ton PC) et son empreinte, l'installe dans l'autre emplacement de la mémoire et revient tout seul à l'ancienne version si la nouvelle ne marche pas.
 
-Sans câble, seules les commandes **sans secret, sans effacement et sans effet durable** passent (`aide`, `status`, `verbose`, `calib`, `reboot`, `wifi scan`, `wifi connect`, `maj`), une par seconde au plus (`wifi scan`, `wifi connect`, `maj` : une fois par 30 s ; `reboot` : une fois par 5 min). Wi-Fi, clé, jeton, relais, `calib oui`, `bt …`, `oublier`, `vider_file` : **câble USB uniquement**, et ce qu'ils affichent ne quitte jamais le câble.
+Sans câble, seules les commandes **sans secret, sans effacement et sans effet durable** passent (`aide`, `status`, `verbose`, `calib`, `reboot`, `wifi scan`, `wifi connect`, `maj`), une par seconde au plus (`wifi scan`, `wifi connect`, `maj` : une fois par 30 s ; `reboot` : une fois par 5 min). Par Bluetooth seulement (pas par le relais) : `lum` et `nuit`, pour régler l'écran à côté de la carte. Wi-Fi, clé, jeton, relais, `calib oui`, `bt …`, `oublier`, `vider_file` : **câble USB uniquement**, et ce qu'ils affichent ne quitte jamais le câble.
 
 **eduroam :** pour que la carte refuse un faux point d'accès « eduroam » (qui récupérerait ton mot de passe ENT), la carte vérifie le certificat du serveur de l'université. Pour **Aix-Marseille Université**, il est déjà fourni : [`Firmware/src/ca_eduroam.h`](Firmware/src/ca_eduroam.h) (autorité « GEANT TLS ECC 1 », tirée de cat.eduroam.org). Pour une autre université : mode d'emploi dans [`Firmware/src/ca_eduroam.h.exemple`](Firmware/src/ca_eduroam.h.exemple). `status` indique si le serveur ENT est vérifié, et la carte prévient au démarrage tant qu'il ne l'est pas. Le plus sûr reste de ne pas mettre ton mot de passe ENT personnel dans la carte (réseau dédié aux objets, partage de connexion d'un téléphone).
 
@@ -188,7 +191,7 @@ Sans câble, seules les commandes **sans secret, sans effacement et sans effet d
 - **Page ÉTAT (toutes les 15 s, pendant 3 s) :** heure et date, puis trois grandes icônes colorées (vert = OK, orange = à surveiller, rouge = problème) : **Wi-Fi** (arcs selon le signal, en dBm), **serveur** (nuage : envoi OK, nombre de mesures en attente, clé refusée) et **capteurs** (ventilateur : OK, préchauffage, panne, à calibrer). Réglable avec `PERIODE_ETAT_MS` et `DUREE_ETAT_MS`.
 - **Couleurs :** chaque valeur prend la couleur de son niveau ATMO.
 - **Alerte hors norme :** dès qu’un polluant atteint son seuil d’alerte (PM : « Mauvais », CO₂ : > 1 000 ppm), l’écran saute aussitôt sur sa page, clignote à la couleur du niveau, puis la valeur pulse ; la page revient une fois sur deux tant que l’alerte dure.
-- **Luminosité adaptée :** jour, nuit et batterie.
+- **Luminosité adaptée :** 10 niveaux réglables (`lum`), un pour le jour et un pour la nuit (22 h → 7 h par défaut, `nuit`), bridée sur batterie.
 - **Préchauffage du CO₂ :** compte à rebours en minutes:secondes (« 2:18 ») les 3 premières minutes après une mise sous tension (pas après un redémarrage logiciel : le capteur est resté alimenté).
 - **Bluetooth / mise à jour :** pendant un appairage, l'écran affiche le code à 6 chiffres à taper sur le téléphone ; pendant une mise à jour, « MISE A JOUR » et le pourcentage téléchargé (même la nuit, écran éteint). L'emplacement du nouveau programme est effacé d'un coup avant le téléchargement (écran noir 2 à 5 s) : plus de clignotement pendant la progression.
 - **CO₂ impossible :** une lecture sous 300 ppm est écartée (un capteur qui dérive a envoyé jusqu'à 37 ppm) ; si ça dure, la page CO₂ affiche « A CALIBRER » (commande `calib oui`, à l'air libre).
