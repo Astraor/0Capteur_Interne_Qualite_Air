@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Icônes · La Bonne M'Air</title>
+<!-- Outil (non publié avec le site) : fabrique les icônes fixes du site à partir du logo LED de js/logo-led.js.
+     Utilisation : depuis la racine du dépôt, « python -m http.server 8000 », ouvrir http://localhost:8000/outils/icones.html,
+     cliquer sur chaque fichier pour le télécharger, puis le ranger dans img/ (même nom). -->
+<style>
+  body { margin: 0; padding: 24px; background: #0e1b24; color: #e6f1f3; font: 15px/1.5 system-ui, sans-serif; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  p { margin: 0 0 18px; color: #8fb0ba; max-width: 70ch; }
+  .fichiers { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-end; }
+  figure { margin: 0; display: grid; gap: 8px; justify-items: center; }
+  figure img { image-rendering: auto; background: #fff; border-radius: 6px; }
+  a { color: #00ffe6; }
+  textarea { width: 100%; height: 90px; margin-top: 18px; background: #050b0d; color: #9ff5ec; border: 1px solid #25414c; border-radius: 8px; font: 12px/1.4 monospace; }
+</style>
+</head>
+<body>
+<h1>Icônes du site (logo LED carré)</h1>
+<p>Chaque fichier est dessiné avec js/logo-led.js, comme l'onglet animé du site. Clique sur un nom pour le télécharger, puis
+range-le dans img/. Le dernier champ est l'icône de la console du relais (à coller dans relais/src/console.html).</p>
+<div class="fichiers" id="fichiers"></div>
+<textarea id="console" readonly></textarea>
+<script src="../js/logo-led.js"></script>
+<script>
+"use strict";
+const LOGO = LogoLED.carre({ rangs: 32, lettres: 5, niveaux: 6, eclat: false, seul: -1 });
+
+function canvasIcone(taille, onglet) {
+  const cv = document.createElement("canvas");
+  cv.width = cv.height = taille;
+  const ctx = cv.getContext("2d");
+  if (onglet && taille < 64) {
+    // petites tailles : dessinées en 64 (2 pixels par LED) puis réduites, plus doux qu'un pixel coupé en deux
+    const grand = canvasIcone(64, true);
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(grand, 0, 0, taille, taille);
+    return cv;
+  }
+  LogoLED.peindreIcone(ctx, LOGO, taille, onglet);
+  return cv;
+}
+const png = (cv) => new Promise((ok) => cv.toBlob((b) => b.arrayBuffer().then((a) => ok(new Uint8Array(a))), "image/png"));
+
+// favicon.ico : plusieurs PNG dans un seul fichier (Windows Vista et plus, tous les navigateurs)
+async function ico(tailles) {
+  const images = [];
+  for (const t of tailles) images.push(await png(canvasIcone(t, true)));
+  const total = 6 + 16 * images.length + images.reduce((s, i) => s + i.length, 0);
+  const sortie = new Uint8Array(total), v = new DataView(sortie.buffer);
+  v.setUint16(0, 0, true); v.setUint16(2, 1, true); v.setUint16(4, images.length, true);
+  let pos = 6 + 16 * images.length;
+  images.forEach((img, i) => {
+    const e = 6 + 16 * i, t = tailles[i];
+    v.setUint8(e, t >= 256 ? 0 : t); v.setUint8(e + 1, t >= 256 ? 0 : t);
+    v.setUint16(e + 4, 1, true); v.setUint16(e + 6, 32, true);
+    v.setUint32(e + 8, img.length, true); v.setUint32(e + 12, pos, true);
+    sortie.set(img, pos); pos += img.length;
+  });
+  return sortie;
+}
+
+// favicon.svg : une LED = un carré ; les LED voisines de même couleur sur une ligne forment un seul rectangle.
+function svg() {
+  let rects = "";
+  for (let y = 0; y < 32; y++) {
+    let x = 0;
+    while (x < 32) {
+      const c = LOGO.px[y * 32 + x];
+      if (!c) { x++; continue; }
+      let n = 1;
+      while (x + n < 32 && LOGO.px[y * 32 + x + n] === c) n++;
+      rects += `<rect x="${x}" y="${y}" width="${n}" height="1" fill="${c}"/>`;
+      x += n;
+    }
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" shape-rendering="crispEdges">\n` +
+    `  <!-- Logo LED de La Bonne M'Air (version carrée, 32 x 32 LED) : fabriqué par outils/icones.html depuis js/logo-led.js.\n` +
+    `       Sur le site, js/logo-led.js anime ce logo dans l'onglet et y montre le niveau ATMO du verdict. -->\n` +
+    `  <clipPath id="c"><rect width="32" height="32" rx="4.5"/></clipPath>\n` +
+    `  <g clip-path="url(#c)"><rect width="32" height="32" fill="${LogoLED.FOND_PANNEAU}"/>${rects}</g>\n</svg>\n`;
+}
+
+async function fabriquer() {
+  const b64 = (u8) => { let s = ""; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode(...u8.subarray(i, i + 0x8000)); return btoa(s); };
+  const f = {
+    "favicon.svg": new TextEncoder().encode(svg()),
+    "favicon.ico": await ico([16, 32, 48]),
+    "apple-touch-icon.png": await png(canvasIcone(180, false)),
+    "icone-192.png": await png(canvasIcone(192, false)),
+    "icone-512.png": await png(canvasIcone(512, false)),
+  };
+  const sortie = {};
+  for (const [nom, octets] of Object.entries(f)) sortie[nom] = b64(octets);
+  sortie["console"] = "data:image/png;base64," + b64(await png(canvasIcone(64, true)));
+  return sortie;
+}
+
+fabriquer().then((f) => {
+  const zone = document.getElementById("fichiers");
+  for (const [nom, donnees] of Object.entries(f)) {
+    if (nom === "console") { document.getElementById("console").value = '<link rel="icon" type="image/png" href="' + donnees + '">'; continue; }
+    const type = nom.endsWith(".svg") ? "image/svg+xml" : nom.endsWith(".ico") ? "image/x-icon" : "image/png";
+    const url = "data:" + type + ";base64," + donnees;
+    const fig = document.createElement("figure");
+    const img = document.createElement("img"); img.src = url; img.width = img.height = nom.includes("512") ? 128 : nom.endsWith(".png") ? 96 : 48;
+    const a = document.createElement("a"); a.href = url; a.download = nom; a.textContent = nom;
+    fig.append(img, a); zone.append(fig);
+  }
+  window.__icones = f;   // lu par un script de test (navigateur sans interface)
+});
+</script>
+</body>
+</html>

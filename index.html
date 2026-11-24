@@ -6,10 +6,14 @@
 <title>La Bonne M’air · Qualité de l’air en direct</title>
 <meta name="description" content="Mesures en direct de notre capteur de qualité de l'air : particules fines, température, humidité et CO2.">
 <meta name="theme-color" content="#0e1b24">
-<!-- Logo « M’ » : un M massif percé de deux arcs comme les arcades de Notre-Dame de la Garde, et pour apostrophe la statue
-     dorée de la Bonne Mère. Onglet : img/favicon.svg (dessiné pour 16 et 32 px), dont le fond prend la couleur du niveau
-     ATMO de la dernière mesure (voir majFavicon) ; favicon.ico pour les anciens navigateurs ; apple-touch-icon (iPhone). -->
-<link rel="icon" href="img/favicon.ico" sizes="32x32">
+<!-- Icônes : le logo LED de la carte (basilique, « M'AIR », barre des 6 niveaux), en version carrée 32 x 32 LED.
+     Onglet : img/favicon.svg, puis animé par js/logo-led.js (il s'allume comme l'écran de la carte au démarrage, la statue
+     scintille, et la barre montre le niveau ATMO du verdict : voir majFavicon) ; favicon.ico pour les anciens navigateurs ;
+     icone-192 / icone-512 (Android) ; apple-touch-icon (iPhone, iPad). Fabriquées par outils/icones.html.
+     Le logo « M' » (img/logo.svg) reste celui de l'écran d'entrée et du pied de page. -->
+<link rel="icon" type="image/png" sizes="192x192" href="img/icone-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="img/icone-512.png">
+<link rel="icon" href="img/favicon.ico" sizes="16x16 32x32 48x48">
 <link rel="icon" type="image/svg+xml" href="img/favicon.svg" id="favicon">
 <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
 
@@ -244,6 +248,27 @@
     html.plein-dispo .hero { padding-bottom: calc(146px + env(safe-area-inset-bottom, 0px)); }   /* laisse la place à la barre de chapitres et au bouton */
   }
   @media print { .entree-plein, .bascule-plein { display: none !important; } }
+  /* Arrivée, juste après l'écran d'entrée : le logo de la carte s'allume sur un panneau de LED, comme l'écran de la carte
+     au démarrage (js/logo-led.js), puis tout s'efface sur la page. Un clic, un toucher ou une touche le passe. */
+  .splash-led {
+    position: fixed; inset: 0; z-index: 210; display: grid; place-items: center; padding: 24px;
+    background: radial-gradient(120% 90% at 50% 45%, #14313b 0%, var(--encre) 55%, #070f13 100%);
+    cursor: pointer; transition: opacity .6s ease;
+  }
+  .splash-led.sortie { opacity: 0; pointer-events: none; }
+  .splash-module {
+    width: min(88vw, 760px, calc((100vh - 64px) * 2)); width: min(88vw, 760px, calc((100dvh - 64px) * 2));
+    padding: clamp(9px, 1.8vw, 18px); border-radius: clamp(16px, 3vw, 30px); background: #10262e;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1), 0 0 0 1px rgba(255, 255, 255, .05), 0 40px 90px -30px rgba(0, 0, 0, .8);
+    animation: splash-entree .55s cubic-bezier(.2, .8, .2, 1) both; transition: transform .6s ease;
+  }
+  .splash-led.sortie .splash-module { transform: scale(1.04); }
+  .splash-panneau { padding: clamp(5px, 1.1vw, 11px); border-radius: clamp(9px, 1.6vw, 16px); background: #050b0d; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .05); }
+  .splash-panneau canvas { display: block; width: 100%; height: auto; aspect-ratio: 2 / 1; }
+  @keyframes splash-entree { from { opacity: 0; transform: scale(.94); } }
+  html.splash-ouvert { overflow: hidden; }
+  html.splash-ouvert .bascule-plein, html.splash-ouvert .aller-mesures { visibility: hidden; }
+  @media print { .splash-led { display: none !important; } }
   /* Dès que le bandeau commence à se ranger (défilement), le bouton disparaît et le doigt redevient libre. */
   .hero.hors-jeu { touch-action: auto !important; }
   .hero.hors-jeu .jeu-poussiere { visibility: hidden; pointer-events: none; }
@@ -1068,18 +1093,35 @@
   .pied-statut .point .onde { color: #50f0e6; }
   html.mouvement-reduit .pied-statut .point .onde .anneau { display: none; }
   .pied-colonnes { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 30px 40px; padding: 30px 0 32px; }
-  .pied-col h2 { margin: 0 0 12px; font: 600 .7rem/1.4 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: rgba(242, 244, 240, .58); }
+  .pied-col h2, .pied-chemin h2 { margin: 0 0 12px; font: 600 .7rem/1.4 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: rgba(242, 244, 240, .58); }
   .pied-col, .pied-col p, .pied-col li, .pied-col dd { font-size: .88rem; line-height: 1.5; color: rgba(242, 244, 240, .84); }
   .pied-col b { color: var(--fond); font-weight: 700; }
-  @media (min-width: 1000px) { .pied-colonnes { grid-template-columns: 1.35fr 1fr 1fr 1fr; } }
-  /* le chemin d'une mesure : une étape par ligne, reliées par un filet */
-  .pied-chemin ol { list-style: none; margin: 0; padding: 0; counter-reset: etape; }
-  .pied-chemin li { position: relative; padding: 0 0 12px 30px; counter-increment: etape; }
-  .pied-chemin li::before {
-    content: counter(etape); position: absolute; left: 0; top: 1px; width: 20px; height: 20px; display: grid; place-items: center;
-    border: 1.5px solid rgba(242, 244, 240, .5); border-radius: 50%; font: 600 .66rem/1 var(--mono); color: var(--fond);
+  @media (min-width: 1000px) { .pied-colonnes { grid-template-columns: 1fr 1.45fr 1fr; } }
+  /* Le trajet d'une mesure : 5 étapes numérotées, reliées par un filet. Une par ligne sur téléphone (filet vertical),
+     côte à côte sur grand écran (filet horizontal). En dessous, ce qui tourne à côté (veille, console). */
+  .pied-chemin { padding: 30px 0 26px; border-bottom: 1px solid rgba(242, 244, 240, .16); }
+  .chemin-tete { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 24px; margin-bottom: 20px; }
+  .pied .pied-chemin h2 { margin: 0; }
+  .pied .chemin-intro { font-size: .86rem; color: rgba(242, 244, 240, .66); }
+  .chemin-etapes { list-style: none; margin: 0; padding: 0; counter-reset: etape; display: grid; }
+  .chemin-etapes li { position: relative; padding: 0 0 20px 36px; counter-increment: etape; font-size: .86rem; line-height: 1.5; color: rgba(242, 244, 240, .8); }
+  .chemin-etapes li::before {
+    content: counter(etape); position: absolute; z-index: 1; left: 0; top: 0; width: 23px; height: 23px; display: grid; place-items: center;
+    border: 1.5px solid rgba(242, 244, 240, .55); border-radius: 50%; background: var(--encre); font: 600 .68rem/1 var(--mono); color: var(--fond);
   }
-  .pied-chemin li:not(:last-child)::after { content: ""; position: absolute; left: 9.5px; top: 23px; bottom: 2px; width: 1.5px; background: rgba(242, 244, 240, .25); }
+  .chemin-etapes li:not(:last-child)::after { content: ""; position: absolute; left: 11px; top: 25px; bottom: 3px; width: 1.5px; background: rgba(242, 244, 240, .25); }
+  .chemin-etapes .lieu { display: block; margin-bottom: 1px; font: 600 .63rem/1.5 var(--mono); letter-spacing: .07em; text-transform: uppercase; color: rgba(242, 244, 240, .5); }
+  .chemin-etapes b { display: block; margin-bottom: 3px; font-size: 1rem; font-weight: 700; color: var(--fond); }
+  .chemin-etapes .hote { font-family: var(--mono); font-size: .84em; color: var(--fond); }
+  .chemin-cote { list-style: none; margin: 2px 0 0; padding: 16px 0 0; display: grid; gap: 10px 36px; border-top: 1px dashed rgba(242, 244, 240, .2); }
+  .chemin-cote li { font-size: .84rem; line-height: 1.5; color: rgba(242, 244, 240, .74); }
+  .chemin-cote b { color: var(--fond); }
+  @media (min-width: 900px) {
+    .chemin-etapes { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0 24px; }
+    .chemin-etapes li { padding: 38px 0 22px; }
+    .chemin-etapes li:not(:last-child)::after { left: 31px; right: -16px; top: 11px; bottom: auto; width: auto; height: 1.5px; }
+    .chemin-cote { grid-template-columns: 1fr 1fr; }
+  }
   .pied .insecable { white-space: nowrap; }
   .pied-donnees { margin: 0; display: grid; gap: 2px; }
   .pied-donnees dt { margin-top: 8px; font: 600 .68rem/1.4 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: rgba(242, 244, 240, .55); }
@@ -1253,6 +1295,11 @@
       <button type="button" data-lang="ja" lang="ja" aria-label="日本語" aria-pressed="false">日本語</button>
     </div>
   </div>
+</div>
+
+<!-- Arrivée : le logo de la carte s'allume (même animation que son écran LED au démarrage), après l'écran d'entrée -->
+<div class="splash-led" id="splash-led" aria-hidden="true" hidden>
+  <div class="splash-module"><div class="splash-panneau"><canvas id="splash-canvas"></canvas></div></div>
 </div>
 
 <button type="button" class="bascule-plein" id="bascule-plein" aria-label="Passer en plein écran" title="Passer en plein écran">
@@ -1711,24 +1758,35 @@
       <p class="pied-statut" id="pied-statut" aria-hidden="true"><span class="point"><svg class="onde" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><circle class="coeur" cx="16" cy="16" r="5"></circle><circle class="anneau" cx="16" cy="16" r="4"></circle></svg></span><span id="pied-statut-texte">—</span></p>
     </div>
 
-    <div class="pied-colonnes">
-      <!-- 1. Le chemin d'une mesure, du capteur à la page -->
-      <section class="pied-col pied-chemin" aria-labelledby="pied-chemin-titre">
+    <!-- Le trajet d'une mesure, du capteur à cette page (pleine largeur : 5 étapes côte à côte sur grand écran, une par
+         ligne sur téléphone), puis ce qui tourne à côté (veille, console). Textes : lang/*.js, clés pied.chemin.* -->
+    <section class="pied-chemin" aria-labelledby="pied-chemin-titre">
+      <div class="chemin-tete">
         <h2 id="pied-chemin-titre" data-i18n="pied.chemin.titre">D’où viennent les données</h2>
-        <ol>
-          <li data-i18n-html="pied.chemin.1"><b>Capteurs</b> NextPM (particules) et MH-Z19C (CO₂), lus chaque seconde.</li>
-          <li data-i18n-html="pied.chemin.2"><b>Carte ESP32</b> : moyenne et pic sur 10&nbsp;s, envoyés au serveur AirCarto. Sans réseau, les mesures sont gardées puis renvoyées.</li>
-          <li data-i18n-html="pied.chemin.3"><b>Relais Cloudflare</b> (<span class="insecable">mair-relais.astraor.workers.dev</span>)&nbsp;: protège la clé d'accès à l'API AirCarto. Elle reste cachée sur le relais au lieu d'être lisible dans cette page publique, et personne ne peut s'en servir pour envoyer de fausses mesures.</li>
-          <li data-i18n-html="pied.chemin.4"><b>Cette page</b> : remet chaque mesure à son heure réelle, puis en fait la moyenne par tranche de temps.</li>
-        </ol>
-      </section>
+        <p class="chemin-intro" data-i18n="pied.chemin.intro">Le trajet d’une mesure, du capteur jusqu’à votre écran : 5 minutes au plus.</p>
+      </div>
+      <ol class="chemin-etapes">
+        <li data-i18n-html="pied.chemin.1"><span class="lieu">Dans la pièce</span><b>Capteurs</b> NextPM (particules PM1, PM2.5 et PM10, par diffusion laser) et MH-Z19C (CO₂, par absorption infrarouge), lus chaque seconde par la carte.</li>
+        <li data-i18n-html="pied.chemin.2"><span class="lieu">Dans le boîtier</span><b>Carte ESP32</b> Moyenne et pic de chaque période (10&nbsp;s en direct), envoyés en HTTPS (chiffré) au serveur AirCarto avec la clé du groupe. Sans réseau, jusqu’à ~10&nbsp;h de mesures attendent en mémoire, puis repartent avec leur âge.</li>
+        <li data-i18n-html="pied.chemin.3"><span class="lieu">api.aircarto.fr</span><b>Serveur AirCarto</b> Enregistre chaque mesure à son arrivée (un envoi toutes les 10&nbsp;s au plus) et calcule les moyennes des longues périodes.</li>
+        <li data-i18n-html="pied.chemin.4"><span class="lieu">Cloudflare Workers</span><b>Relais</b> <span class="hote">mair-relais<wbr>.astraor<wbr>.workers<wbr>.dev</span>. Seul à connaître la clé de l’API AirCarto, gardée secrète : il lit les mesures et les renvoie à ce site en lecture seule, compressées, gardées 60&nbsp;s en mémoire, avec un nombre de demandes limité par visiteur. Personne ne peut lire la clé ni s’en servir pour envoyer de fausses mesures.</li>
+        <li data-i18n-html="pied.chemin.5"><span class="lieu">Votre navigateur</span><b>Cette page</b> Hébergée par GitHub Pages. Toutes les 5&nbsp;min, elle ne demande que les nouvelles mesures, remet chacune à son heure réelle (heure d’arrivée − âge), écarte doublons et valeurs impossibles, puis calcule moyennes, verdict ATMO et graphiques.</li>
+      </ol>
+      <ul class="chemin-cote">
+        <li data-i18n-html="pied.chemin.veille"><b>Veille automatique</b> : toutes les 5&nbsp;min, GitHub Actions vérifie par le relais que des mesures arrivent. Sinon, un mail d’alerte part («&nbsp;capteur muet&nbsp;», «&nbsp;CO₂ à vérifier&nbsp;»), puis un autre au retour.</li>
+        <li data-i18n-html="pied.chemin.console"><b>Console de la carte</b> : journal, commandes et mises à jour signées passent par le même relais (protégé par mot de passe), ou par Bluetooth à côté de la carte. Elle ne touche jamais aux mesures.</li>
+      </ul>
+    </section>
 
-      <!-- 2. Ce qui est mesuré, avec quelle incertitude, à quel rythme -->
+    <div class="pied-colonnes">
+      <!-- 1. Ce qui est mesuré, avec quelle incertitude, à quel rythme -->
       <section class="pied-col" aria-labelledby="pied-mesures-titre">
         <h2 id="pied-mesures-titre" data-i18n="pied.mesures.titre">Mesures</h2>
         <dl class="pied-donnees">
           <dt data-i18n="pied.grandeurs.dt">Grandeurs</dt>
-          <dd data-i18n="pied.grandeurs.dd">PM1, PM2.5 et PM10 (µg/m³) · CO₂ (ppm)</dd>
+          <dd data-i18n="pied.grandeurs.dd">PM1, PM2.5 et PM10 (µg/m³) · CO₂ (ppm) · température et humidité dans le boîtier du NextPM</dd>
+          <dt data-i18n="pied.cadence.dt">Cadence</dt>
+          <dd data-i18n="pied.cadence.dd">Capteurs lus chaque seconde ; une mesure (moyenne et pic) toutes les ~10 s, 30 s hors ligne</dd>
           <dt data-i18n="pied.incert.dt">Incertitude</dt>
           <dd data-i18n="pied.incert.dd">±(1 µg/m³ + 10 %) pour les particules, ±(50 ppm + 5 %) pour le CO₂ (fiches techniques)</dd>
           <dt data-i18n="pied.actualisation.dt">Actualisation</dt>
@@ -1736,17 +1794,20 @@
         </dl>
       </section>
 
-      <!-- 3. Repères officiels -->
-      <section class="pied-col" aria-labelledby="pied-reperes-titre">
-        <h2 id="pied-reperes-titre" data-i18n="pied.reperes.titre">Repères</h2>
+      <!-- 2. Sources : seuils, capteurs, chemin des données -->
+      <section class="pied-col pied-sources" aria-labelledby="pied-sources-titre">
+        <h2 id="pied-sources-titre" data-i18n="pied.sources.titre">Sources</h2>
         <ul class="pied-liens">
-          <li data-i18n-html="pied.reperes.atmo"><a href="https://www.atmo-france.org/article/lindice-atmo" target="_blank" rel="noopener">Atmo France · indice ATMO</a> pour les particules</li>
-          <li data-i18n-html="pied.reperes.hcsp"><a href="https://www.hcsp.fr/Explore.cgi/Telecharger?NomFichier=hcspa20210428_covaravenetmesducodanleserp.pdf" target="_blank" rel="noopener">HCSP · 800 ppm</a> pour le CO₂</li>
+          <li data-i18n-html="pied.sources.atmo"><a href="https://www.atmo-france.org/article/lindice-atmo" target="_blank" rel="noopener">Atmo France · l’indice ATMO</a> : seuils et couleurs des particules, sur la carte et ici</li>
+          <li data-i18n-html="pied.sources.guide"><a href="https://www.airpl.org/sites/default/files/reports/guide_calcul_nouvel_indice_ATMO_VF_version14decembre2020%281%29.pdf" target="_blank" rel="noopener">Guide de calcul de l’indice ATMO</a> (décembre 2020, PDF) et <a href="https://aida.ineris.fr/reglementation/arrete-100720-relatif-a-lindice-qualite-lair-ambiant" target="_blank" rel="noopener">arrêté du 10 juillet 2020</a></li>
+          <li data-i18n-html="pied.sources.hcsp"><a href="https://www.hcsp.fr/Explore.cgi/Telecharger?NomFichier=hcspa20210428_covaravenetmesducodanleserp.pdf" target="_blank" rel="noopener">HCSP · avis du 28 avril 2021</a> : aération et CO₂ (800 ppm)</li>
+          <li data-i18n-html="pied.sources.capteurs">Fiches techniques du <a href="https://tera-sensor.gitbook.io/tera-sensor/sensors/nextpm/nextpm-datasheet" target="_blank" rel="noopener">NextPM</a> (Tera Sensor) et du <a href="https://www.winsen-sensor.com/product/mh-z19c.html" target="_blank" rel="noopener">MH-Z19C</a> (Winsen) · <a href="https://www.aqmd.gov/docs/default-source/aq-spec/summary/tera-sensor-nextpm---summary-report.pdf?sfvrsn=6" target="_blank" rel="noopener">évaluation AQ-SPEC du NextPM</a> (PDF)</li>
+          <li data-i18n-html="pied.sources.chemin"><a href="https://aircarto.fr" target="_blank" rel="noopener">AirCarto</a> (serveur des mesures, projet <a href="https://github.com/aircarto/ModuleAir_V2" target="_blank" rel="noopener">ModuleAir</a>) · Cloudflare Workers (relais) · GitHub Pages et GitHub Actions (site, veille)</li>
         </ul>
         <p class="pied-avert" data-i18n="pied.avert">Capteurs à bas coût : valeurs indicatives, sans valeur réglementaire.</p>
       </section>
 
-      <!-- 4. Le projet -->
+      <!-- 3. Le projet -->
       <section class="pied-col" aria-labelledby="pied-projet-titre">
         <h2 id="pied-projet-titre" data-i18n="pied.projet.titre">Le projet</h2>
         <p data-i18n-html="pied.projet">Capteur de qualité de l'air intérieur<br>Marseille</p>
@@ -1778,10 +1839,12 @@
 <!-- Traductions : un fichier par langue, puis le moteur. L'ordre compte (voir js/i18n.js).
      ?v=… : à changer à chaque modification de ces fichiers, sinon le navigateur peut garder l'ancienne version en cache
      (la page affichait alors les noms des clés, « pied.devise »…). -->
-<script src="lang/fr.js?v=20261126"></script>
-<script src="lang/en.js?v=20261126"></script>
-<script src="lang/ja.js?v=20261126"></script>
-<script src="js/i18n.js?v=20261126"></script>
+<script src="lang/fr.js?v=20261124b"></script>
+<script src="lang/en.js?v=20261124b"></script>
+<script src="lang/ja.js?v=20261124b"></script>
+<script src="js/i18n.js?v=20261124b"></script>
+<!-- Logo LED de la carte : onglet animé et animation d'arrivée (lancerArrivee) -->
+<script src="js/logo-led.js?v=20261124"></script>
 
 <script>
 window.__pret = true;   // dit à la page que le script a bien démarré (voir le <head>)
@@ -3761,38 +3824,18 @@ function ecrireTextesBandeau() {
   ajusterHero();
 }
 
-// Logo de l'onglet (img/favicon.svg) : comme le bandeau, son fond prend la couleur ATMO du verdict et le M celle du texte
-// posé sur ce fond. La statue reste dorée sur fond sombre ; sur fond clair l'or ne se verrait pas, elle prend donc la
-// couleur du texte. Sans verdict : le logo tel quel. Le fichier est lu une seule fois, puis recoloré en mémoire.
-const FAVICON = "img/favicon.svg";
-const FAVICON_REPERES = /#0e1b24|#f3eee2|#ecbb48/gi;   // fond (et coupe autour de l'Enfant), M, statue : voir favicon.svg
-let faviconModele = null, faviconCouleurs = null;
-function majFavicon(couleurs) {
-  faviconCouleurs = couleurs || null;
-  const lien = document.getElementById("favicon");
-  if (!lien) return;
-  const poser = () => {
-    if (!faviconCouleurs || typeof faviconModele !== "string" || !faviconModele) { lien.href = FAVICON; return; }
-    const { ciel, texte } = faviconCouleurs;
-    const statue = texte.toLowerCase() === "#0e1b24" ? texte : "#ecbb48";   // texte foncé = fond clair
-    const table = { "#0e1b24": ciel, "#f3eee2": texte, "#ecbb48": statue };
-    lien.href = "data:image/svg+xml," + encodeURIComponent(faviconModele.replace(FAVICON_REPERES, c => table[c.toLowerCase()]));
-  };
-  if (faviconCouleurs && faviconModele === null) {
-    faviconModele = fetch(FAVICON)
-      .then(r => (r.ok ? r.text() : ""), () => "")
-      .then(t => { faviconModele = t.replace(/<!--[\s\S]*?-->/g, ""); poser(); });
-    return;
-  }
-  if (faviconModele instanceof Promise) return;   // poser() sera appelé à l'arrivée du fichier
-  poser();
+// Logo de l'onglet : le logo LED de la carte (js/logo-led.js), qui s'allume au chargement comme l'écran de la carte au
+// démarrage. Comme la jauge de la carte, sa barre des niveaux n'allume que le niveau ATMO du verdict (les autres restent
+// en sourdine) ; sans verdict (aucune mesure, mesure trop ancienne), toute la barre est allumée.
+function majFavicon(niveau) {
+  if (window.LogoLED) LogoLED.onglet.niveau(niveau);
 }
 
 function majBandeau(cle, fabrique, couleurs, indiceGrains) {
   bandeauCourant = { fabrique };
   if (cle === verdictAffiche) { document.title = fabrique().titre; return; }
   verdictAffiche = cle;
-  majFavicon(couleurs === NEUTRE ? null : couleurs);
+  majFavicon(couleurs === NEUTRE ? -1 : indiceGrains);
 
   const hero = document.getElementById("hero");
   hero.style.setProperty("--ciel", couleurs.ciel);
@@ -4183,6 +4226,35 @@ function sortirPleinEcran() {
   } catch (err) { /* déjà sorti */ }
 }
 
+// Arrivée : juste après l'écran d'entrée (plein écran ou non), le logo de la carte s'allume sur un panneau de LED, comme
+// l'écran de la carte au démarrage (js/logo-led.js : basilique, « LA BONNE M'AIR », barre des niveaux, statue qui
+// scintille), reste affiché un instant, puis s'efface sur la page (~4 s en tout). Un clic, un toucher ou une touche le
+// passe. Animations réduites (bouton du pied de page) : pas d'animation d'arrivée.
+function lancerArrivee() {
+  const voile = document.getElementById("splash-led");
+  const cv = document.getElementById("splash-canvas");
+  const racine = document.documentElement;
+  if (!voile) return;
+  if (!cv || !window.LogoLED || racine.classList.contains("mouvement-reduit")) { voile.remove(); return; }
+  let arreter = null, pause = 0, secours = 0, fini = false;
+  const finir = () => {
+    if (fini) return;
+    fini = true;
+    clearTimeout(pause); clearTimeout(secours);
+    document.removeEventListener("keydown", finir, true);
+    racine.classList.remove("splash-ouvert");
+    voile.classList.add("sortie");
+    setTimeout(() => { if (arreter) arreter(); voile.remove(); }, 650);
+  };
+  voile.hidden = false;
+  racine.classList.add("splash-ouvert");
+  voile.addEventListener("click", finir);
+  document.addEventListener("keydown", finir, true);
+  // le canvas n'a sa taille qu'une fois affiché ; logo complet : on le laisse admirer 1,2 s
+  requestAnimationFrame(() => { if (!fini) arreter = LogoLED.animerPanneau(cv, () => { pause = setTimeout(finir, 1200); }); });
+  secours = setTimeout(finir, LogoLED.DUREE_PANNEAU_MS + 4000);   // onglet passé en arrière-plan, etc.
+}
+
 function initPleinEcran() {
   const racine = document.documentElement;
   const porte = document.getElementById("entree-plein");
@@ -4190,6 +4262,8 @@ function initPleinEcran() {
   if (!pleinEcranDispo()) {
     if (porte) porte.remove();
     if (bascule) bascule.remove();
+    // pas d'écran d'entrée sur cet appareil (iPhone…) : l'arrivée se joue tout de suite, à la première visite
+    if (!racine.classList.contains("intro-masquee")) lancerArrivee();
     return;
   }
   racine.classList.add("plein-dispo");
@@ -4234,6 +4308,7 @@ function initPleinEcran() {
     if (porte.hidden) return;
     porte.hidden = true;
     racine.classList.remove("gate-ouvert");
+    lancerArrivee();
   };
   porte.hidden = false;
   racine.classList.add("gate-ouvert");

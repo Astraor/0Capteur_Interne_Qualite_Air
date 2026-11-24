@@ -5,7 +5,7 @@ Deux façons de parler à la carte **sans câble USB** :
 | | Par Internet (relais Cloudflare) | Par Bluetooth |
 |---|---|---|
 | Où | N'importe où, eduroam compris (HTTPS sortant uniquement) | À une dizaine de mètres de la carte |
-| Journal | Gardé 7 jours (5 000 lignes), presque en direct quand la page est ouverte | En direct |
+| Journal | Gardé 7 jours (5 000 lignes), presque en direct quand la page est ouverte ; un intertitre par jour (« Aujourd'hui », « Hier », date), date complète au survol de l'heure et dans « Copier » | En direct |
 | Commandes | Liste blanche (ci-dessous) | Même liste blanche |
 | Mise à jour du programme | Oui (`maj installer`, signée) | Se lance aussi par Bluetooth ; le programme est toujours téléchargé par le Wi-Fi, via le relais |
 | Il faut | Un compte Cloudflare gratuit | Une appli « terminal BLE » |

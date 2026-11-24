@@ -83,11 +83,13 @@ Sans réseau, la mesure est rangée en flash puis renvoyée plus tard avec son �
 .
 ├── index.html                  # Site web (page unique : HTML + CSS + JS)
 ├── js/i18n.js                  # Moteur de traduction (sans dépendance)
+├── js/logo-led.js              # Logo LED de la carte : onglet animé, animation d'arrivée
 ├── lang/
 │   ├── fr.js                   # Textes en français (langue d'origine)
 │   ├── en.js                   # Anglais
 │   └── ja.js                   # Japonais
-├── img/                        # Affiche (900 et 1696 px), logo M’ (logo.svg, favicon.svg / .ico, icône iPhone)
+├── img/                        # Affiche (900 et 1696 px), logo M’ (logo.svg), icônes LED (favicon.svg / .ico, icone-192 / 512, icône iPhone)
+├── outils/icones.html          # Outil : fabrique les icônes de img/ depuis js/logo-led.js (non publié)
 ├── patch-lang.js               # Outil : met à jour des clés de traduction dans les 3 langues
 ├── Firmware/
 │   ├── platformio.ini          # Configuration PlatformIO
@@ -153,7 +155,7 @@ La carte se connecte seule au meilleur réseau connu visible, sans redémarrage.
 
 Le moniteur série est aussi disponible **sans câble** (mode d'emploi complet : [`relais/LISEZMOI.md`](relais/LISEZMOI.md)) :
 
-- **par Internet**, via un petit relais gratuit chez Cloudflare (`relais/`) : la carte y envoie son journal en HTTPS (toutes les 30 s, toutes les 2 s quand la page console est ouverte) et y prend les commandes. Passe partout, eduroam compris ;
+- **par Internet**, via un petit relais gratuit chez Cloudflare (`relais/`) : la carte y envoie son journal en HTTPS (toutes les 30 s, toutes les 2 s quand la page console est ouverte) et y prend les commandes. Passe partout, eduroam compris. La page console range le journal (7 jours) par jour : un intertitre « Aujourd'hui », « Hier » ou la date reste collé en haut pendant qu'on lit ses lignes, et « Copier » écrit la date devant chaque ligne ;
 - **par Bluetooth**, à côté de la carte : appairage avec le code à 6 chiffres affiché sur l'écran. Un nouveau téléphone n'est accepté que dans les 2 min qui suivent un `bt appairer` (câble USB), ou une mise sous tension si tu as activé `bt demarrage on` : quelqu'un qui voit l'écran depuis la pièce ne peut pas s'appairer à ton insu ;
 - **mises à jour** : `maj installer` télécharge la dernière release GitHub, vérifie sa **signature** (ECDSA, clé privée restée sur ton PC) et son empreinte, l'installe dans l'autre emplacement de la mémoire et revient tout seul à l'ancienne version si la nouvelle ne marche pas.
 
@@ -272,6 +274,11 @@ Page unique, sans framework, hébergée sur **GitHub Pages** (branche `main`, ra
 - **Mémoire du navigateur** (`localStorage`, rien n’est envoyé) : dernière période choisie (6 h, 24 h, 7 j ou durée personnalisée), pas des graphes, courbes cochées, langue. Une fois l’introduction vue (barre des mesures atteinte), les visites suivantes s’ouvrent directement sur l’accueil (01) ; on la revoit avec **00** dans le sommaire (ordinateur) ou **Introduction** (téléphone).
 - **Barre des réglages** collée en haut ; sur téléphone, elle se range quand on descend et revient dès qu’on remonte.
 - **Confort :** écran d’entrée plein écran, bouton flottant « Aller aux mesures » pour sauter l’introduction, animations réductibles, mise à jour automatique toutes les 5 min.
+- **Logo LED de la carte** (`js/logo-led.js`, même dessin pixel par pixel que l’animation de démarrage de la carte et que la console) :
+  - **onglet animé** : au chargement, la basilique monte, « M’AIR » s’écrit, la barre des niveaux se remplit, la statue scintille (puis toutes les 9 s) ; dès qu’une mesure arrive, la barre n’allume que le niveau ATMO du verdict, comme la jauge de la carte ;
+  - **animation d’arrivée** : juste après l’écran plein écran (ou dès la 1re visite sur iPhone, qui n’a pas cet écran), le logo complet s’allume sur un panneau de LED 64 × 32 (~4 s, un clic ou une touche le passe ; rien si les animations sont réduites) ;
+  - **icônes fixes** (ordinateur, tablette, téléphone) : `favicon.svg`, `favicon.ico` (16, 32, 48 px), `icone-192.png` / `icone-512.png` (Android), `apple-touch-icon.png` (iPhone, iPad), fabriquées par `outils/icones.html`.
+- **Pied de page :** le trajet détaillé d’une mesure en 5 étapes (capteurs → carte → serveur AirCarto → relais Cloudflare → cette page), la veille GitHub Actions et la console à côté, puis les mesures (grandeurs, cadence, incertitude) et toutes les sources avec liens (FR, EN, JA).
 - **Mise à jour légère :** toutes les 5 min, le site ne redemande que les mesures arrivées depuis la requête précédente (quelques Ko au lieu de ~2,4 Mo pour 24 h ; Cloudflare compresse au passage ce que l'API AirCarto envoie brut) ; le résultat est identique à un rechargement complet.
 - **Valeurs impossibles écartées :** CO₂ hors 300-5 000 ppm, etc. (le serveur garde d'anciennes valeurs fausses d'un capteur qui dérivait).
 
@@ -376,4 +383,4 @@ GitHub peut retarder les tâches planifiées de quelques minutes, et les met en 
 - HCSP — [avis du 28 avril 2021](https://www.hcsp.fr/Explore.cgi/Telecharger?NomFichier=hcspa20210428_covaravenetmesducodanleserp.pdf) (aération, ventilation, mesure du CO₂ ; 800 ppm)
 - Tera Sensor — [fiche technique NextPM](https://tera-sensor.gitbook.io/tera-sensor/sensors/nextpm/nextpm-datasheet) (limite de détection < 1 µg/m³, linéarité < 5 %, répétabilité < 3 %) · [évaluation AQ-SPEC, rapport de synthèse PDF](https://www.aqmd.gov/docs/default-source/aq-spec/summary/tera-sensor-nextpm---summary-report.pdf?sfvrsn=6)
 - Winsen — [fiche technique MH-Z19C](https://www.winsen-sensor.com/product/mh-z19c.html) (±(50 ppm + 5 % de la valeur lue))
-- AirCarto — serveur de collecte des mesures (`api.aircarto.fr`), lu par le site via le relais Cloudflare `mair-relais.astraor.workers.dev`
+- [AirCarto](https://aircarto.fr) — serveur de collecte des mesures (`api.aircarto.fr`), lu par le site via le relais Cloudflare `mair-relais.astraor.workers.dev` ; projet [ModuleAir](https://github.com/aircarto/ModuleAir_V2), point de départ de la carte
