@@ -166,7 +166,7 @@ Sans câble, seules les commandes **sans secret, sans effacement et sans effet d
 Avec **Serial Bluetooth Terminal** (Android) : menu → *Devices* → onglet **Bluetooth LE** (pas *Classic*) → *Scan* → `MAir-XXXX`.
 
 - **1er appairage :** l'appli se déconnecte dès que le téléphone demande le code (« PAIRING requested… Connect again ») : c'est normal, tape le code affiché sur l'écran, puis **reconnecte-toi** une 2e fois.
-- **« gatt status 133 »** : la carte n'a pas répondu à temps (radio occupée par le Wi-Fi, carte déjà connectée à un autre téléphone, trop loin). Réessaie quelques secondes plus tard ; la carte n'accepte **qu'un téléphone à la fois**.
+- **« gatt status 133 » ou « 147 »** : la liaison n'a pas pu s'établir (radio occupée par le Wi-Fi, carte déjà connectée à un autre téléphone, trop loin, antenne absente). Réessaie quelques secondes plus tard ; la carte n'accepte **qu'un téléphone à la fois**. Depuis le 25/11, le Wi-Fi laisse la radio au Bluetooth pendant 30 s après chaque déconnexion (le temps de se reconnecter), et eduroam n'insiste plus en boucle quand il est refusé (voir plus bas).
 - **Échec à chaque fois, même téléphone :** le téléphone a gardé un ancien appairage que la carte n'a plus (`bt oublier`, `oublier`, mémoire effacée). Sur le téléphone : réglages Bluetooth → `MAir-XXXX` → **Oublier**, puis `bt appairer` au câble USB et reconnecte-toi. La carte l'écrit elle-même dans son journal quand elle reconnaît ce cas.
 - **« write descriptor failed »** : l'abonnement du téléphone aux réponses n'a pas pu être mémorisé (mémoire pleine, réglée depuis le 25/11 : 12 abonnements pour 5 téléphones). Si ça revient : `status` (ligne « abonnements mémorisés ») et `bt liste` / `bt oublier <n>` pour retirer les téléphones inutiles.
 - La carte écrit la **raison de chaque déconnexion** dans son journal (`0x23E` liaison jamais établie : radio occupée ; `0x208` liaison perdue ; `0x213` fermée par le téléphone ; `0x206` clé inconnue ; `0x205` appairage raté), et `status` indique si elle **diffuse** (visible par les téléphones).
@@ -178,7 +178,9 @@ Ce que fait la carte depuis le 25/11 pour fiabiliser la connexion : diffusion su
 
 **Réseaux usurpés :** la carte ne se connecte qu'au **point d'accès précis** (adresse BSSID et canal) vu au scan **avec la même sécurité** que le réseau enregistré : un faux point d'accès ouvert nommé « eduroam » ou comme ta box est ignoré, même s'il émet plus fort.
 
-**eduroam, identité anonyme :** `anonymous@ton-domaine` circule en clair à la place de ton identifiant (`EDUROAM_IDENTITE_ANONYME`). Si l'université la refuse, la carte repasse toute seule à ton identifiant réel.
+**eduroam, identité anonyme :** `anonymous@ton-domaine` circule en clair à la place de ton identifiant (`EDUROAM_IDENTITE_ANONYME`). Si l'université la refuse, le 2e essai se fait avec ton identifiant réel (méthode TTLS-PAP, celle d'AMU).
+
+**eduroam refusé :** après deux refus de suite (identité anonyme puis réelle), la carte laisse eduroam de côté **10 min** : réessayer sans arrêt occuperait la radio (le Bluetooth ne passerait plus) et pourrait faire bloquer ton compte ENT. `wifi connect` réessaie tout de suite. Pour savoir si c'est le certificat qui bloque : `wifi ent test` (explications), puis `wifi ent test oui` : **un** essai sans vérifier le certificat. Connecté → `ca_eduroam.h` n'est plus le bon ; encore refusé → identifiant (`identifiant@etablissement.fr`, en entier) ou mot de passe.
 
 ### Interrupteurs de compilation (début de `main.cpp`)
 
@@ -201,9 +203,9 @@ Ce que fait la carte depuis le 25/11 pour fiabiliser la connexion : diffusion su
 ### Écran LED
 
 - **Démarrage :** logo animé « LA BONNE M’AIR ».
-- **Pages (une mesure par écran, 5 s chacune en pleine lumière, fondu au noir de ~3 s entre deux) :** CO₂ · AÉRER (si CO₂ > 1 000 ppm) · PM1 · PM2.5 · PM10 · indice ATMO · courbe du CO₂ (dernière heure) · Wi-Fi (seulement hors ligne).
+- **Pages (une mesure par écran, 8 s chacune en pleine lumière, fondu au noir de ~0,6 s entre deux) :** CO₂ · AÉRER (si CO₂ > 1 000 ppm) · PM1 · PM2.5 · PM10 · indice ATMO · courbe du CO₂ (dernière heure) · Wi-Fi (seulement hors ligne).
 - **Page de mesure :** nom et unité en haut, filet à la couleur du niveau, valeur en grand avec un visage qui change d’expression, puis la **jauge des niveaux ATMO**, fine (6 segments pour les PM, 4 pour le CO₂) : le niveau atteint est allumé, les autres restent en sourdine, et un **curseur** ▲ détaché de la jauge, à la couleur du niveau, indique la position exacte de la valeur dans son niveau.
-- **Page ÉTAT (toutes les 3 pages, pendant 3 s, fondu court de ~0,7 s) :** heure et date, puis trois grandes icônes colorées (vert = OK, orange = à surveiller, rouge = problème) : **Wi-Fi** (arcs selon le signal, en dBm), **serveur** (nuage : envoi OK, nombre de mesures en attente, clé refusée) et **capteurs** (ventilateur : OK, préchauffage, panne, à calibrer). Réglable avec `PERIODE_ETAT_MS` et `DUREE_ETAT_MS`.
+- **Page ÉTAT (toutes les 3 pages, pendant 4 s, fondu court de ~0,4 s) :** heure et date, puis trois grandes icônes colorées (vert = OK, orange = à surveiller, rouge = problème) : **Wi-Fi** (arcs selon le signal, en dBm), **serveur** (nuage : envoi OK, nombre de mesures en attente, clé refusée) et **capteurs** (ventilateur : OK, préchauffage, panne, à calibrer). Réglable avec `PERIODE_ETAT_MS` et `DUREE_ETAT_MS`.
 - **Couleurs :** chaque valeur prend la couleur de son niveau ATMO.
 - **Alerte hors norme :** dès qu’un polluant atteint son seuil d’alerte (PM : « Mauvais », CO₂ : > 1 000 ppm), l’écran saute aussitôt sur sa page, clignote à la couleur du niveau, puis la valeur pulse ; la page revient une fois sur deux tant que l’alerte dure.
 - **Luminosité adaptée :** 10 niveaux réglables (`lum`), un pour le jour et un pour la nuit (22 h → 7 h par défaut, `nuit`), bridée sur batterie.
