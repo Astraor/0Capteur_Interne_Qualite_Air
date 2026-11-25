@@ -1797,6 +1797,19 @@ bool co2HautConfirme(int co2) {
   return (tri[0] >= med * (1.0f - CO2_ECART_CONFIRMATION)) && (tri[n - 1] <= med * (1.0f + CO2_ECART_CONFIRMATION));
 }
 
+// Dernier code d'erreur de la bibliothèque MH-Z19 (RESULT_*), affiché dans le journal et par « status ».
+uint8_t codeMhz = RESULT_OK;
+const char* texteCodeMhz(uint8_t c) {
+  switch (c) {
+    case RESULT_NULL:    return "aucune trame reçue : fils RX/TX, masse ou alimentation 5 V du capteur";
+    case RESULT_TIMEOUT: return "délai dépassé : le capteur n'a pas répondu à temps";
+    case RESULT_MATCH:   return "réponse qui ne correspond pas à la demande";
+    case RESULT_CRC:     return "trame abîmée (somme de contrôle fausse) : fils trop longs ou parasites";
+    case RESULT_FILTER:  return "mesure filtrée par le capteur (en préchauffage)";
+    default:             return "valeur valide mais 0 ppm";
+  }
+}
+
 void lireMHZ() {
 #if MHZ_ACTIVE
   // (drapeau : sans lui, millis() qui repasse à 0 au bout de 49 jours relancerait 3 min de "préchauffage")
@@ -1807,6 +1820,8 @@ void lireMHZ() {
   }
   int co2 = mhz.getCO2();
   bool repond = (mhz.errorCode == RESULT_OK && co2 > 0);
+  codeMhz = (uint8_t)mhz.errorCode;
+  if (!repond) LOG("CO2 : le MH-Z19C ne répond pas (code %u : %s)\n", (unsigned)codeMhz, texteCodeMhz(codeMhz));
   bool plausible = repond && co2 >= CO2_MIN_PLAUSIBLE && co2 <= CO2_MAX_PLAUSIBLE;
   if (repond && !plausible) {
     nbCO2HorsPlage++;
@@ -4977,8 +4992,9 @@ void afficherStatus() {
   }
   Console.println();
   if (nbSansHeure > 0) Console.printf("mesures sans heure abandonnées (coupure de courant hors ligne) : %u\n", (unsigned)nbSansHeure);
-  Console.printf("CO2 : %s | lectures impossibles écartées : %u%s\n",
+  Console.printf("CO2 : %s%s | lectures impossibles écartées : %u%s\n",
                 mCO2.etat == CAPTEUR_OK ? "ok" : (mCO2.etat == CAPTEUR_CHAUFFE ? "préchauffage" : "en erreur"),
+                (mCO2.etat == CAPTEUR_ERREUR && codeMhz != RESULT_OK) ? (String(" (code ") + codeMhz + " : " + texteCodeMhz(codeMhz) + ")").c_str() : "",
                 (unsigned)nbCO2HorsPlage, co2HorsPlage ? " (dernière lecture hors plage : 'calib' à l'air libre ?)" : "");
   if (nbCO2NonConfirmes > 0) Console.printf("CO2 > %d ppm non confirmés (ignorés) : %u\n", CO2_CONFIRMATION_PPM, (unsigned)nbCO2NonConfirmes);
   Console.printf("lecture des capteurs : toutes les %lu ms | période de mesure : %lu s%s\n", INTERVALLE_LECTURE_MS,
