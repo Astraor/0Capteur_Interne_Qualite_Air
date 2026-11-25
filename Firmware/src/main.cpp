@@ -125,7 +125,7 @@
 #define MASQUER_SECRETS           0  // 1 = les mots de passe saisis s'affichent en ****
 #define DOUBLE_BUFFER             1  // 1 = dessin sans scintillement | 0 si l'écran reste noir ou s'affiche mal
 #define ANIMATIONS                0  // 1 = clignement, chiffres qui glissent, sommet de courbe qui clignote | 0 = calme
-#define TRANSITION_FONDU          1  // 1 = fondu au noir entre deux pages (~3 s, ~0,7 s vers / depuis ÉTAT) | 0 = sec
+#define TRANSITION_FONDU          1  // 1 = fondu au noir entre deux pages (~0,6 s, ~0,4 s vers / depuis ÉTAT) | 0 = sec
 #ifndef AIRCARTO_HTTPS
 #define AIRCARTO_HTTPS            1  // 1 = mesures envoyées en HTTPS (clé chiffrée, serveur vérifié) | 0 = HTTP simple
                                      //     (clé du groupe lisible sur le réseau : seulement si le HTTPS pose problème)
@@ -303,7 +303,7 @@ static const unsigned long INTERVALLE_LECTURE_MS   = 1000;       // lecture des 
 static const unsigned long LECTURE_EN_PANNE_MS     = 10000;      // capteur en panne : relu toutes les 10 s seulement (une lecture
                                                                   // ratée attend la fin du délai de réponse : jusqu'à 2 s en Modbus)
 static const uint8_t ECHECS_AVANT_PANNE            = 10;         // lectures ratées de suite avant « en panne » (~10 s)
-static const unsigned long INTERVALLE_PAGE_MS       = 5000;       // durée d'affichage de chaque page (une seule information par page)
+static const unsigned long INTERVALLE_PAGE_MS       = 8000;       // durée d'affichage de chaque page (une seule information par page)
 static const unsigned long PERIODE_MESURE_MS        = 10000;      // en direct : une mesure (moyenne + pic des lectures) toutes les 10 s
 static const unsigned long PERIODE_MESURE_HORS_LIGNE_MS = 30000;  // hors ligne, ou quelques mesures en retard : toutes les 30 s
 static const unsigned long PERIODE_MESURE_BATT_MS   = 60000;      // sur batterie
@@ -430,11 +430,12 @@ static const char* const LABELS_NIVEAU[NB_NIVEAUX] = {"BON", "MOYEN", "DEGRADE",
 
 // --- Écran : fondu entre les pages, page ÉTAT et animations ---
 // Fondu au noir entre deux pages : l'ancienne s'éteint en FONDU_DEMI_MS, la nouvelle s'allume en FONDU_DEMI_MS
-// (~3 s en tout). Vers ou depuis la page ÉTAT (icônes), et du logo de démarrage à la 1re page : ~0,7 s.
+// (~0,6 s en tout : avant ~3 s, trop lent). Vers ou depuis la page ÉTAT (icônes), et du logo de démarrage à la
+// 1re page : ~0,4 s. Le temps gagné va aux pages elles-mêmes (INTERVALLE_PAGE_MS : 8 s au lieu de 5 s).
 // Le fondu ne compte pas dans la durée d'une page : chacune reste ensuite INTERVALLE_PAGE_MS en pleine lumière.
 #if TRANSITION_FONDU
-static const unsigned long FONDU_DEMI_MS       = 1500;
-static const unsigned long FONDU_COURT_DEMI_MS = 350;
+static const unsigned long FONDU_DEMI_MS       = 300;
+static const unsigned long FONDU_COURT_DEMI_MS = 200;
 #else
 static const unsigned long FONDU_DEMI_MS       = 0;
 static const unsigned long FONDU_COURT_DEMI_MS = 0;
@@ -442,7 +443,7 @@ static const unsigned long FONDU_COURT_DEMI_MS = 0;
 // Page ÉTAT (icônes) : revient après 3 pages de mesure (PERIODE_ETAT_MS, fondus compris), reste DUREE_ETAT_MS.
 // L'état (Wi-Fi, envoi, capteurs) change rarement : un coup d'oeil suffit.
 static const unsigned long PERIODE_ETAT_MS = 3 * INTERVALLE_PAGE_MS + 4 * FONDU_DEMI_MS;
-static const unsigned long DUREE_ETAT_MS   = 3000;
+static const unsigned long DUREE_ETAT_MS   = 4000;
 static const unsigned long ANIM_PAS_MS = 40;           // une image d'animation toutes les 40 ms (25 i/s)
 
 // =====================================================================
@@ -509,6 +510,35 @@ void setupDisplay() {
   timerAttachInterrupt(timer, &onTimer, true);
   timerAlarmWrite(timer, 4000, true);     // toutes les 4000 µs, en boucle
   timerAlarmEnable(timer);
+}
+
+// Luminosité de l'écran, avec la cadence de rafraîchissement qui va avec (à utiliser à la place de setBrightness).
+// PxMatrix affiche un « plan de couleur » (1 bit sur 4) par appel : une image complète demande 4 appels, soit 16 ms
+// à 4 ms d'intervalle (~60 images/s). À faible luminosité, chaque ligne ne s'allume que 1 à 4 µs par plan et les
+// plans les plus faibles tombent à 0 µs : un pixel ne s'allume plus qu'UNE fois par image, un éclair bref 60 fois
+// par seconde, qui se voit (scintillement, aussi pendant les fondus, qui passent par ces niveaux). En pleine lumière,
+// chaque pixel s'allume sur plusieurs plans, l'œil ne voit rien.
+// Un appel est alors bien plus court : sous ~50 % de luminosité, on rafraîchit 2 fois plus souvent (toutes les 2 ms,
+// ~125 images/s), et chaque éclair est raccourci d'autant (luminosité passée à PxMatrix × période / 4 ms) : la
+// lumière perçue reste la même à chaque niveau de « lum », seul le scintillement disparaît. La part du processeur
+// reste celle de la pleine lumière (~35 % du cœur 1). Pas en dessous de 2 ms : les éclairs, comptés en µs entières,
+// deviendraient trop courts et les couleurs perdraient des nuances.
+static uint16_t periodeRafraichissementUs = 4000;
+void reglerLuminositeEcran(uint8_t lum) {
+  if (timer == NULL) { display.setBrightness(lum); return; }   // (avant setupDisplay : période fixe de 4 ms)
+  // durée moyenne d'un appel : 16 lignes × (~25 µs d'envoi + allumage moyen des 4 plans, 56 µs à 255)
+  uint32_t appelUs = 16UL * (25UL + 56UL * lum / 255UL);
+  uint32_t p = appelUs * 100UL / 35UL;          // ~35 % du cœur 1
+  p = (p + 250UL) / 500UL * 500UL;              // par pas de 500 µs : pas de réglage à chaque image d'un fondu
+  if (p < 2000UL) p = 2000UL;
+  if (p > 4000UL) p = 4000UL;
+  uint32_t lumEcran = ((uint32_t)lum * p + 2000UL) / 4000UL;   // même lumière qu'à 4 ms
+  if (lum > 0 && lumEcran == 0) lumEcran = 1;
+  display.setBrightness((uint8_t)lumEcran);
+  if (p == periodeRafraichissementUs) return;
+  periodeRafraichissementUs = (uint16_t)p;
+  timerAlarmWrite(timer, p, true);
+  timerWrite(timer, 0);   // sinon, si le compteur avait déjà dépassé la nouvelle échéance, il ne la croiserait plus
 }
 
 // =====================================================================
@@ -803,8 +833,13 @@ struct Candidat {
 Candidat candidats[NB_WIFI_MAX];    // réseaux à essayer, dans l'ordre (le plus fort d'abord)
 Candidat apCourant;                 // point d'accès de la connexion en cours (reconnexion après une coupure)
 bool identiteReelle[NB_WIFI_MAX] = {false};   // eduroam : l'identité anonyme a été refusée, on envoie l'identifiant réel
-uint8_t bssidRefusAnonyme[NB_WIFI_MAX][6];    // premier point d'accès qui a refusé l'identité anonyme
-bool refusAnonymeVu[NB_WIFI_MAX] = {false};
+// eduroam refusé (identifiant, mot de passe ou certificat) : nombre de refus de suite, et début de la pause imposée.
+// Un refus ne s'arrange pas tout seul : réessayer sans arrêt occuperait la radio (le Bluetooth ne passe plus) et
+// pourrait faire bloquer le compte ENT par l'université (trop d'essais ratés).
+uint8_t refusEap[NB_WIFI_MAX] = {0};
+unsigned long tBlocageEap[NB_WIFI_MAX] = {0};   // 0 = pas de pause
+static const unsigned long WIFI_BLOCAGE_EAP_MS = 600000UL;   // 10 min (« wifi connect » réessaie tout de suite)
+bool essaiSansCert = false;   // « wifi ent test oui » : UN essai sans vérifier le certificat (diagnostic)
 uint8_t nbCandidats = 0, idxCandidat = 0;
 uint8_t essaiCandidat = 0;          // 0 = 1er essai du candidat courant | 1 = 2e (dernier) essai
 unsigned long tDebutCandidat = 0;   // début du 1er essai du candidat courant (secondes de l'écran de connexion)
@@ -839,12 +874,12 @@ uint8_t luminositeCourante = 255;  // luminosité choisie par majLuminosite (le 
 // 2 = la nouvelle s'allume. allongementPage : durée du fondu qui a amené la page courante (ajoutée à sa durée).
 uint8_t phaseFondu = 0;
 unsigned long tFondu = 0, demiFondu = 0, allongementPage = 0;
-bool fonduCourt = false;          // prochain fondu court (~0,7 s) : logo de démarrage, fin du code Bluetooth
+bool fonduCourt = false;          // prochain fondu court (~0,4 s) : logo de démarrage, fin du code Bluetooth
 uint8_t pageAvantFondu = 0;       // page quittée (ÉTAT -> fondu court)
 
 // Arrête net un fondu (alerte, code Bluetooth, écran Wi-Fi, nuit) : pleine luminosité tout de suite.
 void arreterFondu() {
-  if (phaseFondu != 0) display.setBrightness(luminositeCourante);
+  if (phaseFondu != 0) reglerLuminositeEcran(luminositeCourante);
   phaseFondu = 0;
   allongementPage = 0;
 }
@@ -1116,7 +1151,7 @@ static void cleReseau(char* buf, size_t n, char type, uint8_t i) {
 
 void sauverReseaux() {
   char k[8];
-  for (uint8_t i = 0; i < NB_WIFI_MAX; i++) { identiteReelle[i] = false; refusAnonymeVu[i] = false; }   // les numéros changent
+  for (uint8_t i = 0; i < NB_WIFI_MAX; i++) { identiteReelle[i] = false; refusEap[i] = 0; tBlocageEap[i] = 0; }   // les numéros changent
   prefs.putUChar("w_n", nbReseaux);
   for (uint8_t i = 0; i < NB_WIFI_MAX; i++)
     for (const auto &c : CHAMPS_RESEAU) {
@@ -1250,7 +1285,8 @@ void lancerConnexion(int8_t i) {
     // l'heure (elle arrive par Internet, une fois connectée). Limite d'ESP32 Arduino 2.x : le NOM du serveur n'est
     // pas vérifié, seulement l'autorité qui l'a signé.
 #if CA_EDUROAM_PRESENT
-    esp_wifi_sta_wpa2_ent_set_ca_cert((const unsigned char *)CA_EDUROAM, sizeof(CA_EDUROAM));
+    if (essaiSansCert) esp_wifi_sta_wpa2_ent_clear_ca_cert();   // diagnostic demandé (« wifi ent test oui »)
+    else esp_wifi_sta_wpa2_ent_set_ca_cert((const unsigned char *)CA_EDUROAM, sizeof(CA_EDUROAM));
     esp_wifi_sta_wpa2_ent_set_disable_time_check(true);
 #endif
     // Identité « extérieure », lisible par tous en clair : anonymous@domaine (EDUROAM_IDENTITE_ANONYME) ; le vrai
@@ -1334,6 +1370,8 @@ bool essayableSansScan(uint8_t i) {
   return !estEntreprise(i) && reseaux[i].mdp.length() > 0;
 }
 
+bool eapEnPause(uint8_t i);   // (plus bas : réseau entreprise en pause après des refus)
+
 // Range les réseaux connus visibles du plus fort au plus faible. n < 0 : le scan a échoué.
 void preparerCandidats(int n) {
   nbCandidats = 0;
@@ -1349,6 +1387,8 @@ void preparerCandidats(int n) {
   }
   int32_t force[NB_WIFI_MAX];
   for (uint8_t i = 0; i < nbReseaux; i++) {
+    if (estEntreprise(i) && eapEnPause(i)) continue;   // refusé récemment : on n'insiste pas
+    if (essaiSansCert && !estEntreprise(i)) continue;   // test du certificat : seulement les réseaux entreprise
     // Point d'accès le plus fort de ce nom, avec la bonne sécurité. Les fiches du scan sont lues sur place (ce que
     // renvoient WiFi.SSID(j), RSSI(j)...) : sans fabriquer une String pour chaque nom vu, à chaque réseau connu.
     const wifi_ap_record_t* meilleurAp = nullptr;
@@ -1386,7 +1426,7 @@ void preparerCandidats(int n) {
   // Les Wi-Fi à mot de passe que le scan n'a PAS vus (réseau caché, borne un peu loin, scan incomplet) passent en fin de
   // liste, essayés « à l'aveugle » après les réseaux visibles. Avant, dès qu'UN réseau connu était visible (eduroam), les
   // autres n'étaient jamais essayés, même si le premier échouait.
-  for (uint8_t i = 0; i < nbReseaux; i++) {
+  for (uint8_t i = 0; i < nbReseaux && !essaiSansCert; i++) {
     if (!essayableSansScan(i)) continue;
     bool deja = false;
     for (uint8_t k = 0; k < nbCandidats; k++) if (candidats[k].reseau == i) deja = true;
@@ -1413,8 +1453,47 @@ unsigned long pauseWifiMs() {
 }
 bool btOccupe(unsigned long now);   // section BLUETOOTH : un téléphone est en train de se connecter (voir plus bas)
 
+// Réseau entreprise (eduroam) refusé : on alterne identité anonyme et identifiant réel (certaines universités
+// refusent l'identité anonyme, ou son domaine). Avant, la carte ne passait à l'identifiant réel que si DEUX bornes
+// différentes avaient refusé : à poste fixe, c'est presque toujours la même borne (la plus forte), et ce repli
+// n'arrivait jamais. Un faux point d'accès qui refuserait exprès n'obtient que ton identifiant, jamais ton mot de
+// passe : il ne part que dans le tunnel chiffré, vers un serveur dont le certificat est vérifié (ca_eduroam.h).
+// Deux refus de suite (les deux identités) : pause de WIFI_BLOCAGE_EAP_MS sur ce réseau.
+void refusEntreprise(int8_t i, unsigned long now) {
+  if (essaiSansCert) {
+    essaiSansCert = false;
+    Console.println("eduroam : refusé MÊME sans vérifier le certificat. Le certificat n'y est pour rien : vérifie "
+                    "l'identifiant (prenom.nom@etu.univ-amu.fr, en entier) et le mot de passe de l'ENT.");
+  }
+#if EDUROAM_IDENTITE_ANONYME
+  identiteReelle[i] = !identiteReelle[i];
+  if (identiteReelle[i]) Console.println("eduroam : refusé avec l'identité anonyme, prochain essai avec ton identifiant réel.");
+#endif
+  if (++refusEap[i] < 2) return;
+  refusEap[i] = 0;
+  tBlocageEap[i] = now | 1UL;
+  Console.printf("eduroam : refusé deux fois de suite (identifiant, mot de passe ENT ou certificat). Pause de %lu min "
+                 "sur ce réseau, pour ne pas faire bloquer ton compte ENT ni occuper la radio du Bluetooth. "
+                 "'wifi connect' : réessayer ; 'wifi ent test' : savoir si le certificat est en cause.\n",
+                 WIFI_BLOCAGE_EAP_MS / 60000UL);
+}
+
+// Réseau entreprise en pause après des refus (sauf essai demandé à la main : « wifi connect », réseau ajouté...)
+bool eapEnPause(uint8_t i) {
+  if (tBlocageEap[i] == 0) return false;
+  if (wifiInteractif || millis() - tBlocageEap[i] >= WIFI_BLOCAGE_EAP_MS) { tBlocageEap[i] = 0; return false; }
+  return true;
+}
+
 void connexionReussie() {
   etatWifi = WIFI_CONNECTE;
+  if (reseauCourant >= 0) { refusEap[reseauCourant] = 0; tBlocageEap[reseauCourant] = 0; }
+  if (essaiSansCert && reseauCourant >= 0 && estEntreprise(reseauCourant)) {
+    Console.println("eduroam : connecté SANS vérifier le certificat. C'est donc ca_eduroam.h qui bloque (l'université a "
+                    "changé d'autorité ?) : il faut le mettre à jour (voir ca_eduroam.h.exemple). La prochaine connexion "
+                    "vérifiera de nouveau le certificat.");
+  }
+  essaiSansCert = false;
   nbPausesWifi = 0;
   tVisibleDepuis = 0;
   if (dernierReseau != reseauCourant) {
@@ -1429,6 +1508,10 @@ void connexionReussie() {
 
 // Tous les candidats ont échoué
 void finTentatives(unsigned long now) {
+  if (essaiSansCert && !rescannerApresEchec) {
+    essaiSansCert = false;
+    Console.println("eduroam : test sans certificat impossible (réseau introuvable ou sans réponse). Réessaie près d'une borne.");
+  }
   if (rescannerApresEchec) { lancerScan(); return; }  // coupure : le même réseau ne répond plus, on cherche ailleurs
   WiFi.disconnect(false, false);
   if (wifiInteractif || verbose)
@@ -1516,21 +1599,7 @@ void gererWiFi(unsigned long now) {
         Console.printf("Wi-Fi : échec sur %s (essai %u/2) : %s (code %u)\n", nomAffichable(reseaux[reseauCourant].ssid).c_str(),
                       (unsigned)(essaiCandidat + 1), raisonLongue(r), (unsigned)r);
       else journaliserEchecWifi(r);
-#if EDUROAM_IDENTITE_ANONYME
-      // Repli sur l'identifiant réel seulement si DEUX points d'accès différents ont refusé l'identité anonyme : un faux
-      // point d'accès isolé ne peut pas, en refusant exprès, obliger la carte à dévoiler ton identifiant en clair.
-      if (r == WIFI_REASON_802_1X_AUTH_FAILED && estEntreprise(reseauCourant) && !identiteReelle[reseauCourant] && apCourant.bssidOk) {
-        uint8_t k = (uint8_t)reseauCourant;
-        if (!refusAnonymeVu[k]) {
-          refusAnonymeVu[k] = true;
-          memcpy(bssidRefusAnonyme[k], apCourant.bssid, 6);
-        } else if (memcmp(bssidRefusAnonyme[k], apCourant.bssid, 6) != 0) {
-          identiteReelle[k] = true;
-          Console.println("eduroam : identité anonyme refusée par deux bornes. Les prochains essais utilisent ton identifiant "
-                          "réel (EDUROAM_IDENTITE_ANONYME 0 pour toujours l'utiliser).");
-        }
-      }
-#endif
+      if (r == WIFI_REASON_802_1X_AUTH_FAILED && estEntreprise(reseauCourant)) refusEntreprise(reseauCourant, now);
       // 1er essai raté : le MÊME réseau est retenté 2 s plus tard. Après un redémarrage de la carte, la box croit
       // encore l'ancienne connexion ouverte et refuse souvent le 1er essai (délai, « occupé »), le 2e passe. C'est
       // ce que faisait à la main « wifi connect » ; avant, la carte attendait 30 s, puis ne refaisait qu'UN essai,
@@ -3110,6 +3179,7 @@ static const unsigned long BT_PAS_MS = 15;        // un paquet au plus toutes le
 static const unsigned long FENETRE_APPAIRAGE_MS = 120000UL;  // nouveau téléphone : 2 min après mise sous tension / « bt appairer »
 static const unsigned long BT_SANS_APPAIRAGE_MS = 35000UL;   // connexion non appairée coupée au bout de 35 s (l'appairage
                                                              // lui-même abandonne au bout de 30 s : inutile d'attendre plus)
+static const unsigned long BT_RECONNEXION_MS = 30000UL;      // après une déconnexion : le Wi-Fi attend aussi (btOccupe)
 static const unsigned long BT_PREPARATION_MS = 15000UL;      // début de connexion : le Wi-Fi attend pour scanner (btOccupe)
 
 NimBLECharacteristic* btTx = nullptr;
@@ -3119,6 +3189,7 @@ volatile uint16_t btConnexion = 0xFFFF;
 volatile uint16_t btMtu = 23;         // taille des paquets négociée (23 par défaut : 20 octets de texte)
 volatile unsigned long tFenetreAppairage = 0;   // ouverture de la fenêtre d'appairage (0 = fermée)
 volatile unsigned long tBtConnexion = 0;        // début de la connexion en cours
+volatile unsigned long tBtDeconnexion = 0;   // 0 = pas de déconnexion récente
 volatile bool btRefuser = false;                // nouveau téléphone hors fenêtre : à déconnecter (par loop)
 volatile bool btCodeMontre = false;             // un code a été affiché pour cette connexion (nouvel appairage)
 volatile bool btAbonne = false;                 // le téléphone s'est abonné aux réponses (notifications de TX)
@@ -3253,6 +3324,7 @@ class BtServeur : public NimBLEServerCallbacks {
     btEffacerConnexion();
     btMtu = 23;
     btRaisonDeco = raison;   // affichée par loop() (btEnvoyer)
+    tBtDeconnexion = millis() | 1UL;   // le Wi-Fi laisse la radio au téléphone qui va sans doute se reconnecter
     codeAppairage = 0;
     if (mutexBt && xSemaphoreTake(mutexBt, pdMS_TO_TICKS(50)) == pdTRUE) {   // btEcrire peut écrire en même temps
       btLong = 0;
@@ -3417,8 +3489,12 @@ void oublierTelephones() {
 // Un téléphone vient de se connecter (appairage, découverte des services, abonnement : les 15 premières secondes) : le
 // Wi-Fi retarde ses scans et ses nouveaux essais, qui occuperaient la radio à ce moment-là. (Durée bornée : un téléphone
 // qui reste connecté ne bloque pas le Wi-Fi ; une connexion sans appairage est coupée au bout de 35 s.)
+// Aussi pendant BT_RECONNEXION_MS après une déconnexion : on se reconnecte souvent juste après (appli fermée puis
+// rouverte). Si le Wi-Fi scanne ou cherche un réseau à ce moment-là (eduroam qui refuse, box absente), la radio est
+// prise et le téléphone n'obtient que « gatt status 133 » ou « 147 » (connexion jamais établie).
 bool btOccupe(unsigned long now) {
-  return btConnecte && (long)(now - tBtConnexion) < (long)BT_PREPARATION_MS;
+  if (tBtDeconnexion != 0 && (long)(now - tBtDeconnexion) >= (long)BT_RECONNEXION_MS) tBtDeconnexion = 0;
+  return (btConnecte && (long)(now - tBtConnexion) < (long)BT_PREPARATION_MS) || (!btConnecte && tBtDeconnexion != 0);
 }
 
 #else   // BLUETOOTH_ACTIF 0
@@ -4426,7 +4502,7 @@ void lumiFondu(unsigned long t, bool sortie) {
   uint32_t f = demiFondu ? (uint32_t)255 * t / demiFondu : 255;   // 0..255
   if (f > 255) f = 255;
   if (sortie) f = 255 - f;
-  display.setBrightness((uint16_t)((uint32_t)luminositeCourante * f * f / 65025UL));
+  reglerLuminositeEcran((uint16_t)((uint32_t)luminositeCourante * f * f / 65025UL));
 }
 
 // Lance le fondu vers la page courante (déjà choisie) : l'ancienne image reste affichée et s'éteint ;
@@ -4455,7 +4531,7 @@ void majFondu(unsigned long now) {
   unsigned long t = now - tFondu;
   if (phaseFondu == 1) {
     if (t < demiFondu) { lumiFondu(t, true); return; }
-    display.setBrightness(0);
+    reglerLuminositeEcran(0);
     dessinerContenu();   // nouvelle page, dessinée dans le noir
     presenter();
     phaseFondu = 2;
@@ -4463,7 +4539,7 @@ void majFondu(unsigned long now) {
     t = 0;
   }
   if (t < demiFondu) { lumiFondu(t, false); return; }
-  display.setBrightness(luminositeCourante);
+  reglerLuminositeEcran(luminositeCourante);
   phaseFondu = 0;
 }
 
@@ -4753,7 +4829,7 @@ void majLuminosite() {
   bool eteint = (ECRAN_ETEINT_NUIT && nuit);
   if (eteint != ecranEteint) { ecranEteint = eteint; aRedessiner = true; }
   luminositeCourante = lum;
-  if (phaseFondu == 0) display.setBrightness(lum);   // pendant un fondu, majFondu() y revient tout seul
+  if (phaseFondu == 0) reglerLuminositeEcran(lum);   // pendant un fondu, majFondu() y revient tout seul
 }
 
 // =====================================================================
@@ -4911,6 +4987,7 @@ void afficherAide() {
     "  wifi list             réseaux Wi-Fi en mémoire (5 au maximum)",
     "  wifi add <nom> [mdp]  ajoute / modifie un Wi-Fi classique (sans mdp = réseau ouvert)",
     "  wifi ent <nom> <identifiant> <mdp>   ajoute un WPA2 Entreprise (ex. eduroam)",
+    "  wifi ent test         eduroam refusé : le certificat est-il en cause ? (un essai sans le vérifier)",
     "                        nom avec espaces : entre guillemets, ex. wifi add \"Box de Paul\" mdp",
     "  wifi del <n|nom>       supprime UN réseau : son numéro ('wifi list') ou son nom",
     "  wifi scan             liste les réseaux visibles (* = connu)",
@@ -5158,6 +5235,25 @@ void commandeWifi(const String &s) {
 
   if (sous == "" || sous == "list") {
     listerReseaux();
+  } else if (sous == "ent" && (resteLigne(s, pos).equalsIgnoreCase("test") || resteLigne(s, pos).equalsIgnoreCase("test oui"))) {
+    // Diagnostic : eduroam refusé à cause du certificat, ou de l'identifiant / mot de passe ?
+#if CA_EDUROAM_PRESENT
+    bool oui = resteLigne(s, pos).equalsIgnoreCase("test oui");
+    bool entreprise = false;
+    for (uint8_t i = 0; i < nbReseaux; i++) if (estEntreprise(i)) entreprise = true;
+    if (!entreprise) { Console.println("Aucun réseau entreprise enregistré ('wifi ent <nom> <identifiant> <mdp>')."); return; }
+    if (!oui) {
+      Console.println("Test : UN essai de connexion à eduroam SANS vérifier le certificat du serveur. Il dit si c'est le "
+                      "certificat (ca_eduroam.h) qui bloque. Ton mot de passe part alors vers un serveur non vérifié : "
+                      "fais-le seulement à la fac, sur le vrai eduroam. Pour lancer : 'wifi ent test oui'.");
+      return;
+    }
+    essaiSansCert = true;
+    Console.println("Test sans certificat : connexion à eduroam...");
+    relancerWifi(true);
+#else
+    Console.println("Pas de ca_eduroam.h : la carte ne vérifie déjà aucun certificat, le test n'apporterait rien.");
+#endif
   } else if (sous == "add" || sous == "ent") {
     bool ent = (sous == "ent");
     String ssid = motSuivant(s, pos);
