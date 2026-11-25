@@ -3157,13 +3157,14 @@ void btEnvoyer(unsigned long now) {
   if (raison >= 0) {
     btRaisonDeco = -1;
     // codes HCI + 0x200 : 0x208 liaison perdue, 0x213 fermée par le téléphone, 0x216 par la carte, 0x23E jamais établie
-    // (radio occupée), 0x206 clé absente (appairage perdu d'un côté), 0x205 code faux ou appairage raté
+    // (radio occupée), 0x206 clé absente (appairage perdu d'un côté), 0x23D échec de chiffrement (MIC : le téléphone et la
+    // carte n'ont pas la même clé), 0x205 code faux ou appairage raté
     Console.printf("Bluetooth : téléphone déconnecté (raison 0x%03X%s).\n", raison,
                    raison == 0x208 ? ", liaison perdue" : raison == 0x213 ? ", fermée par le téléphone" :
                    raison == 0x216 ? ", fermée par la carte" : raison == 0x23E ? ", liaison jamais établie : radio occupée" :
-                   raison == 0x206 ? ", clé inconnue" : raison == 0x205 ? ", appairage raté" : "");
+                   raison == 0x206 || raison == 0x23D ? ", clés différentes (appairage périmé d'un côté)" : raison == 0x205 ? ", appairage raté" : "");
   }
-  if (btCleInconnue) {
+  if (btCleInconnue || raison == 0x23D || raison == 0x206) {
     btCleInconnue = false;
     Console.printf("Bluetooth : ce téléphone a sans doute gardé un ancien appairage que la carte n'a plus. Sur le téléphone : "
                    "réglages Bluetooth > %s > Oublier, puis 'bt appairer' au câble USB et reconnecte-toi.\r\n", btNom.c_str());
