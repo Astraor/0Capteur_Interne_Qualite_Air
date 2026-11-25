@@ -92,12 +92,23 @@ L'ancienne devient inutile, même pour ceux qui l'ont copiée.
 
 ## 2. Publier une mise à jour
 
-1. Modifie le code, puis **Build**. La fin de la compilation affiche :
-   `OTA : version 2611201530 signée -> Firmware/ota/firmware.bin + firmware.json`
+**En une commande (une seule fois : installe [GitHub CLI](https://cli.github.com), puis `gh auth login`)**
+
+1. Modifie le code, fais `git push`, puis dans le terminal PlatformIO : `pio run -t publier`.
+   Il compile, signe, puis publie la release GitHub (tag `v<version>`, avec `firmware.bin` et `firmware.json`).
+   Il te prévient si du code n'est pas encore poussé sur GitHub.
+
+**À la main (sans `gh`)**
+
+1. **Build**. La fin de la compilation affiche : `OTA : version 2611201530 signée -> Firmware/ota/firmware.bin + firmware.json`
 2. Sur GitHub : **Releases → Draft a new release**
    - tag : celui affiché (ex. `v2611201530`) ;
    - glisse **les deux fichiers** `Firmware/ota/firmware.bin` et `Firmware/ota/firmware.json` ;
    - **Publish release** (pas « pre-release »).
+
+**Pourquoi pas GitHub Actions ?** Pour qu'il signe à ta place, il faudrait lui confier ta clé privée. Un compte GitHub piraté
+pourrait alors pousser un faux programme dans toutes les cartes. Là, la clé reste sur ton PC.
+
 3. Dans la page console : « Publiée : 2611201530 (plus récente que la carte) » → **Installer sur la carte** (ou commande `maj installer`).
 4. La carte télécharge, vérifie la signature et l'empreinte, s'installe dans l'autre emplacement et redémarre. L'écran affiche **MISE A JOUR xx %**.
 5. Elle se valide toute seule après 1 min de fonctionnement + un échange avec le relais (« Nouvelle version … validée »).
