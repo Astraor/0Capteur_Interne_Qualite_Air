@@ -1265,6 +1265,10 @@ void lancerConnexion(int8_t i) {
     esp_wifi_sta_wpa2_ent_set_identity((uint8_t *)exterieure.c_str(), exterieure.length());
     esp_wifi_sta_wpa2_ent_set_username((uint8_t *)r.eapId.c_str(), r.eapId.length());
     esp_wifi_sta_wpa2_ent_set_password((uint8_t *)r.mdp.c_str(), r.mdp.length());
+    // Méthode interne d'eduroam AMU : TTLS-PAP (voir ca_eduroam.h). Sans cette ligne, ESP-IDF propose MSCHAPv2 par défaut
+    // dans le tunnel TTLS : le serveur le refuse, d'où « identifiant ou mot de passe refusé » alors qu'ils sont bons.
+    // (sans effet si le serveur choisit PEAP)
+    esp_wifi_sta_wpa2_ent_set_ttls_phase2_method(ESP_EAP_TTLS_PHASE2_PAP);
     esp_wifi_sta_wpa2_ent_enable();
   } else {
     // Wi-Fi classique : le mode entreprise DOIT être coupé, sinon la box refuse la connexion
