@@ -203,6 +203,7 @@
 #if BLUETOOTH_ACTIF
 #include <NimBLEDevice.h>    // pile Bluetooth basse consommation, plus légère que celle d'origine (lib_deps)
 #include <nimble/nimble/host/include/host/ble_hs.h>   // ble_hs_cfg : réglages de sécurité de la pile (sm_sc_only)
+#include <nvs.h>                                          // status : place libre dans la mémoire des réglages (NVS)
 #endif
 // Numéro de version : fabriqué à chaque compilation par outils/ota.py (date de la dernière modification du code,
 // AAMMJJhhmm). La carte n'accepte une mise à jour que si son numéro est PLUS GRAND que le sien.
@@ -333,7 +334,9 @@ static const unsigned long ANTIREBOND_SECTEUR_MS     = 500;
 static const unsigned long WIFI_TIMEOUT_PSK_MS       = 20000UL;   // délai max pour se connecter à un Wi-Fi classique
 static const unsigned long WIFI_TIMEOUT_EAP_MS       = 35000UL;   // eduroam est plus lent (authentification ENT)
 static const unsigned long WIFI_SCAN_MAX_MS          = 12000UL;   // un scan des réseaux visibles ne dure jamais plus
-static const unsigned long WIFI_PAUSE_MS             = 30000UL;   // aucun réseau connu joignable : nouvel essai après 30 s
+static const unsigned long WIFI_PAUSE_MS             = 30000UL;   // aucun réseau connu joignable : nouvel essai après 30 s,
+static const unsigned long WIFI_PAUSE_MAX_MS         = 120000UL;  // puis 60 s, puis 2 min (un scan occupe la radio, Bluetooth compris)
+static const uint32_t      WIFI_SCAN_MS_CANAL        = 150;       // écoute par canal d'un scan (300 par défaut) : ~2 s au lieu de ~4 s
 static const unsigned long WIFI_REESSAI_MS           = 2000UL;    // 1er essai raté : le même réseau est retenté 2 s après
                                                                   // (après un redémarrage, beaucoup de box refusent le 1er)
 static const unsigned long WIFI_LOG_ECHEC_MS         = 600000UL;  // échecs en arrière-plan : une ligne au journal / 10 min
@@ -1316,7 +1319,9 @@ void lancerScan() {
 #if WIFI_ACTIVE
   WiFi.disconnect(false, false);
   WiFi.scanDelete();
-  WiFi.scanNetworks(true, false);
+  // Écoute courte sur chaque canal : la radio est partagée avec le Bluetooth, qui ne peut ni diffuser ni répondre
+  // pendant un scan (un téléphone qui se connecte à ce moment-là échoue : « gatt status 133 »).
+  WiFi.scanNetworks(true, false, false, WIFI_SCAN_MS_CANAL);
   etatWifi = WIFI_SCAN;
   tEtatWifi = millis();
   aRedessiner = true;
@@ -1403,8 +1408,18 @@ void montrerResultatWifi(bool ok) {
   aRedessiner = true;
 }
 
+// Pause entre deux séries d'essais quand aucun réseau connu ne répond : 30 s, 60 s, puis 2 min. Chaque série commence
+// par un scan, qui occupe la radio (le Bluetooth en pâtit) : inutile de scanner toutes les 30 s une borne éteinte.
+uint8_t nbPausesWifi = 0;
+unsigned long pauseWifiMs() {
+  unsigned long p = WIFI_PAUSE_MS << nbPausesWifi;
+  return p < WIFI_PAUSE_MAX_MS ? p : WIFI_PAUSE_MAX_MS;
+}
+bool btOccupe(unsigned long now);   // section BLUETOOTH : un téléphone est en train de se connecter (voir plus bas)
+
 void connexionReussie(unsigned long now) {
   etatWifi = WIFI_CONNECTE;
+  nbPausesWifi = 0;
   tDernierWifiOK = now;
   tVisibleDepuis = 0;
   if (dernierReseau != reseauCourant) {
@@ -1423,7 +1438,7 @@ void finTentatives(unsigned long now) {
   WiFi.disconnect(false, false);
   if (wifiInteractif || verbose)
     Console.printf("Wi-Fi : aucun réseau connu joignable. Nouvel essai dans %lu s ('wifi scan' pour voir les réseaux).\n",
-                  WIFI_PAUSE_MS / 1000UL);
+                  pauseWifiMs() / 1000UL);
   montrerResultatWifi(false);
   wifiInteractif = false;
   etatWifi = WIFI_PAUSE;
@@ -1435,6 +1450,7 @@ void finTentatives(unsigned long now) {
 void relancerWifi(bool interactif) {
 #if WIFI_ACTIVE
   resultatWifiAffiche = false;
+  nbPausesWifi = 0;           // (pause de nouveau à 30 s)
   tDernierWifiOK = millis();  // le compte à rebours d'1 h repart
   tVisibleDepuis = 0;         // (nouveau réseau, nouveau mot de passe : on lui laisse sa chance)
   if (nbReseaux == 0) {
@@ -1454,6 +1470,9 @@ void initialiserWiFi() {
 #if WIFI_ACTIVE
   WiFi.persistent(false);              // les identifiants sont dans NOTRE cache : la carte n'en garde pas une 2e copie
   WiFi.mode(WIFI_STA);
+  // Canal Wi-Fi de 20 MHz (et non 40) : le Bluetooth partage la radio, et avec un canal de 40 MHz certains téléphones
+  // Android ne voient plus la carte (avis Espressif AR2024-001). Une mesure toutes les 10 s n'a pas besoin de plus.
+  esp_wifi_set_bandwidth(WIFI_IF_STA, WIFI_BW_HT20);
   WiFi.disconnect(false, true);        // efface un ancien réseau mémorisé par le pilote (anciennes versions du programme)
   WiFi.setAutoReconnect(false);        // la reconnexion est gérée par gererWiFi (sinon les deux se marchent dessus)
   WiFi.setMinSecurity(WIFI_AUTH_WPA_PSK);         // accepte aussi les vieilles box en WPA (pas seulement WPA2)
@@ -1537,7 +1556,8 @@ void gererWiFi(unsigned long now) {
     }
 
     case WIFI_REESSAI:
-      if (now - tEtatWifi < WIFI_REESSAI_MS) return;
+      // (un téléphone en train de se connecter en Bluetooth : on lui laisse la radio quelques secondes)
+      if (now - tEtatWifi < WIFI_REESSAI_MS || btOccupe(now)) return;
       essaiCandidat = 1;
       lancerConnexion(candidats[idxCandidat]);
       return;
@@ -1566,7 +1586,9 @@ void gererWiFi(unsigned long now) {
       return;
 
     case WIFI_PAUSE:
-      if (now - tEtatWifi >= WIFI_PAUSE_MS) lancerScan();
+      if (now - tEtatWifi < pauseWifiMs() || btOccupe(now)) return;
+      if ((WIFI_PAUSE_MS << nbPausesWifi) < WIFI_PAUSE_MAX_MS) nbPausesWifi++;   // la prochaine pause sera plus longue
+      lancerScan();
       return;
   }
 #endif
@@ -3062,9 +3084,16 @@ void journalEcrire(const uint8_t*, size_t) {}
 //  - appairage « Secure Connections » seulement, clé de 16 octets (platformio.ini : MYNEWT_VAL_BLE_SM_SC_ONLY) :
 //    l'ancien appairage « legacy », dont le code se retrouve en écoutant l'échange, est refusé ;
 //  - tant que l'appairage n'est pas fait, la carte n'envoie rien et ignore tout ce qu'elle reçoit ; une connexion
-//    qui ne s'appaire pas est coupée au bout de BT_SANS_APPAIRAGE_MS (elle bloquerait la console Bluetooth) ;
+//    qui ne s'appaire pas est coupée au bout de BT_SANS_APPAIRAGE_MS (elle occupe la seule place de connexion) ;
 //  - mêmes commandes qu'à distance seulement (liste blanche) : Wi-Fi, clé, jeton, effacements = câble USB ;
 //  - « bt oublier » (au câble USB) efface les téléphones connus.
+// FIABILITÉ (analyse du 25/11 : connexions aléatoires, « gatt status 133 », « write descriptor failed ») :
+//  - la carte ne lance l'appairage que si le lien n'est pas déjà chiffré (un téléphone connu chiffre de lui-même) ;
+//  - elle n'envoie rien avant que le téléphone se soit abonné aux réponses (sinon les premières lignes se perdent) ;
+//  - la diffusion est surveillée chaque seconde : relancée si elle s'est arrêtée (liaison avortée avant onConnect) ;
+//  - mémoire des abonnements agrandie (platformio.ini : MAX_CCCDS, MAX_CSFCS) et jamais un téléphone effacé pour
+//    faire de la place à un abonnement ; la raison de chaque déconnexion est affichée (avec un conseil) ;
+//  - Wi-Fi : scans plus courts et plus espacés, et mis en attente pendant qu'un téléphone se connecte.
 #if BLUETOOTH_ACTIF
 static const char* NUS_SERVICE = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E";
 static const char* NUS_RX      = "6E400002-B5A3-F393-E0A9-E50E24DCCA9E";   // le téléphone écrit ici
@@ -3072,7 +3101,9 @@ static const char* NUS_TX      = "6E400003-B5A3-F393-E0A9-E50E24DCCA9E";   // la
 static const size_t BT_TAMPON  = 2048;            // texte en attente d'envoi (au-delà, les plus vieilles lignes sautent)
 static const unsigned long BT_PAS_MS = 15;        // un paquet au plus toutes les 15 ms (la radio suit sans perte)
 static const unsigned long FENETRE_APPAIRAGE_MS = 120000UL;  // nouveau téléphone : 2 min après mise sous tension / « bt appairer »
-static const unsigned long BT_SANS_APPAIRAGE_MS = 90000UL;   // connexion non appairée coupée au bout de 90 s
+static const unsigned long BT_SANS_APPAIRAGE_MS = 35000UL;   // connexion non appairée coupée au bout de 35 s (l'appairage
+                                                             // lui-même abandonne au bout de 30 s : inutile d'attendre plus)
+static const unsigned long BT_PREPARATION_MS = 15000UL;      // début de connexion : le Wi-Fi attend pour scanner (btOccupe)
 
 NimBLECharacteristic* btTx = nullptr;
 volatile bool btConnecte = false;     // un téléphone est connecté
@@ -3083,6 +3114,9 @@ volatile unsigned long tFenetreAppairage = 0;   // ouverture de la fenêtre d'ap
 volatile unsigned long tBtConnexion = 0;        // début de la connexion en cours
 volatile bool btRefuser = false;                // nouveau téléphone hors fenêtre : à déconnecter (par loop)
 volatile bool btCodeMontre = false;             // un code a été affiché pour cette connexion (nouvel appairage)
+volatile bool btAbonne = false;                 // le téléphone s'est abonné aux réponses (notifications de TX)
+volatile int  btRaisonDeco = -1;                // raison de la dernière déconnexion, affichée par loop() (-1 : rien)
+volatile bool btCleInconnue = false;            // échec de chiffrement d'un téléphone inconnu : conseil affiché par loop()
 
 char btTampon[BT_TAMPON];
 size_t btLong = 0;
@@ -3117,7 +3151,43 @@ void btEcrire(const uint8_t* b, size_t n) {
 
 // Appelée à chaque tour de loop() : envoie un paquet du tampon (taille négociée, 180 octets au plus).
 void btEnvoyer(unsigned long now) {
-  static unsigned long tPaquet = 0;
+  static unsigned long tPaquet = 0, tSurveillance = 0;
+  static uint8_t incoherences = 0;
+  // Messages notés par les rappels de NimBLE (autre tâche) : écrits ici, pour ne pas bloquer la pile Bluetooth.
+  int raison = btRaisonDeco;
+  if (raison >= 0) {
+    btRaisonDeco = -1;
+    // codes HCI + 0x200 : 0x208 liaison perdue, 0x213 fermée par le téléphone, 0x216 par la carte, 0x23E jamais établie
+    // (radio occupée), 0x206 clé absente (appairage perdu d'un côté), 0x205 code faux ou appairage raté
+    Console.printf("Bluetooth : téléphone déconnecté (raison 0x%03X%s).\n", raison,
+                   raison == 0x208 ? ", liaison perdue" : raison == 0x213 ? ", fermée par le téléphone" :
+                   raison == 0x216 ? ", fermée par la carte" : raison == 0x23E ? ", liaison jamais établie : radio occupée" :
+                   raison == 0x206 ? ", clé inconnue" : raison == 0x205 ? ", appairage raté" : "");
+  }
+  if (btCleInconnue) {
+    btCleInconnue = false;
+    Console.println("Bluetooth : ce téléphone a sans doute gardé un ancien appairage que la carte n'a plus. Sur le téléphone : "
+                    "réglages Bluetooth > " + btNom + " > Oublier, puis 'bt appairer' au câble USB et reconnecte-toi.");
+  }
+  // Chaque seconde : la carte doit diffuser dès qu'aucun téléphone n'est connecté. Une liaison qui avorte avant
+  // d'être établie (radio occupée) n'appelle ni onConnect ni onDisconnect : sans cette relance, la carte resterait
+  // invisible jusqu'au prochain redémarrage (le téléphone n'obtiendrait que des « gatt status 133 »).
+  if (now - tSurveillance >= 1000UL) {
+    tSurveillance = now;
+    NimBLEServer* serveur = NimBLEDevice::getServer();
+    if (serveur != nullptr && serveur->getConnectedCount() == 0) {
+      // marqué connecté alors que la pile n'a plus aucune connexion (deux contrôles de suite) : on remet tout à zéro
+      if (btConnecte && ++incoherences >= 2) {
+        btConnecte = false; btAutorise = false; btAbonne = false; btRefuser = false; btCodeMontre = false;
+        codeAppairage = 0;
+        LOG("Bluetooth : connexion fantôme effacée.\n");
+      }
+      if (!btConnecte && !NimBLEDevice::getAdvertising()->isAdvertising() && NimBLEDevice::startAdvertising())
+        LOG("Bluetooth : diffusion relancée.\n");
+    } else {
+      incoherences = 0;
+    }
+  }
   // Connexion pas (encore) appairée : nouveau téléphone hors fenêtre d'appairage, ou qui traîne sans s'appairer.
   // (comparaison signée : onConnect, sur l'autre cœur, peut avoir noté une heure plus récente que « now »)
   if (btConnecte && !btAutorise && (btRefuser || (long)(now - tBtConnexion) >= (long)BT_SANS_APPAIRAGE_MS)) {
@@ -3129,7 +3199,8 @@ void btEnvoyer(unsigned long now) {
     else LOG("Bluetooth : connexion sans appairage coupée.\n");
     return;
   }
-  if (!btAutorise || btTx == nullptr || btLong == 0 || now - tPaquet < BT_PAS_MS) return;
+  // (rien avant l'abonnement du téléphone : Android jetterait ces paquets, et la 1re ligne se perdrait)
+  if (!btAutorise || !btAbonne || btTx == nullptr || btLong == 0 || now - tPaquet < BT_PAS_MS) return;
   tPaquet = now;
   uint8_t paquet[180];
   size_t max = (btMtu > 3) ? btMtu - 3 : 20;
@@ -3147,19 +3218,27 @@ void btEnvoyer(unsigned long now) {
 }
 
 class BtServeur : public NimBLEServerCallbacks {
+  // Selon la version de NimBLE, le chiffrement d'un téléphone connu, le code ou l'échange de MTU peuvent arriver AVANT
+  // onConnect : on part donc de l'état réel du lien, sans effacer ce qui s'est déjà passé (btRefuser, btCodeMontre et
+  // btAbonne sont remis à zéro à la déconnexion).
   void onConnect(NimBLEServer* serveur, NimBLEConnInfo& info) override {
-    btConnecte = true;
-    btAutorise = false;
-    btRefuser = false;
-    btCodeMontre = false;
-    tBtConnexion = millis();
     btConnexion = info.getConnHandle();
-    btMtu = 23;
-    NimBLEDevice::startSecurity(info.getConnHandle());   // demande l'appairage tout de suite (code sur l'écran)
+    tBtConnexion = millis();
+    btMtu = info.getMTU();
+    btAutorise = info.isEncrypted() && info.isAuthenticated() && info.getSecKeySize() == 16;
+    btConnecte = true;   // en dernier : loop() lit les valeurs ci-dessus dès qu'il voit la connexion
+    // Appairage demandé seulement si le lien n'est pas déjà chiffré : un téléphone connu chiffre de lui-même ; une
+    // 2e demande pendant son chiffrement le ferait parfois échouer.
+    if (!info.isEncrypted()) NimBLEDevice::startSecurity(info.getConnHandle());
   }
   void onDisconnect(NimBLEServer* serveur, NimBLEConnInfo& info, int raison) override {
     btConnecte = false;
     btAutorise = false;
+    btAbonne = false;
+    btRefuser = false;
+    btCodeMontre = false;
+    btMtu = 23;
+    btRaisonDeco = raison;   // affichée par loop() (btEnvoyer)
     codeAppairage = 0;
     if (mutexBt && xSemaphoreTake(mutexBt, pdMS_TO_TICKS(50)) == pdTRUE) {   // btEcrire peut écrire en même temps
       btLong = 0;
@@ -3189,6 +3268,10 @@ class BtServeur : public NimBLEServerCallbacks {
     if (info.isEncrypted() && info.isAuthenticated() && info.getSecKeySize() == 16) {
       btAutorise = true;
       if (btCodeMontre) tFenetreAppairage = 0;   // un nouveau téléphone par fenêtre : elle se referme
+      // Liaison plus robuste : 30 à 50 ms entre deux échanges, et 6 s sans nouvelles avant de la déclarer perdue
+      // (assez pour traverser un scan Wi-Fi, assez court pour libérer vite l'unique place de connexion).
+      NimBLEDevice::getServer()->updateConnParams(info.getConnHandle(), 24, 40, 0, 600);
+      // (gardé dans le tampon jusqu'à l'abonnement du téléphone, puis envoyé)
       Console.printf("Bluetooth : téléphone appairé (console %s). Tape 'aide'.\n", btNom.c_str());
     } else {
       // Appairage chiffré mais SANS code (« Just Works », téléphone qui se dit sans clavier) : NimBLE l'a quand même
@@ -3197,6 +3280,11 @@ class BtServeur : public NimBLEServerCallbacks {
       // ferait sinon effacer son appairage.)
       if (info.isEncrypted() && !(info.isAuthenticated() && info.getSecKeySize() == 16))
         NimBLEDevice::deleteBond(info.getIdAddress());
+      // Pas chiffré et téléphone inconnu de la carte : il présente sans doute une ancienne clé (carte effacée,
+      // 'bt oublier'...). Il ne s'en sortira pas seul : loop() affiche quoi faire.
+      // (pas un nouveau téléphone refusé, btRefuser, ni un code mal tapé, btCodeMontre)
+      else if (!info.isEncrypted() && !btRefuser && !btCodeMontre && !NimBLEDevice::isBonded(info.getIdAddress()))
+        btCleInconnue = true;
       NimBLEDevice::getServer()->disconnect(info.getConnHandle());   // code faux ou appairage sans code : dehors
     }
   }
@@ -3204,13 +3292,24 @@ class BtServeur : public NimBLEServerCallbacks {
 
 // Mémoire des appairages pleine (5 téléphones, CONFIG_BT_NIMBLE_MAX_BONDS) : NimBLE effacerait le plus ancien pour faire de la place. Hors de la
 // fenêtre d'appairage, on refuse : personne ne peut pousser dehors les téléphones déjà appairés.
+// Abonnements (CCCD) et fonctions du téléphone (CSFC) : NimBLE les mémorise aussi pour chaque téléphone appairé. Leur
+// mémoire est dimensionnée pour 5 téléphones (platformio.ini) ; si elle débordait quand même, on n'efface JAMAIS un
+// téléphone pour leur faire de la place (l'écriture du téléphone échoue : « write descriptor failed »).
 class BtStockage : public NimBLEDeviceCallbacks {
   int onStoreStatus(struct ble_store_status_event* e, void* arg) override {
+    if (e->event_code == BLE_STORE_EVENT_OVERFLOW && e->overflow.obj_type != BLE_STORE_OBJ_TYPE_OUR_SEC &&
+        e->overflow.obj_type != BLE_STORE_OBJ_TYPE_PEER_SEC) return BLE_HS_ESTORE_CAP;
     if (!appairageOuvert()) return BLE_HS_ESTORE_CAP;
     // fenêtre ouverte : on ne fait de place (en oubliant le plus ancien) que pour un appairage AVEC code
     if (e->event_code == BLE_STORE_EVENT_OVERFLOW) return btCodeMontre ? ble_store_util_status_rr(e, arg) : BLE_HS_ESTORE_CAP;
     return 0;
   }
+};
+
+// Le téléphone s'abonne (ou se désabonne) aux réponses de la carte. NimBLE rappelle aussi cette fonction quand il
+// rétablit l'abonnement mémorisé d'un téléphone appairé.
+class BtAbonnement : public NimBLECharacteristicCallbacks {
+  void onSubscribe(NimBLECharacteristic* c, NimBLEConnInfo& info, uint16_t valeur) override { btAbonne = (valeur & 1) != 0; }
 };
 
 class BtReception : public NimBLECharacteristicCallbacks {
@@ -3241,6 +3340,7 @@ void initialiserBluetooth() {
   unsigned l = deviceId.length();
   btNom = (l >= 5) ? "MAir-" + deviceId.substring(l - 5, l - 3) + deviceId.substring(l - 2) : String("MAir");
   NimBLEDevice::init(btNom.c_str());
+  NimBLEDevice::setPower(9);   // +9 dBm (3 par défaut) : la carte est sur secteur, la liaison gagne en portée et en marge
   NimBLEDevice::setDeviceCallbacks(new BtStockage());
   NimBLEDevice::setSecurityAuth(true, true, true);           // mémoriser le téléphone, code obligatoire, chiffrement moderne
   NimBLEDevice::setSecurityIOCap(BLE_HS_IO_DISPLAY_ONLY);    // la carte AFFICHE le code, le téléphone le tape
@@ -3258,6 +3358,7 @@ void initialiserBluetooth() {
   serveur->advertiseOnDisconnect(true);
   NimBLEService* service = serveur->createService(NUS_SERVICE);
   btTx = service->createCharacteristic(NUS_TX, NIMBLE_PROPERTY::NOTIFY);
+  btTx->setCallbacks(new BtAbonnement());
   NimBLECharacteristic* rx = service->createCharacteristic(NUS_RX, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR |
                                                            NIMBLE_PROPERTY::WRITE_ENC | NIMBLE_PROPERTY::WRITE_AUTHEN);
   rx->setCallbacks(new BtReception());
@@ -3296,8 +3397,16 @@ void oublierTelephones() {
   Console.println("Téléphones Bluetooth oubliés : un nouvel appairage (code à l'écran) sera demandé.");
 }
 
+// Un téléphone vient de se connecter (appairage, découverte des services, abonnement : les 15 premières secondes) : le
+// Wi-Fi retarde ses scans et ses nouveaux essais, qui occuperaient la radio à ce moment-là. (Durée bornée : un téléphone
+// qui reste connecté ne bloque pas le Wi-Fi ; une connexion sans appairage est coupée au bout de 35 s.)
+bool btOccupe(unsigned long now) {
+  return btConnecte && (long)(now - tBtConnexion) < (long)BT_PREPARATION_MS;
+}
+
 #else   // BLUETOOTH_ACTIF 0
 void btEcrire(const uint8_t*, size_t) {}
+bool btOccupe(unsigned long) { return false; }
 #endif
 
 // =====================================================================
@@ -4914,6 +5023,15 @@ void afficherStatus() {
   Console.printf("Bluetooth : nouveau téléphone %s | à la mise sous tension : %s | Secure Connections seul : %s\n",
                  appairageOuvert() ? "ACCEPTÉ (fenêtre ouverte)" : "refusé ('bt appairer' au câble USB)",
                  btAppairageDemarrage ? "oui" : "non", ble_hs_cfg.sm_sc_only ? "oui" : "NON");
+  {
+    int nAbo = 0;
+    ble_store_util_count(BLE_STORE_OBJ_TYPE_CCCD, &nAbo);
+    nvs_stats_t nvs = {};
+    nvs_get_stats(NULL, &nvs);
+    Console.printf("Bluetooth : diffusion %s | abonnements mémorisés %d/%d | mémoire NVS libre %u/%u entrées\n",
+                   NimBLEDevice::getAdvertising()->isAdvertising() ? "active" : btConnecte ? "arrêtée (connecté)" : "ARRÊTÉE",
+                   nAbo, (int)CONFIG_BT_NIMBLE_MAX_CCCDS, (unsigned)nvs.free_entries, (unsigned)nvs.total_entries);
+  }
 #endif
 }
 

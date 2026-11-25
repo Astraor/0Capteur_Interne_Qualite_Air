@@ -113,7 +113,7 @@ Sans réseau, la mesure est rangée en flash puis renvoyée plus tard avec son �
 
 1. Installer **VS Code** et l’extension **PlatformIO IDE**.
 2. Ouvrir le dossier `Firmware/` comme projet PlatformIO.
-3. `Firmware/platformio.ini` fixe déjà la plateforme (`espressif32@^6.0.0`) : le programme est écrit pour **ESP32 Arduino 2.x** et refuse de compiler en 3.x.
+3. `Firmware/platformio.ini` fixe déjà la plateforme (`espressif32@^6.8.0`, ESP32 Arduino 2.0.17) : le programme est écrit pour **ESP32 Arduino 2.x** et refuse de compiler en 3.x. Les versions 6.5 / 6.6 rendent la carte invisible pour certains Android : si ta plateforme est plus ancienne, lance une fois `pio pkg update`.
 4. Compiler et téléverser (`PlatformIO: Upload`), puis ouvrir le moniteur série à **115 200 bauds**.
 
 Bibliothèques (installées automatiquement par `lib_deps`) :
@@ -156,10 +156,23 @@ La carte se connecte seule au meilleur réseau connu visible, sans redémarrage.
 Le moniteur série est aussi disponible **sans câble** (mode d'emploi complet : [`relais/LISEZMOI.md`](relais/LISEZMOI.md)) :
 
 - **par Internet**, via un petit relais gratuit chez Cloudflare (`relais/`) : la carte y envoie son journal en HTTPS (toutes les 30 s, toutes les 2 s quand la page console est ouverte) et y prend les commandes. Passe partout, eduroam compris. La page console range le journal (7 jours) par jour : un intertitre « Aujourd'hui », « Hier » ou la date reste collé en haut pendant qu'on lit ses lignes, et « Copier » écrit la date devant chaque ligne ;
-- **par Bluetooth**, à côté de la carte : appairage avec le code à 6 chiffres affiché sur l'écran. Un nouveau téléphone n'est accepté que dans les 2 min qui suivent un `bt appairer` (câble USB), ou une mise sous tension si tu as activé `bt demarrage on` : quelqu'un qui voit l'écran depuis la pièce ne peut pas s'appairer à ton insu ;
+- **par Bluetooth**, à côté de la carte : appairage avec le code à 6 chiffres affiché sur l'écran. Un nouveau téléphone n'est accepté que dans les 2 min qui suivent un `bt appairer` (câble USB), ou une mise sous tension si tu as activé `bt demarrage on` : quelqu'un qui voit l'écran depuis la pièce ne peut pas s'appairer à ton insu. Voir [Bluetooth : si la connexion échoue](#bluetooth--si-la-connexion-échoue) ;
 - **mises à jour** : `maj installer` télécharge la dernière release GitHub, vérifie sa **signature** (ECDSA, clé privée restée sur ton PC) et son empreinte, l'installe dans l'autre emplacement de la mémoire et revient tout seul à l'ancienne version si la nouvelle ne marche pas.
 
 Sans câble, seules les commandes **sans secret, sans effacement et sans effet durable** passent (`aide`, `status`, `verbose`, `calib`, `reboot`, `wifi scan`, `wifi connect`, `maj`), une par seconde au plus (`wifi scan`, `wifi connect`, `maj` : une fois par 30 s ; `reboot` : une fois par 5 min). Par Bluetooth seulement (pas par le relais) : `lum` et `nuit`, pour régler l'écran à côté de la carte. Wi-Fi, clé, jeton, relais, `calib oui`, `bt …`, `oublier`, `vider_file` : **câble USB uniquement**, et ce qu'ils affichent ne quitte jamais le câble.
+
+#### Bluetooth : si la connexion échoue
+
+Avec **Serial Bluetooth Terminal** (Android) : menu → *Devices* → onglet **Bluetooth LE** (pas *Classic*) → *Scan* → `MAir-XXXX`.
+
+- **1er appairage :** l'appli se déconnecte dès que le téléphone demande le code (« PAIRING requested… Connect again ») : c'est normal, tape le code affiché sur l'écran, puis **reconnecte-toi** une 2e fois.
+- **« gatt status 133 »** : la carte n'a pas répondu à temps (radio occupée par le Wi-Fi, carte déjà connectée à un autre téléphone, trop loin). Réessaie quelques secondes plus tard ; la carte n'accepte **qu'un téléphone à la fois**.
+- **Échec à chaque fois, même téléphone :** le téléphone a gardé un ancien appairage que la carte n'a plus (`bt oublier`, `oublier`, mémoire effacée). Sur le téléphone : réglages Bluetooth → `MAir-XXXX` → **Oublier**, puis `bt appairer` au câble USB et reconnecte-toi. La carte l'écrit elle-même dans son journal quand elle reconnaît ce cas.
+- **« write descriptor failed »** : l'abonnement du téléphone aux réponses n'a pas pu être mémorisé (mémoire pleine, réglée depuis le 25/11 : 12 abonnements pour 5 téléphones). Si ça revient : `status` (ligne « abonnements mémorisés ») et `bt liste` / `bt oublier <n>` pour retirer les téléphones inutiles.
+- La carte écrit la **raison de chaque déconnexion** dans son journal (`0x23E` liaison jamais établie : radio occupée ; `0x208` liaison perdue ; `0x213` fermée par le téléphone ; `0x206` clé inconnue ; `0x205` appairage raté), et `status` indique si elle **diffuse** (visible par les téléphones).
+- **Antenne :** la WROOM-32**U** n'a pas d'antenne intégrée : sans l'antenne externe (connecteur U.FL), Wi-Fi et Bluetooth ne portent qu'à quelques centimètres.
+
+Ce que fait la carte depuis le 25/11 pour fiabiliser la connexion : diffusion surveillée chaque seconde (relancée si une liaison avortée l'a arrêtée), appairage demandé seulement aux téléphones inconnus (un téléphone connu chiffre de lui-même), aucune réponse envoyée avant que le téléphone soit abonné (la 1re ligne ne se perd plus), connexion sans appairage coupée au bout de 35 s (au lieu de 90 s : la seule place de connexion se libère plus vite), paramètres de liaison plus robustes après l'appairage, puissance d'émission +9 dBm. Côté Wi-Fi (même radio) : canal de 20 MHz, scans deux fois plus courts, pause entre deux séries d'essais qui s'allonge (30 s, 60 s, 2 min) quand aucun réseau ne répond, et aucun scan pendant les 15 premières secondes d'une connexion Bluetooth.
 
 **eduroam :** pour que la carte refuse un faux point d'accès « eduroam » (qui récupérerait ton mot de passe ENT), la carte vérifie le certificat du serveur de l'université. Pour **Aix-Marseille Université**, il est déjà fourni : [`Firmware/src/ca_eduroam.h`](Firmware/src/ca_eduroam.h) (autorité « GEANT TLS ECC 1 », tirée de cat.eduroam.org). Pour une autre université : mode d'emploi dans [`Firmware/src/ca_eduroam.h.exemple`](Firmware/src/ca_eduroam.h.exemple). `status` indique si le serveur ENT est vérifié, et la carte prévient au démarrage tant qu'il ne l'est pas. Le plus sûr reste de ne pas mettre ton mot de passe ENT personnel dans la carte (réseau dédié aux objets, partage de connexion d'un téléphone).
 
