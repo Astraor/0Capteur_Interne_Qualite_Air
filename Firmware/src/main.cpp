@@ -125,7 +125,7 @@
 #define MASQUER_SECRETS           0  // 1 = les mots de passe saisis s'affichent en ****
 #define DOUBLE_BUFFER             1  // 1 = dessin sans scintillement | 0 si l'écran reste noir ou s'affiche mal
 #define ANIMATIONS                0  // 1 = clignement, chiffres qui glissent, sommet de courbe qui clignote | 0 = calme
-#define TRANSITION_FONDU          1  // 1 = fondu au noir entre deux pages (~0,6 s, ~0,4 s vers / depuis ÉTAT) | 0 = sec
+#define TRANSITION_FONDU          1  // 1 = fondu au noir entre deux pages (~0,4 s, ~0,15 s vers / depuis ÉTAT) | 0 = sec
 #ifndef AIRCARTO_HTTPS
 #define AIRCARTO_HTTPS            1  // 1 = mesures envoyées en HTTPS (clé chiffrée, serveur vérifié) | 0 = HTTP simple
                                      //     (clé du groupe lisible sur le réseau : seulement si le HTTPS pose problème)
@@ -430,12 +430,13 @@ static const char* const LABELS_NIVEAU[NB_NIVEAUX] = {"BON", "MOYEN", "DEGRADE",
 
 // --- Écran : fondu entre les pages, page ÉTAT et animations ---
 // Fondu au noir entre deux pages : l'ancienne s'éteint en FONDU_DEMI_MS, la nouvelle s'allume en FONDU_DEMI_MS
-// (~0,6 s en tout : avant ~3 s, trop lent). Vers ou depuis la page ÉTAT (icônes), et du logo de démarrage à la
-// 1re page : ~0,4 s. Le temps gagné va aux pages elles-mêmes (INTERVALLE_PAGE_MS : 8 s au lieu de 5 s).
+// (~0,4 s en tout : avant ~3 s, puis ~0,6 s, encore trop lent). Vers ou depuis la page ÉTAT (icônes), et du logo de
+// démarrage à la 1re page : ~0,15 s, presque un changement net. Le temps gagné va aux pages elles-mêmes
+// (INTERVALLE_PAGE_MS : 8 s au lieu de 5 s).
 // Le fondu ne compte pas dans la durée d'une page : chacune reste ensuite INTERVALLE_PAGE_MS en pleine lumière.
 #if TRANSITION_FONDU
-static const unsigned long FONDU_DEMI_MS       = 300;
-static const unsigned long FONDU_COURT_DEMI_MS = 200;
+static const unsigned long FONDU_DEMI_MS       = 200;
+static const unsigned long FONDU_COURT_DEMI_MS = 70;
 #else
 static const unsigned long FONDU_DEMI_MS       = 0;
 static const unsigned long FONDU_COURT_DEMI_MS = 0;
@@ -874,7 +875,7 @@ uint8_t luminositeCourante = 255;  // luminosité choisie par majLuminosite (le 
 // 2 = la nouvelle s'allume. allongementPage : durée du fondu qui a amené la page courante (ajoutée à sa durée).
 uint8_t phaseFondu = 0;
 unsigned long tFondu = 0, demiFondu = 0, allongementPage = 0;
-bool fonduCourt = false;          // prochain fondu court (~0,4 s) : logo de démarrage, fin du code Bluetooth
+bool fonduCourt = false;          // prochain fondu court (~0,15 s) : logo de démarrage, fin du code Bluetooth
 uint8_t pageAvantFondu = 0;       // page quittée (ÉTAT -> fondu court)
 
 // Arrête net un fondu (alerte, code Bluetooth, écran Wi-Fi, nuit) : pleine luminosité tout de suite.
@@ -5905,7 +5906,7 @@ void loop() {
   static uint32_t signatureSpeciale = 0;
   uint32_t sig = ecranSpecialActif() ? (codeAppairage ^ ((uint32_t)majProgression << 24)) + 1 : 0;
   if (sig != signatureSpeciale) {
-    if (sig == 0) { aTransition = true; fonduCourt = true; }   // code / mise à jour finis : retour en douceur (~0,7 s)
+    if (sig == 0) { aTransition = true; fonduCourt = true; }   // code / mise à jour finis : retour en douceur (~0,15 s)
     signatureSpeciale = sig;
     aRedessiner = true;
   }
