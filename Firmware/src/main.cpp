@@ -5551,10 +5551,13 @@ void lireRebootDistant() {
 
 // Refuse une commande à distance trop rapprochée de la précédente du même genre (message, puis false).
 bool commandeDistantePermise(const String &bas, const char* origine) {
-  static unsigned long tReseauDistant = 0;
+  // Un délai PAR genre de commande : avant, « maj » (chercher) et « maj installer » partageaient le même délai de
+  // 30 s, et « Installer » juste après « Chercher une mise à jour » était refusé alors qu'on n'avait appuyé qu'une fois.
+  static unsigned long tWifiDistant = 0, tMajDistant = 0, tInstallDistant = 0;
   unsigned long now = millis();
   bool maj = bas.startsWith("maj");
   bool reseau = bas.startsWith("wifi ") || maj;
+  unsigned long &tReseauDistant = bas.startsWith("wifi ") ? tWifiDistant : (bas == "maj installer" ? tInstallDistant : tMajDistant);
 #if CONSOLE_DISTANTE
   // Nouvelle version en essai (1 min + un échange avec le relais) : le démarreur de l'ESP32 revient à l'ancienne
   // version au PREMIER redémarrage avant validation. Un reboot à distance pourrait donc annuler toute mise à jour.
