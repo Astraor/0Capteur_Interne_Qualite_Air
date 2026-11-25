@@ -260,7 +260,7 @@ static const char* TZ_FRANCE    = "CET-1CEST,M3.5.0,M10.5.0/3";
 #define REG_TEMP 0x6B  // centièmes de °C
 
 // Texte associé à chaque bit de l'octet d'état du NextPM (bit 0 = veille ... bit 7 = erreur laser), pour le journal série.
-const char* STATUS_BITS[8] = {
+static const char* const STATUS_BITS[8] = {
   "veille", "mode degrade", "demarrage en cours", "humidite trop forte",
   "erreur capteur T/HR", "erreur ventilateur", "erreur memoire", "erreur laser"
 };
@@ -426,7 +426,7 @@ static const uint8_t PALETTE[NB_NIVEAUX][3] = {
 };
 // Qualificatifs ATMO. Page "ATMO" : 7 caractères par ligne au plus ; un libellé plus long est coupé
 // en deux lignes à l'espace ("TRES" / "MAUVAIS").
-static const char* LABELS_NIVEAU[NB_NIVEAUX] = {"BON", "MOYEN", "DEGRADE", "MAUVAIS", "TRES MAUVAIS", "EXTREM. MAUVAIS"};
+static const char* const LABELS_NIVEAU[NB_NIVEAUX] = {"BON", "MOYEN", "DEGRADE", "MAUVAIS", "TRES MAUVAIS", "EXTREM. MAUVAIS"};
 
 // --- Écran : fondu entre les pages, page ÉTAT et animations ---
 // Fondu au noir entre deux pages : l'ancienne s'éteint en FONDU_DEMI_MS, la nouvelle s'allume en FONDU_DEMI_MS
@@ -481,7 +481,7 @@ void IRAM_ATTR onTimer() {
   if (woken) portYIELD_FROM_ISR();
 }
 
-void refreshTask(void* param) {
+void refreshTask(void*) {
   for (;;) {
     if (xSemaphoreTake(refreshSem, portMAX_DELAY)) {
       if (ecranSuspendu) continue;   // le dernier envoi a laissé les LED éteintes : écran noir, sans clignoter
@@ -682,8 +682,9 @@ SortieConsole Console;
 // Écrit SEULEMENT à distance (journal + Bluetooth) : sert à y recopier les commandes tapées en USB,
 // que le moniteur série affiche déjà grâce à l'écho.
 void ecrireADistance(const char* texte) {
-  journalEcrire((const uint8_t*)texte, strlen(texte));
-  btEcrire((const uint8_t*)texte, strlen(texte));
+  size_t n = strlen(texte);
+  journalEcrire((const uint8_t*)texte, n);
+  btEcrire((const uint8_t*)texte, n);
 }
 
 // Affichage série automatique : false = la carte ne parle plus toute seule
@@ -691,7 +692,7 @@ void ecrireADistance(const char* texte) {
 bool verbose = false;
 #define LOG(...)  do { if (verbose) Console.printf(__VA_ARGS__); } while (0)
 
-enum EtatCapteur { CAPTEUR_CHAUFFE, CAPTEUR_OK, CAPTEUR_ERREUR };
+enum EtatCapteur { CAPTEUR_CHAUFFE, CAPTEUR_OK, CAPTEUR_ERREUR };   // CAPTEUR_CHAUFFE = 0 : état de départ (voir mCO2...)
 
 struct Mesure {
   float valeur;
@@ -705,10 +706,8 @@ struct Mesure {
 };
 
 // Une Mesure par grandeur (CO2, PM1, PM2.5, PM10) : valeur filtrée, état du capteur, valeur affichée qui glisse...
-Mesure mCO2  = {0, CAPTEUR_CHAUFFE, 0, false, {0, 0, 0}, 0};
-Mesure mPM1  = {0, CAPTEUR_CHAUFFE, 0, false, {0, 0, 0}, 0};
-Mesure mPM25 = {0, CAPTEUR_CHAUFFE, 0, false, {0, 0, 0}, 0};
-Mesure mPM10 = {0, CAPTEUR_CHAUFFE, 0, false, {0, 0, 0}, 0};
+// (variables globales : tout part à zéro, donc état CAPTEUR_CHAUFFE, aucune lecture, affichage pas encore initialisé)
+Mesure mCO2, mPM1, mPM25, mPM10;
 
 float tempPM = NAN;   // température interne du NextPM
 float humPM  = NAN;   // humidité interne du NextPM
@@ -716,10 +715,7 @@ uint8_t statutPM = 0;
 
 // Agrégats sur la période de mesure (moyenne + pic)
 struct Agregat { float somme; uint16_t n; float maxi; };
-Agregat agCO2  = {0, 0, 0};
-Agregat agPM1  = {0, 0, 0};
-Agregat agPM25 = {0, 0, 0};
-Agregat agPM10 = {0, 0, 0};
+Agregat agCO2, agPM1, agPM25, agPM10;   // (variables globales : à zéro au démarrage)
 
 // Statistiques CO2
 uint32_t nCO2Total = 0, nCO2Haut = 0;  // pour x_pct_co2_1000
@@ -774,7 +770,6 @@ volatile bool demandeReconnexion = false;  // posée par la tâche d'envoi, trai
 unsigned long tDerniereReponse = 0;  // dernière réponse HTTP reçue du serveur, quelle qu'elle soit
 uint8_t etatEnvoi = 0;     // 0 gris | 1 vert (OK) | 2 orange (réessai) | 3 rouge (refus)
 int dernierCodeHttp = 0;
-unsigned long tDernierWifiOK = 0;
 unsigned long tVisibleDepuis = 0;    // depuis quand un réseau en mémoire est visible SANS que la connexion réussisse (0 = non)
 uint32_t nbCoupuresWifi = 0;
 uint32_t nbSansHeure = 0;            // mesures d'un démarrage précédent abandonnées faute d'heure (commande status)
@@ -796,16 +791,17 @@ int8_t dernierReseau = -1;  // dernier réseau qui a fonctionné : essayé en pr
 // Machine à états de la connexion (gererWiFi, appelée à chaque tour de loop, jamais bloquante)
 enum EtatWifi { WIFI_INACTIF, WIFI_SCAN, WIFI_CONNEXION, WIFI_REESSAI, WIFI_CONNECTE, WIFI_PAUSE };
 EtatWifi etatWifi = WIFI_INACTIF;
-int8_t candidats[NB_WIFI_MAX];      // réseaux à essayer, dans l'ordre (le plus fort d'abord)
 // Point d'accès PRÉCIS vu au scan pour chaque candidat (adresse BSSID + canal), avec la bonne sécurité : la carte se
 // connecte à lui et à aucun autre du même nom (sinon le pilote rescanne seul et prend le plus fort, peut-être un
 // faux point d'accès ouvert nommé « eduroam »).
-uint8_t candBssid[NB_WIFI_MAX][6];
-int32_t candCanal[NB_WIFI_MAX];
-bool candBssidOk[NB_WIFI_MAX];
-uint8_t bssidCourant[6];            // point d'accès de la connexion en cours (reconnexion après une coupure)
-int32_t canalCourant = 0;
-bool bssidCourantOk = false;
+struct Candidat {
+  int32_t canal;
+  int8_t reseau;      // numéro dans reseaux[]
+  uint8_t bssid[6];
+  bool bssidOk;       // bssid et canal connus (vus au scan)
+};
+Candidat candidats[NB_WIFI_MAX];    // réseaux à essayer, dans l'ordre (le plus fort d'abord)
+Candidat apCourant;                 // point d'accès de la connexion en cours (reconnexion après une coupure)
 bool identiteReelle[NB_WIFI_MAX] = {false};   // eduroam : l'identité anonyme a été refusée, on envoie l'identifiant réel
 uint8_t bssidRefusAnonyme[NB_WIFI_MAX][6];    // premier point d'accès qui a refusé l'identité anonyme
 bool refusAnonymeVu[NB_WIFI_MAX] = {false};
@@ -899,9 +895,9 @@ float arrondi1(float v) {
 
 // Médiane de 3 valeurs : écarte une lecture aberrante isolée
 float mediane3(float a, float b, float c) {
-  if (a > b) { float t = a; a = b; b = t; }
-  if (b > c) { float t = b; b = c; c = t; }
-  if (a > b) { float t = a; a = b; b = t; }
+  if (a > b) std::swap(a, b);
+  if (b > c) std::swap(b, c);
+  if (a > b) std::swap(a, b);
   return b;
 }
 
@@ -915,7 +911,7 @@ bool dansBornes(const char* nom, float v, float vmin, float vmax) {
 
 // Adresse MAC lue directement dans la puce : marche même sans Wi-Fi démarré
 String lireMac() {
-  uint8_t mac[6] = {0, 0, 0, 0, 0, 0};
+  uint8_t mac[6] = {0};
   esp_read_mac(mac, ESP_MAC_WIFI_STA);
   char buf[18];
   snprintf(buf, sizeof(buf), "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
@@ -969,12 +965,10 @@ int64_t secondesCompilation() {
   unsigned hh = (v / 100UL) % 100, mi = v % 100;
   if (v == 0) return 0;
   // valeurs bornées (une version « 2611221960 » reste une date de 2026) : le contrôle n'est jamais désactivé
-  if (mm < 1) mm = 1;
-  if (mm > 12) mm = 12;
-  if (jj < 1) jj = 1;
-  if (jj > 31) jj = 31;
-  if (hh > 23) hh = 23;
-  if (mi > 59) mi = 59;
+  mm = constrain(mm, 1u, 12u);
+  jj = constrain(jj, 1u, 31u);
+  hh = min(hh, 23u);
+  mi = min(mi, 59u);
   return joursDepuis1970(2000 + (int)aa, mm, jj) * 86400LL + hh * 3600LL + mi * 60LL - 86400LL;
 }
 
@@ -1020,7 +1014,8 @@ class FluxBorne : public Stream {
 
 String lireReponse(HTTPClient &http, size_t max) {
   String corps;
-  if (http.getSize() > (int)max) { LOG("Réponse ignorée : %d octets annoncés.\n", http.getSize()); return corps; }
+  int annonce = http.getSize();
+  if (annonce > (int)max) { LOG("Réponse ignorée : %d octets annoncés.\n", annonce); return corps; }
   FluxBorne f(corps, max);
   http.writeToStream(&f);
   if (f.trop) { LOG("Réponse ignorée : plus de %u octets.\n", (unsigned)max); corps = ""; }
@@ -1111,6 +1106,10 @@ void definirCle(const String &v) {
 //   PAUSE -> aucun réseau connu joignable : nouvel essai 30 s plus tard
 
 // Clés de la mémoire permanente : "w_s0", "w_p0", "w_i0"... (15 caractères max)
+// Une clé par champ de ReseauWifi, dans cet ordre : s = ssid, p = mdp, i = eapId.
+static const struct { char lettre; String ReseauWifi::* champ; } CHAMPS_RESEAU[] = {
+  {'s', &ReseauWifi::ssid}, {'p', &ReseauWifi::mdp}, {'i', &ReseauWifi::eapId}
+};
 static void cleReseau(char* buf, size_t n, char type, uint8_t i) {
   snprintf(buf, n, "w_%c%u", type, (unsigned)i);
 }
@@ -1119,37 +1118,27 @@ void sauverReseaux() {
   char k[8];
   for (uint8_t i = 0; i < NB_WIFI_MAX; i++) { identiteReelle[i] = false; refusAnonymeVu[i] = false; }   // les numéros changent
   prefs.putUChar("w_n", nbReseaux);
-  for (uint8_t i = 0; i < NB_WIFI_MAX; i++) {
-    if (i < nbReseaux) {
-      cleReseau(k, sizeof(k), 's', i); prefs.putString(k, reseaux[i].ssid);
-      cleReseau(k, sizeof(k), 'p', i); prefs.putString(k, reseaux[i].mdp);
-      cleReseau(k, sizeof(k), 'i', i); prefs.putString(k, reseaux[i].eapId);
-    } else {
-      cleReseau(k, sizeof(k), 's', i); prefs.remove(k);
-      cleReseau(k, sizeof(k), 'p', i); prefs.remove(k);
-      cleReseau(k, sizeof(k), 'i', i); prefs.remove(k);
+  for (uint8_t i = 0; i < NB_WIFI_MAX; i++)
+    for (const auto &c : CHAMPS_RESEAU) {
+      cleReseau(k, sizeof(k), c.lettre, i);
+      if (i < nbReseaux) prefs.putString(k, (reseaux[i].*c.champ).c_str());
+      else prefs.remove(k);
     }
-  }
   prefs.putChar("w_last", dernierReseau);
 }
 
 // Ajoute (ou met à jour, si le nom existe déjà) un réseau. Renvoie son numéro, ou -1 si le cache est plein.
 int ajouterReseau(const String &ssid, const String &mdp, const String &eapId) {
-  for (uint8_t i = 0; i < nbReseaux; i++) {
-    if (reseaux[i].ssid == ssid) {
-      reseaux[i].mdp = mdp;
-      reseaux[i].eapId = eapId;
-      sauverReseaux();
-      return i;
-    }
+  uint8_t i = 0;
+  while (i < nbReseaux && reseaux[i].ssid != ssid) i++;
+  if (i == nbReseaux) {   // nom inconnu : nouveau réseau, à la fin du cache
+    if (nbReseaux >= NB_WIFI_MAX) return -1;
+    reseaux[nbReseaux++].ssid = ssid;
   }
-  if (nbReseaux >= NB_WIFI_MAX) return -1;
-  reseaux[nbReseaux].ssid = ssid;
-  reseaux[nbReseaux].mdp = mdp;
-  reseaux[nbReseaux].eapId = eapId;
-  nbReseaux++;
+  reseaux[i].mdp = mdp;
+  reseaux[i].eapId = eapId;
   sauverReseaux();
-  return nbReseaux - 1;
+  return i;
 }
 
 // Relit le cache. Au premier démarrage avec ce programme, reprend les anciens réglages
@@ -1170,11 +1159,11 @@ void chargerReseaux() {
     return;
   }
   nbReseaux = (n > NB_WIFI_MAX) ? NB_WIFI_MAX : n;
-  for (uint8_t i = 0; i < nbReseaux; i++) {
-    cleReseau(k, sizeof(k), 's', i); reseaux[i].ssid  = prefs.getString(k, "");
-    cleReseau(k, sizeof(k), 'p', i); reseaux[i].mdp   = prefs.getString(k, "");
-    cleReseau(k, sizeof(k), 'i', i); reseaux[i].eapId = prefs.getString(k, "");
-  }
+  for (uint8_t i = 0; i < nbReseaux; i++)
+    for (const auto &c : CHAMPS_RESEAU) {
+      cleReseau(k, sizeof(k), c.lettre, i);
+      reseaux[i].*c.champ = prefs.getString(k, "");
+    }
   dernierReseau = prefs.getChar("w_last", -1);
   if (dernierReseau >= (int8_t)nbReseaux) dernierReseau = -1;
 }
@@ -1190,7 +1179,7 @@ const char* typeReseau(int8_t i) {
 }
 
 // Le pilote Wi-Fi donne la raison de chaque déconnexion : on la garde pour le diagnostic
-void surDeconnexion(WiFiEvent_t ev, WiFiEventInfo_t info) {
+void surDeconnexion(WiFiEvent_t, WiFiEventInfo_t info) {
   uint8_t r = info.wifi_sta_disconnected.reason;
   if (r != WIFI_REASON_ASSOC_LEAVE) raisonDeco = r;  // ASSOC_LEAVE = c'est nous qui avons coupé
 }
@@ -1245,18 +1234,16 @@ void lancerConnexion(int8_t i) {
   // Point d'accès précis vu au scan (sinon : n'importe lequel de ce nom, seulement pour un Wi-Fi à mot de passe)
   // 2e essai d'un Wi-Fi à mot de passe : n'importe quel point d'accès de ce nom (la box a pu changer de canal depuis
   // le scan, et le pilote rescanne alors tous les canaux). Un réseau entreprise reste attaché au point d'accès vu.
-  uint8_t bssid[6];
-  int32_t canal = 0;
-  bool avecBssid = (idxCandidat < nbCandidats && candidats[idxCandidat] == i && candBssidOk[idxCandidat])
+  bool avecBssid = (idxCandidat < nbCandidats && candidats[idxCandidat].reseau == i && candidats[idxCandidat].bssidOk)
                    && !(essaiCandidat > 0 && !estEntreprise(i));
-  if (avecBssid) { memcpy(bssid, candBssid[idxCandidat], 6); canal = candCanal[idxCandidat]; }
-  bssidCourantOk = avecBssid;
-  if (avecBssid) { memcpy(bssidCourant, bssid, 6); canalCourant = canal; }
+  if (avecBssid) apCourant = candidats[idxCandidat];
+  else apCourant.bssidOk = false;
   reseauCourant = i;
   WiFi.disconnect(false, false);
   delay(50);
   raisonDeco = 0;
-  if (r.eapId.length() > 0) {
+  bool entreprise = r.eapId.length() > 0;
+  if (entreprise) {
     // WPA2 Entreprise (eduroam) : identité + identifiant + mot de passe ENT, puis on active le mode entreprise.
     // Certificat de l'autorité du serveur d'authentification (ca_eduroam.h) : la carte refuse un faux serveur, qui
     // récupérerait sinon l'empreinte du mot de passe ENT. Pas de vérification des dates : la carte n'a pas encore
@@ -1268,23 +1255,24 @@ void lancerConnexion(int8_t i) {
 #endif
     // Identité « extérieure », lisible par tous en clair : anonymous@domaine (EDUROAM_IDENTITE_ANONYME) ; le vrai
     // identifiant (set_username) ne part que dans le tunnel chiffré. (ESP-IDF copie la chaîne.)
+    String exterieure = r.eapId;
 #if EDUROAM_IDENTITE_ANONYME
     // (si l'université refuse l'identité anonyme, la carte repasse seule à l'identifiant réel : voir gererWiFi)
     int arobase = r.eapId.indexOf('@');
-    String exterieure = (arobase >= 0 && !identiteReelle[i]) ? String("anonymous") + r.eapId.substring(arobase) : r.eapId;
-#else
-    String exterieure = r.eapId;
+    // « anonymous » + la fin de l'identifiant à partir de l'arobase (bâtie sur place, sans chaînes intermédiaires)
+    if (arobase >= 0 && !identiteReelle[i]) { exterieure = "anonymous"; exterieure += r.eapId.c_str() + arobase; }
 #endif
     esp_wifi_sta_wpa2_ent_set_identity((uint8_t *)exterieure.c_str(), exterieure.length());
     esp_wifi_sta_wpa2_ent_set_username((uint8_t *)r.eapId.c_str(), r.eapId.length());
     esp_wifi_sta_wpa2_ent_set_password((uint8_t *)r.mdp.c_str(), r.mdp.length());
     esp_wifi_sta_wpa2_ent_enable();
-    WiFi.begin(r.ssid.c_str(), nullptr, canal, avecBssid ? bssid : nullptr);
   } else {
     // Wi-Fi classique : le mode entreprise DOIT être coupé, sinon la box refuse la connexion
     esp_wifi_sta_wpa2_ent_disable();
-    WiFi.begin(r.ssid.c_str(), r.mdp.length() ? r.mdp.c_str() : nullptr, canal, avecBssid ? bssid : nullptr);
   }
+  // (mot de passe donné ici seulement pour un Wi-Fi classique : celui de l'ENT est déjà passé au mode entreprise)
+  WiFi.begin(r.ssid.c_str(), (!entreprise && r.mdp.length()) ? r.mdp.c_str() : nullptr,
+             avecBssid ? apCourant.canal : 0, avecBssid ? apCourant.bssid : nullptr);
   etatWifi = WIFI_CONNEXION;
   tEtatWifi = millis();
   if (essaiCandidat == 0) tDebutCandidat = tEtatWifi;
@@ -1348,52 +1336,47 @@ void preparerCandidats(int n) {
   idxCandidat = 0;
   essaiCandidat = 0;
   rescannerApresEchec = false;
-  for (uint8_t k = 0; k < NB_WIFI_MAX; k++) candBssidOk[k] = false;
+  for (uint8_t k = 0; k < NB_WIFI_MAX; k++) candidats[k].bssidOk = false;
   if (n < 0) {  // scan raté : on essaie les Wi-Fi à mot de passe, le dernier réseau qui a marché d'abord
-    if (dernierReseau >= 0 && essayableSansScan(dernierReseau)) candidats[nbCandidats++] = dernierReseau;
+    if (dernierReseau >= 0 && essayableSansScan(dernierReseau)) candidats[nbCandidats++].reseau = dernierReseau;
     for (uint8_t i = 0; i < nbReseaux; i++)
-      if ((int8_t)i != dernierReseau && essayableSansScan(i)) candidats[nbCandidats++] = i;
+      if ((int8_t)i != dernierReseau && essayableSansScan(i)) candidats[nbCandidats++].reseau = i;
     return;
   }
   int32_t force[NB_WIFI_MAX];
   for (uint8_t i = 0; i < nbReseaux; i++) {
-    int32_t meilleur = -1000;
-    int jMeilleur = -1;
+    // Point d'accès le plus fort de ce nom, avec la bonne sécurité. Les fiches du scan sont lues sur place (ce que
+    // renvoient WiFi.SSID(j), RSSI(j)...) : sans fabriquer une String pour chaque nom vu, à chaque réseau connu.
+    const wifi_ap_record_t* meilleurAp = nullptr;
     for (int j = 0; j < n; j++) {
-      if (WiFi.SSID(j) == reseaux[i].ssid && securiteCompatible(i, WiFi.encryptionType(j)) && WiFi.RSSI(j) > meilleur) {
-        meilleur = WiFi.RSSI(j);
-        jMeilleur = j;
-      }
+      const wifi_ap_record_t* ap = (const wifi_ap_record_t*)WiFi.getScanInfoByIndex(j);
+      if (ap != nullptr && reseaux[i].ssid == (const char*)ap->ssid && securiteCompatible(i, ap->authmode) &&
+          (meilleurAp == nullptr || ap->rssi > meilleurAp->rssi))
+        meilleurAp = ap;
     }
-    if (meilleur <= -1000) continue;
-    uint8_t b[6];
-    const uint8_t* pb = WiFi.BSSID(jMeilleur);
-    bool bOk = (pb != nullptr);
-    if (bOk) memcpy(b, pb, 6);
-    int32_t c = WiFi.channel(jMeilleur);
+    if (meilleurAp == nullptr) continue;
+    int32_t meilleur = meilleurAp->rssi;
     if ((int8_t)i == dernierReseau) meilleur += 5;  // petit bonus : à force égale, on garde ses habitudes
     // insertion triée (du plus fort au plus faible)
     uint8_t pos = nbCandidats;
     while (pos > 0 && force[pos - 1] < meilleur) {
       force[pos] = force[pos - 1];
       candidats[pos] = candidats[pos - 1];
-      memcpy(candBssid[pos], candBssid[pos - 1], 6);
-      candCanal[pos] = candCanal[pos - 1];
-      candBssidOk[pos] = candBssidOk[pos - 1];
       pos--;
     }
     force[pos] = meilleur;
-    candidats[pos] = i;
-    if (bOk) memcpy(candBssid[pos], b, 6);
-    candCanal[pos] = c;
-    candBssidOk[pos] = bOk;
+    Candidat &c = candidats[pos];
+    c.reseau = i;
+    memcpy(c.bssid, meilleurAp->bssid, 6);
+    c.canal = meilleurAp->primary;
+    c.bssidOk = true;   // (une fiche du scan a toujours son BSSID)
     nbCandidats++;
   }
   // Un réseau connu est-il visible ? (sert à surveillerWifiLongue : visible mais connexion impossible = pile bloquée)
   if (nbCandidats > 0) { if (tVisibleDepuis == 0) tVisibleDepuis = millis() | 1UL; }
   else tVisibleDepuis = 0;
   // Rien de visible : peut-être un réseau caché, on tente le dernier réseau qui a fonctionné (Wi-Fi à mot de passe)
-  if (nbCandidats == 0 && dernierReseau >= 0 && essayableSansScan(dernierReseau)) candidats[nbCandidats++] = dernierReseau;
+  if (nbCandidats == 0 && dernierReseau >= 0 && essayableSansScan(dernierReseau)) candidats[nbCandidats++].reseau = dernierReseau;
   if (wifiInteractif || verbose)
     Console.printf("Wi-Fi : %d réseaux visibles, %u connus parmi eux.\n", n, (unsigned)nbCandidats);
   WiFi.scanDelete();
@@ -1417,10 +1400,9 @@ unsigned long pauseWifiMs() {
 }
 bool btOccupe(unsigned long now);   // section BLUETOOTH : un téléphone est en train de se connecter (voir plus bas)
 
-void connexionReussie(unsigned long now) {
+void connexionReussie() {
   etatWifi = WIFI_CONNECTE;
   nbPausesWifi = 0;
-  tDernierWifiOK = now;
   tVisibleDepuis = 0;
   if (dernierReseau != reseauCourant) {
     dernierReseau = reseauCourant;
@@ -1439,8 +1421,7 @@ void finTentatives(unsigned long now) {
   if (wifiInteractif || verbose)
     Console.printf("Wi-Fi : aucun réseau connu joignable. Nouvel essai dans %lu s ('wifi scan' pour voir les réseaux).\n",
                   pauseWifiMs() / 1000UL);
-  montrerResultatWifi(false);
-  wifiInteractif = false;
+  montrerResultatWifi(false);   // (remet aussi wifiInteractif à false)
   etatWifi = WIFI_PAUSE;
   tEtatWifi = now;
   aRedessiner = true;
@@ -1451,8 +1432,7 @@ void relancerWifi(bool interactif) {
 #if WIFI_ACTIVE
   resultatWifiAffiche = false;
   nbPausesWifi = 0;           // (pause de nouveau à 30 s)
-  tDernierWifiOK = millis();  // le compte à rebours d'1 h repart
-  tVisibleDepuis = 0;         // (nouveau réseau, nouveau mot de passe : on lui laisse sa chance)
+  tVisibleDepuis = 0;         // le compte à rebours d'1 h repart (nouveau réseau, nouveau mot de passe : on lui laisse sa chance)
   if (nbReseaux == 0) {
     WiFi.disconnect(false, false);
     etatWifi = WIFI_INACTIF;
@@ -1509,12 +1489,12 @@ void gererWiFi(unsigned long now) {
       if (n < 0) { esp_wifi_scan_stop(); WiFi.scanDelete(); n = -1; }
       preparerCandidats(n);
       if (nbCandidats == 0) { finTentatives(now); return; }
-      lancerConnexion(candidats[0]);
+      lancerConnexion(candidats[0].reseau);
       return;
     }
 
     case WIFI_CONNEXION: {
-      if (WiFi.status() == WL_CONNECTED) { connexionReussie(now); return; }
+      if (WiFi.status() == WL_CONNECTED) { connexionReussie(); return; }
       // Le pilote a donné la raison de l'échec (réseau absent, refus, délai de la box...) : la tentative est finie
       // (reconnexion automatique coupée), inutile d'attendre la fin du délai. Sinon : délai écoulé sans nouvelles.
       uint8_t r = raisonDeco;
@@ -1526,12 +1506,12 @@ void gererWiFi(unsigned long now) {
 #if EDUROAM_IDENTITE_ANONYME
       // Repli sur l'identifiant réel seulement si DEUX points d'accès différents ont refusé l'identité anonyme : un faux
       // point d'accès isolé ne peut pas, en refusant exprès, obliger la carte à dévoiler ton identifiant en clair.
-      if (r == WIFI_REASON_802_1X_AUTH_FAILED && estEntreprise(reseauCourant) && !identiteReelle[reseauCourant] && bssidCourantOk) {
+      if (r == WIFI_REASON_802_1X_AUTH_FAILED && estEntreprise(reseauCourant) && !identiteReelle[reseauCourant] && apCourant.bssidOk) {
         uint8_t k = (uint8_t)reseauCourant;
         if (!refusAnonymeVu[k]) {
           refusAnonymeVu[k] = true;
-          memcpy(bssidRefusAnonyme[k], bssidCourant, 6);
-        } else if (memcmp(bssidRefusAnonyme[k], bssidCourant, 6) != 0) {
+          memcpy(bssidRefusAnonyme[k], apCourant.bssid, 6);
+        } else if (memcmp(bssidRefusAnonyme[k], apCourant.bssid, 6) != 0) {
           identiteReelle[k] = true;
           Console.println("eduroam : identité anonyme refusée par deux bornes. Les prochains essais utilisent ton identifiant "
                           "réel (EDUROAM_IDENTITE_ANONYME 0 pour toujours l'utiliser).");
@@ -1544,13 +1524,13 @@ void gererWiFi(unsigned long now) {
       // refusé à son tour (le pilote ne retente plus seul : reconnexion automatique coupée).
       WiFi.disconnect(false, false);
       // (sauf réseau introuvable alors qu'il n'avait pas été vu au scan : essai « à l'aveugle », inutile de doubler)
-      if (essaiCandidat == 0 && !(r == WIFI_REASON_NO_AP_FOUND && !bssidCourantOk)) {
+      if (essaiCandidat == 0 && !(r == WIFI_REASON_NO_AP_FOUND && !apCourant.bssidOk)) {
         etatWifi = WIFI_REESSAI;
         tEtatWifi = now;
         return;
       }
       essaiCandidat = 0;
-      if (++idxCandidat < nbCandidats) { lancerConnexion(candidats[idxCandidat]); return; }
+      if (++idxCandidat < nbCandidats) { lancerConnexion(candidats[idxCandidat].reseau); return; }
       finTentatives(now);
       return;
     }
@@ -1559,7 +1539,7 @@ void gererWiFi(unsigned long now) {
       // (un téléphone en train de se connecter en Bluetooth : on lui laisse la radio quelques secondes)
       if (now - tEtatWifi < WIFI_REESSAI_MS || btOccupe(now)) return;
       essaiCandidat = 1;
-      lancerConnexion(candidats[idxCandidat]);
+      lancerConnexion(candidats[idxCandidat].reseau);
       return;
 
     case WIFI_CONNECTE:
@@ -1570,24 +1550,22 @@ void gererWiFi(unsigned long now) {
         relancerWifi(false);
         return;
       }
-      if (WiFi.status() == WL_CONNECTED) { tDernierWifiOK = now; return; }
+      if (WiFi.status() == WL_CONNECTED) return;
       nbCoupuresWifi++;
       Console.printf("Wi-Fi perdu (%s) : reconnexion...\n", raisonLongue(raisonDeco));
       // on retente d'abord le même réseau ; s'il ne revient pas, on rescanne
       nbCandidats = 1;
       idxCandidat = 0;
       essaiCandidat = 0;
-      candidats[0] = reseauCourant;
-      candBssidOk[0] = bssidCourantOk;    // même point d'accès qu'avant la coupure
-      memcpy(candBssid[0], bssidCourant, 6);
-      candCanal[0] = canalCourant;
+      candidats[0] = apCourant;           // même point d'accès qu'avant la coupure
+      candidats[0].reseau = reseauCourant;
       lancerConnexion(reseauCourant);
       rescannerApresEchec = true;
       return;
 
     case WIFI_PAUSE:
       if (now - tEtatWifi < pauseWifiMs() || btOccupe(now)) return;
-      if ((WIFI_PAUSE_MS << nbPausesWifi) < WIFI_PAUSE_MAX_MS) nbPausesWifi++;   // la prochaine pause sera plus longue
+      if (pauseWifiMs() < WIFI_PAUSE_MAX_MS) nbPausesWifi++;   // la prochaine pause sera plus longue
       lancerScan();
       return;
   }
@@ -1620,8 +1598,7 @@ void surveillerWifiLongue(unsigned long now) {
 void surveillerEnvois(unsigned long now) {
 #if WIFI_ACTIVE && !MODE_DEMO
   if (etatWifi != WIFI_CONNECTE || !dejaPoste || !cleOK()) return;
-  unsigned long reference = tDerniereReponse ? tDerniereReponse : 0;
-  if (now - reference > SANS_REPONSE_REBOOT_MS && now - tDernierPush < 600000UL) {
+  if (now - tDerniereReponse > SANS_REPONSE_REBOOT_MS && now - tDernierPush < 600000UL) {
     Console.println("Aucune réponse du serveur depuis 6 h malgré le Wi-Fi : redémarrage de la carte.");
     delay(100);
     ESP.restart();
@@ -1802,7 +1779,7 @@ bool co2HautConfirme(int co2) {
   int tri[CO2_NB_CONFIRMATION];
   memcpy(tri, serie, sizeof(tri));
   for (uint8_t i = 1; i < n; i++)                              // tri par insertion (5 valeurs)
-    for (uint8_t j = i; j > 0 && tri[j - 1] > tri[j]; j--) { int t = tri[j]; tri[j] = tri[j - 1]; tri[j - 1] = t; }
+    for (uint8_t j = i; j > 0 && tri[j - 1] > tri[j]; j--) std::swap(tri[j], tri[j - 1]);
   float med = tri[n / 2];
   return (tri[0] >= med * (1.0f - CO2_ECART_CONFIRMATION)) && (tri[n - 1] <= med * (1.0f + CO2_ECART_CONFIRMATION));
 }
@@ -1971,6 +1948,18 @@ void reinitialiserBacklog() {
   prefs.putULong("off", 0);
 }
 
+// Fin d'un compactage (backlog.tmp COMPLET, drapeau "cpt" levé) : suppression de l'ancien, renommage, puis le renvoi
+// repart du début de la copie. Sert aussi au démarrage après une coupure : une étape déjà faite est sautée.
+static void terminerCompactage() {
+  if (LittleFS.exists(FICHIER_TMP)) {
+    if (LittleFS.exists(FICHIER_BACKLOG)) LittleFS.remove(FICHIER_BACKLOG);
+    LittleFS.rename(FICHIER_TMP, FICHIER_BACKLOG);
+  }
+  offsetRejeu = 0;
+  prefs.putULong("off", 0);
+  prefs.putBool("cpt", false);
+}
+
 // Au démarrage : reprend un compactage interrompu, puis retrouve la taille du fichier et le nombre de lignes à renvoyer
 void initialiserBacklog() {
   tailleBacklog = 0;
@@ -1979,13 +1968,7 @@ void initialiserBacklog() {
   // Coupure pendant un compactage ? Le drapeau "cpt" n'est levé qu'une fois backlog.tmp COMPLET :
   // on termine le travail (suppression de l'ancien, renommage) sans rien perdre.
   if (prefs.getBool("cpt", false)) {
-    if (LittleFS.exists(FICHIER_TMP)) {
-      if (LittleFS.exists(FICHIER_BACKLOG)) LittleFS.remove(FICHIER_BACKLOG);
-      LittleFS.rename(FICHIER_TMP, FICHIER_BACKLOG);
-    }
-    offsetRejeu = 0;
-    prefs.putULong("off", 0);
-    prefs.putBool("cpt", false);
+    terminerCompactage();
     Console.println("Compactage interrompu par une coupure : repris, aucune mesure perdue.");
   } else if (LittleFS.exists(FICHIER_TMP)) {
     LittleFS.remove(FICHIER_TMP);  // copie inachevée : l'original est intact
@@ -2045,12 +2028,8 @@ bool compacterBacklog(size_t depuis) {
     return false;
   }
   prefs.putBool("cpt", true);  // à partir d'ici, un redémarrage termine le travail
-  LittleFS.remove(FICHIER_BACKLOG);
-  LittleFS.rename(FICHIER_TMP, FICHIER_BACKLOG);
-  offsetRejeu = 0;
+  terminerCompactage();
   tailleBacklog = total;
-  prefs.putULong("off", 0);
-  prefs.putBool("cpt", false);
   return true;
 }
 
@@ -2154,6 +2133,19 @@ long calculerAge(JsonDocument &doc) {
   return (maintenant >= e) ? (long)(maintenant - e) : 0;
 }
 
+#if AIRCARTO_HTTPS || CONSOLE_DISTANTE
+// Verrou mutexTls (une seule connexion HTTPS à la fois) : pris en attendant ms au plus (vrai aussi s'il n'existe pas), rendu.
+static bool prendreVerrouTls(uint32_t ms) { return !mutexTls || xSemaphoreTake(mutexTls, pdMS_TO_TICKS(ms)) == pdTRUE; }
+static void rendreVerrouTls() { if (mutexTls) xSemaphoreGive(mutexTls); }
+// Échange HTTPS reporté faute de mémoire : message commun à AirCarto et au relais (debut = qui reporte quoi).
+static void signalerMemoireTls(const char* debut) {
+  Console.printf("%smémoire insuffisante pour HTTPS (libre %u, plus grand bloc %u octets, réserve %u/%u).\n", debut,
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
+                 (unsigned)tamponsTlsLibres(), (unsigned)nbTamponsTls);
+}
+#endif
+
 // Un POST ; la réponse du serveur décide de la suite
 ResultatPush posterAuServeur(const String &payload) {
   // Le serveur compte 10 s entre le début de deux requêtes : on note l'heure AVANT l'envoi
@@ -2164,18 +2156,15 @@ ResultatPush posterAuServeur(const String &payload) {
   // Une seule connexion HTTPS à la fois : si le relais en utilise une, on attend qu'il finisse (5 s au plus, bien
   // en dessous du watchdog). Puis HTTPS demande ~56 Ko libres (memoireTlsOK). Sinon : on réessaie au créneau suivant,
   // sans compter un échec (la mesure est gardée).
-  if (mutexTls && xSemaphoreTake(mutexTls, pdMS_TO_TICKS(5000)) != pdTRUE) {
+  if (!prendreVerrouTls(5000)) {
     nbReportsMemoire++;
     LOG("Envoi reporté : une autre connexion HTTPS est en cours.\n");
     return PUSH_REPORTE;     // ce n'est pas un échec d'envoi : le témoin du serveur reste tel quel
   }
   if (!memoireTlsOK()) {
-    if (mutexTls) xSemaphoreGive(mutexTls);
+    rendreVerrouTls();
     nbReportsMemoire++;
-    LOG("Envoi reporté : mémoire insuffisante pour HTTPS (libre %u, plus grand bloc %u octets, réserve %u/%u).\n",
-        (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
-        (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
-        (unsigned)tamponsTlsLibres(), (unsigned)nbTamponsTls);
+    if (verbose) signalerMemoireTls("Envoi reporté : ");
     return PUSH_REPORTE;
   }
 #endif
@@ -2215,7 +2204,7 @@ ResultatPush posterAuServeur(const String &payload) {
   http.end();
 #if AIRCARTO_HTTPS
   clientAircarto.stop();   // (déjà fait par http.end, sauf si la connexion a échoué avant)
-  if (mutexTls) xSemaphoreGive(mutexTls);
+  rendreVerrouTls();
 #endif
   dernierCodeHttp = code;
 
@@ -2250,8 +2239,7 @@ ResultatPush posterAuServeur(const String &payload) {
     echecsPush = 0;
     if (cleInvalide) Console.println("Clé acceptée de nouveau : envois repris.");
     cleInvalide = false;
-    unsigned long voulu = (unsigned long)suivant * 1000UL;
-    ecartMinMs = (voulu > ECART_PUSH_MIN_MS) ? voulu : ECART_PUSH_MIN_MS;
+    ecartMinMs = max(ECART_PUSH_MIN_MS, (unsigned long)suivant * 1000UL);
     if (++succesDeSuite >= 10) {
       succesDeSuite = 0;
       if (margePushMs >= MARGE_PUSH_MIN_MS + 100) margePushMs -= 100;
@@ -2270,8 +2258,7 @@ ResultatPush posterAuServeur(const String &payload) {
     return PUSH_CLE_INVALIDE;
   }
   if (code == 429) {  // envoi trop rapproché : on agrandit la marge (ce n'est pas une panne : pas d'espacement progressif)
-    margePushMs += 500;
-    if (margePushMs > MARGE_PUSH_MAX_MS) margePushMs = MARGE_PUSH_MAX_MS;
+    margePushMs = min(margePushMs + 500, MARGE_PUSH_MAX_MS);
     // Le serveur dit exactement combien attendre (retry_after_s) : le prochain envoi part à ce moment-là, pas avant.
     long attente = rep["retry_after_s"] | 0L;
     attente = constrain(attente, 0L, (long)(ATTENTE_SERVEUR_MAX_MS / 1000UL));
@@ -2328,45 +2315,49 @@ bool construireRecord(String &ligne) {
   if (!aCO2 && !aPM) return false;
 
   JsonDocument doc;
+  // Ajout d'un champ entier, positif ou arrondi à 0,1 : un seul exemplaire du code d'ajout pour tous les champs.
+  // JsonString(nom, true) : clé gardée par adresse, sans copie (comme avec doc["..."]).
+  auto entier = [&doc](const char* nom, int v) { doc[JsonString(nom, true)] = v; };
+  auto positif = [&doc](const char* nom, uint32_t v) { doc[JsonString(nom, true)] = v; };
+  auto dixieme = [&doc](const char* nom, float v) { doc[JsonString(nom, true)] = arrondi1(v); };
   // Champs standard attendus par AirCarto : identifiant de la carte, uptime, signal Wi-Fi, mémoire libre.
   doc["device_id"] = deviceId;
-  doc["uptime"] = millis() / 1000;
+  positif("uptime", millis() / 1000);
   if (reseauOK()) {
     int rssi = WiFi.RSSI();
-    if (rssi >= -120 && rssi <= 0) doc["rssi"] = rssi;
+    if (rssi >= -120 && rssi <= 0) entier("rssi", rssi);
   }
-  doc["heap"] = ESP.getFreeHeap() + octetsReserveLibres();   // disponible, réserve HTTPS libre comprise (comme avant)
+  positif("heap", ESP.getFreeHeap() + octetsReserveLibres());   // disponible, réserve HTTPS libre comprise (comme avant)
 
   // CO2 : moyenne de la période (co2) et pic (x_co2_max).
   if (aCO2) {
     float moy = agCO2.somme / agCO2.n;
-    if (dansBornes("co2", moy, 0, 10000)) doc["co2"] = (int)(moy + 0.5f);
-    if (dansBornes("x_co2_max", agCO2.maxi, 0, 10000)) doc["x_co2_max"] = (int)agCO2.maxi;
+    if (dansBornes("co2", moy, 0, 10000)) entier("co2", (int)(moy + 0.5f));
+    if (dansBornes("x_co2_max", agCO2.maxi, 0, 10000)) entier("x_co2_max", (int)agCO2.maxi);
   }
   // Particules : moyennes PM1 / PM2.5 / PM10, pic de PM2.5, état du NextPM et sa température / humidité.
   if (aPM) {
-    float m1  = agPM1.somme / agPM1.n;
-    float m25 = agPM25.somme / agPM25.n;
-    float m10 = agPM10.somme / agPM10.n;
-    if (dansBornes("pm1", m1, 0, 1000)) doc["pm1"] = arrondi1(m1);
-    if (dansBornes("pm25", m25, 0, 1000)) doc["pm25"] = arrondi1(m25);
-    if (dansBornes("pm10", m10, 0, 1000)) doc["pm10"] = arrondi1(m10);
-    if (dansBornes("x_pm25_max", agPM25.maxi, 0, 1000)) doc["x_pm25_max"] = arrondi1(agPM25.maxi);
-    doc["npm_status"] = (int)statutPM;   // champ officiel d'AirCarto (0 à 255) : libère une place de champ x_
-    if (!isnan(tempPM)) doc["x_temp_pm"] = arrondi1(tempPM);
-    if (!isnan(humPM)) doc["x_hum_pm"] = arrondi1(humPM);
+    // même nom pour le champ et pour le message de dansBornes (champ omis hors bornes)
+    auto pm = [&dixieme](const char* nom, float v) { if (dansBornes(nom, v, 0, 1000)) dixieme(nom, v); };
+    pm("pm1", agPM1.somme / agPM1.n);
+    pm("pm25", agPM25.somme / agPM25.n);
+    pm("pm10", agPM10.somme / agPM10.n);
+    pm("x_pm25_max", agPM25.maxi);
+    entier("npm_status", (int)statutPM);   // champ officiel d'AirCarto (0 à 255) : libère une place de champ x_
+    if (!isnan(tempPM)) dixieme("x_temp_pm", tempPM);
+    if (!isnan(humPM)) dixieme("x_hum_pm", humPM);
   }
   // Champs personnalisés « x_ » (10 au maximum, imposé par AirCarto ; 9 utilisés) : alimentation, aération détectée,
   // % du temps au-dessus de 1000 ppm, cause du dernier redémarrage.
-  doc["x_alim"] = estSurSecteur ? 1 : 0;
-  doc["x_aeration"] = aerationPeriode ? 1 : 0;
-  if (nCO2Total > 0) doc["x_pct_co2_1000"] = arrondi1(100.0f * nCO2Haut / nCO2Total);
-  doc["x_reset"] = (int)esp_reset_reason();
+  entier("x_alim", estSurSecteur ? 1 : 0);
+  entier("x_aeration", aerationPeriode ? 1 : 0);
+  if (nCO2Total > 0) dixieme("x_pct_co2_1000", 100.0f * nCO2Haut / nCO2Total);
+  entier("x_reset", (int)esp_reset_reason());
 
   // Métadonnées internes (retirées avant l'envoi) : quand la mesure a été faite
-  doc["_u"] = millis() / 1000;
-  doc["_e"] = heureValide() ? (uint32_t)time(nullptr) : (uint32_t)0;
-  doc["_b"] = bootId;
+  positif("_u", millis() / 1000);
+  positif("_e", heureValide() ? (uint32_t)time(nullptr) : (uint32_t)0);
+  positif("_b", bootId);
 
   ligne = "";
   serializeJson(doc, ligne);
@@ -2376,14 +2367,19 @@ bool construireRecord(String &ligne) {
   return true;
 }
 
+// Retire la plus ancienne mesure déposée (mutexEnvoi déjà pris). Copies et non déplacements : chaque case garde
+// la place réservée au démarrage (TAILLE_PENDANTE).
+static void retirerPremierePendante() {
+  for (uint8_t i = 1; i < nbPendantes; i++) pendantes[i - 1] = pendantes[i];
+  nbPendantes--;
+  pendantes[nbPendantes] = "";
+}
+
 // loop() dépose la mesure ; la tâche d'envoi la prend (réseau, ou fichier hors ligne si pas de réseau)
 void deposerMesure(const String &ligne) {
   xSemaphoreTake(mutexEnvoi, portMAX_DELAY);
-  if (nbPendantes >= NB_PENDANTES) {  // la tâche d'envoi n'a rien traité depuis plusieurs périodes : on sacrifie la plus ancienne
-    for (uint8_t i = 1; i < nbPendantes; i++) pendantes[i - 1] = pendantes[i];
-    nbPendantes--;
-    pendantes[nbPendantes] = "";
-  }
+  // la tâche d'envoi n'a rien traité depuis plusieurs périodes : on sacrifie la plus ancienne
+  if (nbPendantes >= NB_PENDANTES) retirerPremierePendante();
   pendantes[nbPendantes++] = ligne;
   xSemaphoreGive(mutexEnvoi);
 }
@@ -2409,9 +2405,7 @@ bool sortirPendante(String &ligne) {
   xSemaphoreTake(mutexEnvoi, portMAX_DELAY);
   if (nbPendantes > 0) {
     ligne = pendantes[0];
-    for (uint8_t i = 1; i < nbPendantes; i++) pendantes[i - 1] = pendantes[i];
-    nbPendantes--;
-    pendantes[nbPendantes] = "";
+    retirerPremierePendante();
     ok = true;
   }
   xSemaphoreGive(mutexEnvoi);
@@ -2473,10 +2467,10 @@ void gererEnvois(unsigned long now) {
 
   bool enLigne = reseauOK() && cleOK() && (!cleInvalide || now - tCleRefusee >= ESSAI_CLE_MS);   // clé refusée : un essai / 15 min
 
+  String ligne;
   // Pas de réseau (ou pas de clé valide) : tout ce qui attend en RAM est mis de côté en flash
   if (!enLigne) {
     tAttenteHeure = 0;
-    String ligne;
     while (sortirPendante(ligne)) {
       stockerRecord(ligne);
       if (etatEnvoi == 1) etatEnvoi = 2;
@@ -2489,7 +2483,6 @@ void gererEnvois(unsigned long now) {
     tPasAvant = 0;
   }
 
-  String ligne;
   if (sortirPendante(ligne)) {
     ResultatPush r = envoyerLigne(ligne);
     if (r == PUSH_REPORTE && remettrePendante(ligne)) return;   // rien n'est parti : elle attend en RAM le créneau suivant
@@ -2593,6 +2586,13 @@ void retourAncienneVersion(const char* raison, bool marquer);
 extern "C" bool verifyRollbackLater() { return true; }
 
 // --- journal ---
+// Fait sortir les r premiers octets du tampon (r <= journalLong ; mutexJournal pris).
+static void journalSortir(size_t r) {
+  memmove(journalTampon, journalTampon + r, journalLong - r);
+  journalLong -= r;
+  journalBase += r;
+}
+
 // Retire les plus vieilles lignes pour faire de la place (au moins "besoin" octets).
 static void journalLibererPlace(size_t besoin) {
   if (journalLong + besoin <= JOURNAL_TAILLE) return;
@@ -2602,9 +2602,7 @@ static void journalLibererPlace(size_t besoin) {
   // coupe sur une fin de ligne pour ne pas envoyer une ligne amputée
   while (aRetirer < journalLong && journalTampon[aRetirer - 1] != '\n') aRetirer++;
   for (size_t i = 0; i < aRetirer; i++) if (journalTampon[i] == '\n') journalPerdues++;
-  memmove(journalTampon, journalTampon + aRetirer, journalLong - aRetirer);
-  journalLong -= aRetirer;
-  journalBase += aRetirer;
+  journalSortir(aRetirer);
 }
 
 static void journalAjouter(const char* b, size_t n) {
@@ -2637,10 +2635,9 @@ void journalEcrire(const uint8_t* b, size_t n) {
 // Copie dans dest le début du journal, coupé sur une fin de ligne (une ligne commencée attend sa fin, sauf si
 // elle est démesurée). Renvoie la longueur ; *base = position de départ (pour journalRetirer).
 static size_t journalExtraire(char* dest, size_t max, uint32_t* base) {
-  size_t n = 0;
   xSemaphoreTake(mutexJournal, portMAX_DELAY);
   *base = journalBase;
-  n = (journalLong < max) ? journalLong : max;
+  size_t n = (journalLong < max) ? journalLong : max;
   size_t k = n;
   while (k > 0 && journalTampon[k - 1] != '\n') k--;
   if (k > 0 || n < max) n = k;            // sinon : une seule ligne plus longue que max, envoyée coupée
@@ -2653,30 +2650,17 @@ static size_t journalExtraire(char* dest, size_t max, uint32_t* base) {
 static void journalRetirer(uint32_t base, size_t n) {
   xSemaphoreTake(mutexJournal, portMAX_DELAY);
   uint32_t dejaSortis = journalBase - base;
-  if (n > dejaSortis) {
-    size_t r = n - dejaSortis;
-    if (r > journalLong) r = journalLong;
-    memmove(journalTampon, journalTampon + r, journalLong - r);
-    journalLong -= r;
-    journalBase += r;
-  }
+  if (n > dejaSortis) journalSortir(min((size_t)(n - dejaSortis), journalLong));
   xSemaphoreGive(mutexJournal);
 }
 
-String lireRelais() {
+// Copie de cfgRelais ou de cfgJeton, prise sous mutexEnvoi (« set relais » et « set jeton » les changent sous ce verrou).
+static String lireReglageRelais(const String &reglage) {
   String r;
   if (mutexEnvoi) xSemaphoreTake(mutexEnvoi, portMAX_DELAY);
-  r = cfgRelais;
+  r = reglage;
   if (mutexEnvoi) xSemaphoreGive(mutexEnvoi);
   return r;
-}
-
-String lireJeton() {
-  String j;
-  if (mutexEnvoi) xSemaphoreTake(mutexEnvoi, portMAX_DELAY);
-  j = cfgJeton;
-  if (mutexEnvoi) xSemaphoreGive(mutexEnvoi);
-  return j;
 }
 
 void majRelaisConfigure() {
@@ -2691,6 +2675,7 @@ static void enHexa(const uint8_t* b, size_t n, char* sortie) {
   sortie[2 * n] = 0;
 }
 
+#if OTA_POSSIBLE   // (sans clé publique, verifierMiseAJour refuse avant toute vérification)
 static int valHexa(char c) {
   if (c >= '0' && c <= '9') return c - '0';
   if (c >= 'a' && c <= 'f') return c - 'a' + 10;
@@ -2700,11 +2685,10 @@ static int valHexa(char c) {
 
 // La signature du manifeste est-elle bien celle de TA clé privée ?
 // Message signé : "MAIR-OTA|<version>|<taille>|<sha256>" (ECDSA P-256 + SHA-256, signature DER en hexadécimal).
-static bool signatureValide(const String& message, const String& sigHexa) {
-#if OTA_POSSIBLE
+static bool signatureValide(const char* message, const char* sigHexa) {
   uint8_t sig[80];
-  size_t n = sigHexa.length() / 2;
-  if (sigHexa.length() % 2 != 0 || n < 8 || n > sizeof(sig)) return false;
+  size_t lg = strlen(sigHexa), n = lg / 2;
+  if (lg % 2 != 0 || n < 8 || n > sizeof(sig)) return false;
   for (size_t i = 0; i < n; i++) {
     int h = valHexa(sigHexa[2 * i]), l = valHexa(sigHexa[2 * i + 1]);
     if (h < 0 || l < 0) return false;
@@ -2712,18 +2696,15 @@ static bool signatureValide(const String& message, const String& sigHexa) {
   }
   uint8_t empreinte[32];
   const mbedtls_md_info_t* info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
-  if (info == NULL || mbedtls_md(info, (const unsigned char*)message.c_str(), message.length(), empreinte) != 0) return false;
+  if (info == NULL || mbedtls_md(info, (const unsigned char*)message, strlen(message), empreinte) != 0) return false;
   mbedtls_pk_context cle;
   mbedtls_pk_init(&cle);
   bool ok = mbedtls_pk_parse_public_key(&cle, (const unsigned char*)CLE_PUBLIQUE_OTA, strlen(CLE_PUBLIQUE_OTA) + 1) == 0
             && mbedtls_pk_verify(&cle, MBEDTLS_MD_SHA256, empreinte, sizeof(empreinte), sig, n) == 0;
   mbedtls_pk_free(&cle);
   return ok;
-#else
-  (void)message; (void)sigHexa;
-  return false;
-#endif
 }
+#endif
 
 // --- échanges avec le relais ---
 ClientTlsDate clientRelais("Relais");   // vérifie aussi la date du certificat à chaque ouverture
@@ -2732,12 +2713,11 @@ ClientTlsDate clientRelais("Relais");   // vérifie aussi la date du certificat 
 // Une connexion par échange (setReuse(false)) : clientRelais (ClientTlsDate) vérifie certificat, nom et date à
 // chaque ouverture, avant que le jeton ne parte ; aucune connexion chiffrée ne reste ouverte entre deux échanges.
 static bool ouvrirRequete(HTTPClient& http, const char* chemin) {
-  String url = lireRelais() + chemin;
   http.setConnectTimeout(8000);
   http.setTimeout(10000);
   http.setReuse(false);
-  if (!http.begin(clientRelais, url)) return false;
-  http.addHeader("Authorization", "Bearer " + lireJeton());
+  if (!http.begin(clientRelais, lireReglageRelais(cfgRelais) + chemin)) return false;
+  http.addHeader("Authorization", "Bearer " + lireReglageRelais(cfgJeton));
   return true;
 }
 
@@ -2748,12 +2728,14 @@ static bool synchroniserRelais() {
   size_t n = journalExtraire(paquet, sizeof(paquet), &base);
   HTTPClient http;
   if (!ouvrirRequete(http, "/carte/sync")) { dernierCodeRelais = HTTPC_ERROR_CONNECTION_REFUSED; return false; }
-  char v[24];
   http.addHeader("Content-Type", "text/plain; charset=utf-8");
-  snprintf(v, sizeof(v), "%lu", millis());                 http.addHeader("X-Millis", v);
-  snprintf(v, sizeof(v), "%lu", (unsigned long)FW_VERSION); http.addHeader("X-Version", v);
-  snprintf(v, sizeof(v), "%lu", (unsigned long)bootId);     http.addHeader("X-Boot", v);
-  snprintf(v, sizeof(v), "%lu", (unsigned long)journalPerdues); http.addHeader("X-Perdues", v);
+  static const char* const EN_TETES[] = {"X-Millis", "X-Version", "X-Boot", "X-Perdues"};
+  const unsigned long valeurs[] = {millis(), (unsigned long)FW_VERSION, (unsigned long)bootId, (unsigned long)journalPerdues};
+  for (uint8_t i = 0; i < 4; i++) {
+    char v[24];
+    snprintf(v, sizeof(v), "%lu", valeurs[i]);
+    http.addHeader(EN_TETES[i], v);
+  }
   int code = http.POST((uint8_t*)paquet, n);
   dernierCodeRelais = code;
   if (code != 200) {
@@ -2766,7 +2748,7 @@ static bool synchroniserRelais() {
   journalRetirer(base, n);
   journalPerdues = 0;
   JsonDocument doc;
-  if (deserializeJson(doc, rep) != DeserializationError::Ok) return true;   // reçu, mais réponse illisible
+  if (deserializeJson(doc, rep)) return true;   // reçu, mais réponse illisible
   consoleLive = doc["live"] | false;
   for (JsonVariant c : doc["cmds"].as<JsonArray>()) {
     const char* t = c.as<const char*>();
@@ -2824,19 +2806,20 @@ static void verifierMiseAJour(bool installer) {
   String rep = lireReponse(http, 4096);
   http.end();
   JsonDocument doc;
-  if (deserializeJson(doc, rep) != DeserializationError::Ok) { Console.println("Mise à jour : manifeste illisible."); return; }
+  if (deserializeJson(doc, rep)) { Console.println("Mise à jour : manifeste illisible."); return; }
   uint32_t version = doc["version"] | 0UL;
   uint32_t taille  = doc["taille"] | 0UL;
-  String sha = doc["sha256"] | "";
-  String sig = doc["sig"] | "";
-  String tag = doc["tag"] | "";
-  String message = "MAIR-OTA|" + String((unsigned long)version) + "|" + String((unsigned long)taille) + "|" + sha;
-  if (sha.length() != 64 || tag.length() == 0 || !signatureValide(message, sig)) {
+  const char* sha = doc["sha256"] | "";   // (textes gardés dans doc jusqu'à la fin de la fonction : pas de copie)
+  const char* sig = doc["sig"] | "";
+  const char* tag = doc["tag"] | "";
+  char message[100];   // 95 caractères au plus quand sha en fait 64 (seul cas où la signature est vérifiée)
+  snprintf(message, sizeof(message), "MAIR-OTA|%lu|%lu|%s", (unsigned long)version, (unsigned long)taille, sha);
+  if (strlen(sha) != 64 || *tag == 0 || !signatureValide(message, sig)) {
     Console.println("Mise à jour REFUSÉE : signature invalide (ce programme ne vient pas de ta clé).");
     return;
   }
   Console.printf("Version installée : %lu | dernière publiée : %lu (%s, %lu octets, signature OK)\n",
-                 (unsigned long)FW_VERSION, (unsigned long)version, tag.c_str(), (unsigned long)taille);
+                 (unsigned long)FW_VERSION, (unsigned long)version, tag, (unsigned long)taille);
   if (version <= (uint32_t)FW_VERSION) { Console.println("La carte est à jour."); return; }
   // Une version qui a déjà échoué sur cette carte (retour automatique à l'ancienne) n'est pas réinstallée à distance :
   // sinon une console volée pourrait la réinstaller en boucle (« maj installer » puis « reboot »), en usant la flash.
@@ -2873,7 +2856,7 @@ static void verifierMiseAJour(bool installer) {
       Console.printf("Mise à jour : préparation impossible (%s).\n", esp_err_to_name(err));
     return;
   }
-  String chemin = "/carte/firmware?tag=" + tag;
+  String chemin = String("/carte/firmware?tag=") + tag;
   if (!ouvrirRequete(http, chemin.c_str())) {
     esp_ota_abort(ota); majProgression = 0xFF;
     Console.println("Mise à jour : relais injoignable.");
@@ -2893,7 +2876,7 @@ static void verifierMiseAJour(bool installer) {
   http.end();
   char empreinte[65];
   flux.empreinte(empreinte);
-  if (ecrits != (int)taille || !flux.ok || flux.recu != taille || sha != empreinte) {
+  if (ecrits != (int)taille || !flux.ok || flux.recu != taille || strcmp(sha, empreinte) != 0) {
     esp_ota_abort(ota);
     majProgression = 0xFF;
     Console.printf("Mise à jour ANNULÉE : fichier incomplet ou modifié (%d / %lu octets). L'ancienne version reste.\n",
@@ -2937,10 +2920,11 @@ void verifierDemarrageOta() {
   // Ce n'est pas la version installée à distance (flash USB entre-temps, ou retour en arrière déjà fait) : on oublie.
   // Si l'on tourne sur l'ANCIEN emplacement avec un programme plus ancien, la nouvelle version a échoué (retour fait
   // par le démarreur de l'ESP32 ou par nous) : on la note, pour ne pas la réinstaller à distance.
-  if (nouv != actuelle->label || prefsOta.getULong("vers", 0) != (uint32_t)FW_VERSION) {
-    uint32_t vers = prefsOta.getULong("vers", 0);
+  bool ailleurs = nouv != actuelle->label;
+  uint32_t vers = prefsOta.getULong("vers", 0);
+  if (ailleurs || vers != (uint32_t)FW_VERSION) {
     oublierEssaiOta();
-    if (nouv != actuelle->label && vers > (uint32_t)FW_VERSION) prefsOta.putULong("refusee", vers);
+    if (ailleurs && vers > (uint32_t)FW_VERSION) prefsOta.putULong("refusee", vers);
     esp_ota_mark_app_valid_cancel_rollback();
     return;
   }
@@ -2999,18 +2983,17 @@ void tacheRelais(void* param) {
     vTaskDelay(pdMS_TO_TICKS(100));
     unsigned long now = millis();
     surveillerOta();
-    bool pret = relaisConfigure && reseauOK();
-    if (!pret) { consoleLive = false; changerEtatRelais(RELAIS_SANS_RESEAU); continue; }
+    if (!relaisConfigure || !reseauOK()) { consoleLive = false; changerEtatRelais(RELAIS_SANS_RESEAU); continue; }
     if (demandeMaj != 0) {
       changerEtatRelais(RELAIS_MAJ);
       bool installer = (demandeMaj == 2);
       demandeMaj = 0;
-      if (mutexTls && xSemaphoreTake(mutexTls, pdMS_TO_TICKS(20000)) != pdTRUE) {
+      if (!prendreVerrouTls(20000)) {
         Console.println("Mise à jour : une autre connexion HTTPS est en cours, réessaie.");
       } else {
         if (!memoireTlsOK()) Console.println("Mise à jour : mémoire insuffisante, réessaie.");
         else verifierMiseAJour(installer);
-        if (mutexTls) xSemaphoreGive(mutexTls);
+        rendreVerrouTls();
       }
       syncDemandee = true;
     }
@@ -3020,18 +3003,14 @@ void tacheRelais(void* param) {
     syncDemandee = false;
     tSync = now;
     changerEtatRelais(RELAIS_VERROU);
-    if (mutexTls && xSemaphoreTake(mutexTls, pdMS_TO_TICKS(20000)) != pdTRUE) { attente = 2000; continue; }
+    if (!prendreVerrouTls(20000)) { attente = 2000; continue; }
     if (!memoireTlsOK()) {
       changerEtatRelais(RELAIS_MEMOIRE);
-      if (mutexTls) xSemaphoreGive(mutexTls);
+      rendreVerrouTls();
       static unsigned long tMsgMemoire = 0;      // message au plus une fois par minute (USB, Bluetooth)
       if (tMsgMemoire == 0 || millis() - tMsgMemoire > 60000UL) {
         tMsgMemoire = millis() | 1UL;
-        Console.printf("Relais : échange reporté, mémoire insuffisante pour HTTPS (libre %u, plus grand bloc %u octets, "
-                       "réserve %u/%u).\n",
-                       (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
-                       (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL),
-                       (unsigned)tamponsTlsLibres(), (unsigned)nbTamponsTls);
+        signalerMemoireTls("Relais : échange reporté, ");
       }
       attente = 10000;
       continue;
@@ -3039,7 +3018,7 @@ void tacheRelais(void* param) {
     changerEtatRelais(RELAIS_ECHANGE);
     bool syncOK = synchroniserRelais();
     clientRelais.stop();    // une connexion par échange : on libère tout de suite la mémoire de la connexion chiffrée
-    if (mutexTls) xSemaphoreGive(mutexTls);
+    rendreVerrouTls();
     tSync = millis();       // l'attente suivante part de la FIN de l'échange : AirCarto a sa place entre deux
     if (syncOK) {
       echecs = 0;
@@ -3135,15 +3114,22 @@ void ouvrirAppairage() {
                  FENETRE_APPAIRAGE_MS / 1000UL, btNom.c_str());
 }
 
+// Retire les r premiers octets du tampon (r <= btLong ; mutexBt pris).
+static void btRetirer(size_t r) {
+  memmove(btTampon, btTampon + r, btLong - r);
+  btLong -= r;
+}
+
+// Plus de téléphone (déconnexion, ou connexion fantôme) : ni connecté, ni appairé, ni abonné, rien à refuser.
+static void btEffacerConnexion() {
+  btConnecte = false; btAutorise = false; btAbonne = false; btRefuser = false; btCodeMontre = false;
+}
+
 void btEcrire(const uint8_t* b, size_t n) {
   if (!btAutorise || mutexBt == NULL) return;
   if (xSemaphoreTake(mutexBt, pdMS_TO_TICKS(20)) != pdTRUE) return;
   if (n > BT_TAMPON) { b += n - BT_TAMPON; n = BT_TAMPON; }
-  if (btLong + n > BT_TAMPON) {                     // plein : on oublie le début
-    size_t r = btLong + n - BT_TAMPON;
-    memmove(btTampon, btTampon + r, btLong - r);
-    btLong -= r;
-  }
+  if (btLong + n > BT_TAMPON) btRetirer(btLong + n - BT_TAMPON);   // plein : on oublie le début
   memcpy(btTampon + btLong, b, n);
   btLong += n;
   xSemaphoreGive(mutexBt);
@@ -3166,8 +3152,8 @@ void btEnvoyer(unsigned long now) {
   }
   if (btCleInconnue) {
     btCleInconnue = false;
-    Console.println("Bluetooth : ce téléphone a sans doute gardé un ancien appairage que la carte n'a plus. Sur le téléphone : "
-                    "réglages Bluetooth > " + btNom + " > Oublier, puis 'bt appairer' au câble USB et reconnecte-toi.");
+    Console.printf("Bluetooth : ce téléphone a sans doute gardé un ancien appairage que la carte n'a plus. Sur le téléphone : "
+                   "réglages Bluetooth > %s > Oublier, puis 'bt appairer' au câble USB et reconnecte-toi.\r\n", btNom.c_str());
   }
   // Chaque seconde : la carte doit diffuser dès qu'aucun téléphone n'est connecté. Une liaison qui avorte avant
   // d'être établie (radio occupée) n'appelle ni onConnect ni onDisconnect : sans cette relance, la carte resterait
@@ -3178,7 +3164,7 @@ void btEnvoyer(unsigned long now) {
     if (serveur != nullptr && serveur->getConnectedCount() == 0) {
       // marqué connecté alors que la pile n'a plus aucune connexion (deux contrôles de suite) : on remet tout à zéro
       if (btConnecte && ++incoherences >= 2) {
-        btConnecte = false; btAutorise = false; btAbonne = false; btRefuser = false; btCodeMontre = false;
+        btEffacerConnexion();
         codeAppairage = 0;
         LOG("Bluetooth : connexion fantôme effacée.\n");
       }
@@ -3211,10 +3197,13 @@ void btEnvoyer(unsigned long now) {
   xSemaphoreGive(mutexBt);
   if (!btTx->notify(paquet, n, btConnexion)) return;   // radio occupée : on réessaie au prochain tour
   xSemaphoreTake(mutexBt, portMAX_DELAY);
-  if (n > btLong) n = btLong;
-  memmove(btTampon, btTampon + n, btLong - n);
-  btLong -= n;
+  btRetirer(min(n, btLong));
   xSemaphoreGive(mutexBt);
+}
+
+// Lien sûr : chiffré + code vérifié + clé de 16 octets (128 bits)
+static bool lienSur(const NimBLEConnInfo& info) {
+  return info.isEncrypted() && info.isAuthenticated() && info.getSecKeySize() == 16;
 }
 
 class BtServeur : public NimBLEServerCallbacks {
@@ -3225,18 +3214,14 @@ class BtServeur : public NimBLEServerCallbacks {
     btConnexion = info.getConnHandle();
     tBtConnexion = millis();
     btMtu = info.getMTU();
-    btAutorise = info.isEncrypted() && info.isAuthenticated() && info.getSecKeySize() == 16;
+    btAutorise = lienSur(info);
     btConnecte = true;   // en dernier : loop() lit les valeurs ci-dessus dès qu'il voit la connexion
     // Appairage demandé seulement si le lien n'est pas déjà chiffré : un téléphone connu chiffre de lui-même ; une
     // 2e demande pendant son chiffrement le ferait parfois échouer.
     if (!info.isEncrypted()) NimBLEDevice::startSecurity(info.getConnHandle());
   }
   void onDisconnect(NimBLEServer* serveur, NimBLEConnInfo& info, int raison) override {
-    btConnecte = false;
-    btAutorise = false;
-    btAbonne = false;
-    btRefuser = false;
-    btCodeMontre = false;
+    btEffacerConnexion();
     btMtu = 23;
     btRaisonDeco = raison;   // affichée par loop() (btEnvoyer)
     codeAppairage = 0;
@@ -3255,17 +3240,17 @@ class BtServeur : public NimBLEServerCallbacks {
     if (!appairageOuvert()) {
       codeAppairage = 0;
       btRefuser = true;
-      return code;
+    } else {
+      codeAppairage = code;
+      tCodeAppairage = millis();
+      btCodeMontre = true;
     }
-    codeAppairage = code;
-    tCodeAppairage = millis();
-    btCodeMontre = true;
     return code;
   }
   void onAuthenticationComplete(NimBLEConnInfo& info) override {
     codeAppairage = 0;
     // chiffré + code vérifié + clé de 16 octets (128 bits)
-    if (info.isEncrypted() && info.isAuthenticated() && info.getSecKeySize() == 16) {
+    if (lienSur(info)) {
       btAutorise = true;
       if (btCodeMontre) tFenetreAppairage = 0;   // un nouveau téléphone par fenêtre : elle se referme
       // Liaison plus robuste : 30 à 50 ms entre deux échanges, et 6 s sans nouvelles avant de la déclarer perdue
@@ -3278,12 +3263,13 @@ class BtServeur : public NimBLEServerCallbacks {
       // enregistré ; on l'efface, sinon ces appairages s'accumulent et poussent dehors ceux des vrais téléphones.
       // (Pas d'effacement sur un simple échec de chiffrement : quelqu'un qui usurperait l'adresse d'un vrai téléphone
       // ferait sinon effacer son appairage.)
-      if (info.isEncrypted() && !(info.isAuthenticated() && info.getSecKeySize() == 16))
+      // (ici, lien pas sûr : chiffré veut donc dire sans code vérifié ou clé de moins de 16 octets)
+      if (info.isEncrypted())
         NimBLEDevice::deleteBond(info.getIdAddress());
       // Pas chiffré et téléphone inconnu de la carte : il présente sans doute une ancienne clé (carte effacée,
       // 'bt oublier'...). Il ne s'en sortira pas seul : loop() affiche quoi faire.
       // (pas un nouveau téléphone refusé, btRefuser, ni un code mal tapé, btCodeMontre)
-      else if (!info.isEncrypted() && !btRefuser && !btCodeMontre && !NimBLEDevice::isBonded(info.getIdAddress()))
+      else if (!btRefuser && !btCodeMontre && !NimBLEDevice::isBonded(info.getIdAddress()))
         btCleInconnue = true;
       NimBLEDevice::getServer()->disconnect(info.getConnHandle());   // code faux ou appairage sans code : dehors
     }
@@ -3314,23 +3300,23 @@ class BtAbonnement : public NimBLECharacteristicCallbacks {
 
 class BtReception : public NimBLECharacteristicCallbacks {
   String ligne;
+  // Fin de ligne : la commande (sans les espaces autour) part dans la file de loop(), puis la ligne repart à vide.
+  void deposerLigne() {
+    ligne.trim();
+    if (ligne.length() > 0) deposerCommande(ligne.c_str(), SOURCE_BLUETOOTH);
+    ligne = "";
+  }
   void onWrite(NimBLECharacteristic* c, NimBLEConnInfo& info) override {
-    if (!(info.isEncrypted() && info.isAuthenticated() && info.getSecKeySize() == 16)) return;   // pas appairé : ignoré
+    if (!lienSur(info)) return;   // pas appairé : ignoré
     NimBLEAttValue v = c->getValue();
     const uint8_t* d = v.data();
     for (size_t i = 0; i < v.size(); i++) {
       char ch = (char)d[i];
-      if (ch == '\r' || ch == '\n') {
-        ligne.trim();
-        if (ligne.length() > 0) deposerCommande(ligne.c_str(), SOURCE_BLUETOOTH);
-        ligne = "";
-      } else if ((uint8_t)ch >= 32 && ligne.length() < 100) {
-        ligne += ch;
-      }
+      if (ch == '\r' || ch == '\n') deposerLigne();
+      else if ((uint8_t)ch >= 32 && ligne.length() < 100) ligne += ch;
     }
     // beaucoup d'applis envoient la ligne sans retour à la ligne : on l'exécute quand même
-    ligne.trim();
-    if (ligne.length() > 0) { deposerCommande(ligne.c_str(), SOURCE_BLUETOOTH); ligne = ""; }
+    deposerLigne();
   }
 };
 
@@ -3338,7 +3324,9 @@ void initialiserBluetooth() {
   mutexBt = xSemaphoreCreateMutex();
   // nom = MAir- + les 4 derniers chiffres de l'adresse MAC (AA:BB:CC:DD:EE:FF -> MAir-EEFF)
   unsigned l = deviceId.length();
-  btNom = (l >= 5) ? "MAir-" + deviceId.substring(l - 5, l - 3) + deviceId.substring(l - 2) : String("MAir");
+  char nom[12] = "MAir";
+  if (l >= 5) snprintf(nom, sizeof(nom), "MAir-%.2s%s", deviceId.c_str() + l - 5, deviceId.c_str() + l - 2);
+  btNom = nom;
   NimBLEDevice::init(btNom.c_str());
   NimBLEDevice::setPower(9);   // +9 dBm (3 par défaut) : la carte est sur secteur, la liaison gagne en portée et en marge
   NimBLEDevice::setDeviceCallbacks(new BtStockage());
@@ -3627,22 +3615,33 @@ void ecrireUnitePM(int xFin, int y, uint16_t c) {
 }
 
 // ---------- éléments communs ----------
+// En-tête complet : titre cyan à gauche (x 1), texte à droite (fin en x 62, si droite), filet dessous (y 8) de
+// couleur colFilet. Sert aussi aux pannes ("PANNE" en rouge à droite).
+// En-tête des écrans Wi-Fi : "WIFI" à gauche, état à droite, filet de la couleur de l'état
+void dessinerEnteteTexte(const char* titre, const char* droite, uint16_t colDroite, uint16_t colFilet) {
+  ecrireTexte(titre, 1, 0, 1, COL_TITRE);
+  if (droite) ecrireDroite(droite, 62, 0, 1, colDroite);
+  display.drawFastHLine(0, 8, 64, colFilet);
+}
+
 // En-tête : titre cyan à gauche (x 1), filet dessous (y 8) à la couleur du niveau (niv < 0 : filet neutre).
 void dessinerEntete(const char* titre, int niv) {
-  ecrireTexte(titre, 1, 0, 1, COL_TITRE);
-  display.drawFastHLine(0, 8, 64, (niv >= 0) ? colNiv[niv] : COL_FILET);
+  dessinerEnteteTexte(titre, nullptr, 0, (niv >= 0) ? colNiv[niv] : COL_FILET);
+}
+
+// Deux pixels symétriques par rapport à la colonne cx : (cx - dx, y) et (cx + dx, y) (flèche, visage).
+void pixelsSymetriques(int cx, int dx, int y, uint16_t c) {
+  display.drawPixel(cx - dx, y, c);
+  display.drawPixel(cx + dx, y, c);
 }
 
 // Flèche de tendance 5x5 (cx = centre, y = haut) : dir > 0 monte | dir < 0 descend | 0 stable
+// (montée et descente : même hampe, pointe en y + 1 ou en y + 3)
 void dessinerFleche(int cx, int y, int dir, uint16_t c) {
-  if (dir > 0) {
+  if (dir != 0) {
     display.drawFastVLine(cx, y, 5, c);
-    display.drawPixel(cx - 1, y + 1, c); display.drawPixel(cx + 1, y + 1, c);
-    display.drawPixel(cx - 2, y + 2, c); display.drawPixel(cx + 2, y + 2, c);
-  } else if (dir < 0) {
-    display.drawFastVLine(cx, y, 5, c);
-    display.drawPixel(cx - 1, y + 3, c); display.drawPixel(cx + 1, y + 3, c);
-    display.drawPixel(cx - 2, y + 2, c); display.drawPixel(cx + 2, y + 2, c);
+    pixelsSymetriques(cx, 1, (dir > 0) ? y + 1 : y + 3, c);
+    pixelsSymetriques(cx, 2, y + 2, c);
   } else {
     display.drawFastHLine(cx - 2, y + 2, 5, c);
     display.drawPixel(cx + 1, y + 1, c); display.drawPixel(cx + 1, y + 3, c);
@@ -3681,9 +3680,9 @@ void dessinerVisage(int x, int y, int niv, uint16_t c, bool clin) {
   if (niv >= 5) {                                          // yeux en croix (3 x 3)
     for (int k = -1; k <= 1; k += 2) {
       int ex = cx + 3 * k, ey = cy - 2;
-      display.drawPixel(ex - 1, ey - 1, 0); display.drawPixel(ex + 1, ey - 1, 0);
+      pixelsSymetriques(ex, 1, ey - 1, 0);
       display.drawPixel(ex, ey, 0);
-      display.drawPixel(ex - 1, ey + 1, 0); display.drawPixel(ex + 1, ey + 1, 0);
+      pixelsSymetriques(ex, 1, ey + 1, 0);
     }
   } else if (clin) {                                       // clignement
     display.drawFastHLine(cx - 3, cy - 2, 2, 0);
@@ -3693,23 +3692,21 @@ void dessinerVisage(int x, int y, int niv, uint16_t c, bool clin) {
     display.fillRect(cx + 2, cy - 3, 2, 2, 0);
   }
   if (niv == 4) {                                          // sourcils froncés, pointes vers le nez
-    display.drawPixel(cx - 4, cy - 5, 0); display.drawPixel(cx - 3, cy - 4, 0);
-    display.drawPixel(cx + 4, cy - 5, 0); display.drawPixel(cx + 3, cy - 4, 0);
+    pixelsSymetriques(cx, 4, cy - 5, 0);
+    pixelsSymetriques(cx, 3, cy - 4, 0);
   }
   // bouche
   switch (niv) {
     case 0:                                                // grand sourire
-      display.drawPixel(cx - 3, cy + 1, 0); display.drawPixel(cx + 3, cy + 1, 0);
-      display.drawPixel(cx - 2, cy + 2, 0); display.drawPixel(cx + 2, cy + 2, 0);
-      display.drawFastHLine(cx - 1, cy + 3, 3, 0);
-      break;
+      pixelsSymetriques(cx, 3, cy + 1, 0);                 // = coins relevés + le sourire du niveau 1
+      // fall through
     case 1:                                                // sourire
-      display.drawPixel(cx - 2, cy + 2, 0); display.drawPixel(cx + 2, cy + 2, 0);
+      pixelsSymetriques(cx, 2, cy + 2, 0);
       display.drawFastHLine(cx - 1, cy + 3, 3, 0);
       break;
     case 3:                                                // triste
       display.drawFastHLine(cx - 1, cy + 2, 3, 0);
-      display.drawPixel(cx - 2, cy + 3, 0); display.drawPixel(cx + 2, cy + 3, 0);
+      pixelsSymetriques(cx, 2, cy + 3, 0);
       break;
     case 4:                                                // bouche ouverte
       display.fillRect(cx - 1, cy + 2, 3, 3, 0);
@@ -3720,6 +3717,19 @@ void dessinerVisage(int x, int y, int niv, uint16_t c, bool clin) {
     default:                                               // 2 et -1 : bouche droite
       display.drawFastHLine(cx - 2, cy + 3, 5, 0);
       break;
+  }
+}
+
+// Dessine un motif écrit en texte (une chaîne par rangée : largeur x hauteur ; x, y = coin haut-gauche) :
+// le caractère codes[i] prend la couleur couleurs[i] ; tout autre caractère ('.') reste noir (rien n'est dessiné).
+// Sert au sablier, au nuage, au ventilateur et à la basilique du logo.
+void dessinerMotif(const char* const* motif, int largeur, int hauteur, int x, int y, const char* codes,
+                   const uint16_t* couleurs) {
+  for (int r = 0; r < hauteur; r++) {
+    for (int k = 0; k < largeur; k++) {
+      const char* p = strchr(codes, motif[r][k]);
+      if (p) display.drawPixel(x + k, y + r, couleurs[p - codes]);
+    }
   }
 }
 
@@ -3741,13 +3751,8 @@ static const char* SABLIER[13] = {
   "CCCCCCCCC",
 };
 void dessinerSablier(int x, int y) {
-  for (int r = 0; r < 13; r++) {
-    for (int k = 0; k < 9; k++) {
-      char e = SABLIER[r][k];
-      if (e == 'C') display.drawPixel(x + k, y + r, COL_TITRE);
-      else if (e == 'S') display.drawPixel(x + k, y + r, COL_OR);
-    }
-  }
+  static const uint16_t COULEURS[2] = {COL_TITRE, COL_OR};   // C | S
+  dessinerMotif(SABLIER, 9, 13, x, y, "CS", COULEURS);
 }
 
 // Icône d'erreur : cercle rouge barré d'une croix (13 x 13)
@@ -3791,9 +3796,7 @@ void dessinerPageMesure(const Mesure &m, const char* titre, const Echelle &e, ui
   }
   if (m.etat == CAPTEUR_ERREUR) {                     // panne, ou CO2 impossible (capteur à recalibrer)
     bool calib = co2 && co2HorsPlage;
-    dessinerEntete(titre, -1);
-    display.drawFastHLine(0, 8, 64, COL_ERREUR);
-    if (!calib) ecrireDroite("PANNE", 62, 0, 1, COL_ERREUR);
+    dessinerEnteteTexte(titre, calib ? nullptr : "PANNE", COL_ERREUR, COL_ERREUR);
     ecrireCentre(calib ? "CAL" : "ERR", 24, 10, 2, COL_ERREUR);
     dessinerIconeErreur(50, 10, COL_ERREUR);
     if (calib) ecrireCentre("A CALIBRER", 32, 25, 1, COL_ERREUR);
@@ -3863,19 +3866,16 @@ void dessinerPageGlobal() {
   const Mesure* mp = nullptr;
   const Echelle* ep = nullptr;
   int niv = niveauIndiceATMO(&cause, &mp, &ep);
-  if (niv < 0 && mPM25.etat == CAPTEUR_ERREUR) {         // NextPM en panne : pas d'indice (avant : « ATTENTE » + sablier,
-    dessinerEntete("ATMO", -1);                          // comme s'il démarrait)
-    display.drawFastHLine(0, 8, 64, COL_ERREUR);
-    ecrireDroite("PANNE", 62, 0, 1, COL_ERREUR);
-    dessinerIconeErreur(1, 10, COL_ERREUR);
-    ecrireCentre("INDISPO", 39, 13, 1, COL_ERREUR);
-    dessinerJauge(NB_NIVEAUX, -1, 0);
-    return;
-  }
-  if (niv < 0) {                                         // capteurs pas encore prêts
-    dessinerEntete("ATMO", -1);
-    dessinerSablier(3, 10);
-    ecrireCentre("ATTENTE", 38, 13, 1, COL_TITRE);
+  if (niv < 0) {
+    if (mPM25.etat == CAPTEUR_ERREUR) {                  // NextPM en panne : pas d'indice (avant : « ATTENTE » + sablier,
+      dessinerEnteteTexte("ATMO", "PANNE", COL_ERREUR, COL_ERREUR);   // comme s'il démarrait)
+      dessinerIconeErreur(1, 10, COL_ERREUR);
+      ecrireCentre("INDISPO", 39, 13, 1, COL_ERREUR);
+    } else {                                             // capteurs pas encore prêts
+      dessinerEntete("ATMO", -1);
+      dessinerSablier(3, 10);
+      ecrireCentre("ATTENTE", 38, 13, 1, COL_TITRE);
+    }
     dessinerJauge(NB_NIVEAUX, -1, 0);
     return;
   }
@@ -4001,8 +4001,7 @@ int niveauSignal(int rssi) {
 }
 
 uint16_t couleurSignal(int nv) {
-  static const uint8_t idx[4] = {3, 2, 1, 0};  // 0 arc = rouge ... 3 arcs = vert
-  return colNiv[idx[nv & 3]];
+  return colNiv[3 - (nv & 3)];  // 0 arc = rouge ... 3 arcs = vert
 }
 
 // Texte sur toute la largeur : centré s'il tient (10 caractères), sinon il défile en boucle.
@@ -4019,18 +4018,11 @@ void ecrireLigneDefilante(const char* s, int y, uint16_t c) {
   ecrireTexte(s, 1 - dx + cycle, y, 1, c);
 }
 
-// En-tête des écrans Wi-Fi : "WIFI" à gauche, état à droite, filet de la couleur de l'état
-void dessinerEnteteWifi(const char* droite, uint16_t colDroite, uint16_t colFilet) {
-  ecrireTexte("WIFI", 1, 0, 1, COL_TITRE);
-  if (droite) ecrireDroite(droite, 62, 0, 1, colDroite);
-  display.drawFastHLine(0, 8, 64, colFilet);
-}
-
 // Page Wi-Fi de la rotation : seulement quand la carte N'EST PAS connectée (connectée, le Wi-Fi est sur la page ÉTAT).
 //   0..6 "WIFI" + état | 8 filet | logo 13x11 (y 10..20) + état en clair (y 10) + détail (y 18) | 25..31 réseau / aide
 void dessinerPageWifi() {
 #if WIFI_ACTIVE
-  dessinerEnteteWifi("OFF", COL_ERREUR, COL_ERREUR);
+  dessinerEnteteTexte("WIFI", "OFF", COL_ERREUR, COL_ERREUR);
   dessinerLogoWifi(8, 20, -1, COL_ETEINT, COL_ETEINT);
   dessinerCroix(11, 16);
   if (nbReseaux == 0) {
@@ -4069,12 +4061,12 @@ void dessinerEcranConnexion() {
       int rssi = WiFi.RSSI();
       char buf[8];
       snprintf(buf, sizeof(buf), "%ddB", rssi);
-      dessinerEnteteWifi(buf, couleurSignal(niveauSignal(rssi)), colNiv[0]);
+      dessinerEnteteTexte("WIFI", buf, couleurSignal(niveauSignal(rssi)), colNiv[0]);
       dessinerLogoWifi(8, 20, 3, colNiv[0], COL_ETEINT);
       ecrireCentre("OK", 40, 10, 2, colNiv[0]);
       ecrireLigneDefilante(WiFi.SSID().c_str(), 25, COL_TITRE);
     } else {                                              // échec : logo éteint + croix, raison
-      dessinerEnteteWifi("ECHEC", COL_ERREUR, COL_ERREUR);
+      dessinerEnteteTexte("WIFI", "ECHEC", COL_ERREUR, COL_ERREUR);
       dessinerLogoWifi(8, 20, -1, COL_ETEINT, COL_ETEINT);
       dessinerCroix(11, 16);
       ecrireTexte(nbCandidats ? raisonCourte(raisonDeco) : "ABSENT", 19, 10, 1, COL_ERREUR);
@@ -4085,9 +4077,9 @@ void dessinerEcranConnexion() {
   }
   // Connexion en cours : les arcs s'allument l'un après l'autre
   int phase = (int)((now / 300UL) % 4UL) - 1;            // -1 (point seul) .. 2
+  dessinerLogoWifi(8, 20, phase + 1, COL_TITRE, COL_ETEINT);
   if (etatWifi == WIFI_SCAN) {
-    dessinerEnteteWifi("SCAN", COL_TITRE, COL_FILET);
-    dessinerLogoWifi(8, 20, phase + 1, COL_TITRE, COL_ETEINT);
+    dessinerEnteteTexte("WIFI", "SCAN", COL_TITRE, COL_FILET);
     ecrireTexte("RECHER", 19, 10, 1, COL_TITRE);
     char mem[16];
     snprintf(mem, sizeof(mem), "%u CONNU%s", (unsigned)nbReseaux, nbReseaux > 1 ? "S" : "");
@@ -4095,8 +4087,7 @@ void dessinerEcranConnexion() {
   } else {
     char buf[16];
     snprintf(buf, sizeof(buf), "%u/%u", (unsigned)(idxCandidat + 1), (unsigned)nbCandidats);
-    dessinerEnteteWifi(buf, COL_TITRE, COL_FILET);
-    dessinerLogoWifi(8, 20, phase + 1, COL_TITRE, COL_ETEINT);
+    dessinerEnteteTexte("WIFI", buf, COL_TITRE, COL_FILET);
     ecrireTexte((essaiCandidat > 0 || etatWifi == WIFI_REESSAI) ? "ESSAI 2" : "CONNEX", 19, 10, 1, COL_TITRE);
     if (reseauCourant >= 0) ecrireLigneDefilante(reseaux[reseauCourant].ssid.c_str(), 25, COL_TITRE);
   }
@@ -4133,9 +4124,7 @@ static const char* NUAGE[10] = {
   "..###########..",
 };
 void dessinerNuage(int cx, int y, uint16_t c) {
-  for (int r = 0; r < 10; r++)
-    for (int k = 0; k < 15; k++)
-      if (NUAGE[r][k] == '#') display.drawPixel(cx - 7 + k, y + r, c);
+  dessinerMotif(NUAGE, 15, 10, cx - 7, y, "#", &c);
 }
 
 // Ventilateur 11 x 11, 4 pales (capteurs : le NextPM aspire l'air avec un ventilateur), (cx, cy) = centre
@@ -4153,9 +4142,7 @@ static const char* VENTILO[11] = {
   "....###....",
 };
 void dessinerVentilo(int cx, int cy, uint16_t c) {
-  for (int r = 0; r < 11; r++)
-    for (int k = 0; k < 11; k++)
-      if (VENTILO[r][k] == '#') display.drawPixel(cx - 5 + k, cy - 5 + r, c);
+  dessinerMotif(VENTILO, 11, 11, cx - 5, cy - 5, "#", &c);
 }
 
 void dessinerTuile(int i, const char* mot, uint16_t c) {
@@ -4286,8 +4273,8 @@ void declencherAlerte(uint8_t i, int niv, const char* nom, unsigned long now) {
 // PM1 suit les seuils des PM2.5. Comme PM1 <= PM2.5, les deux passent souvent en alerte ensemble : un seul éclair
 // (priorité à PM2.5 à niveau égal), mais la page PM1 entre aussi dans le tourniquet des pages en alerte.
 void verifierAlertes(unsigned long now) {
-  const Mesure* m[4] = {&mCO2, &mPM1, &mPM25, &mPM10};
-  const Echelle* e[4] = {&ECH_CO2, &ECH_PM25, &ECH_PM25, &ECH_PM10};
+  static const Mesure* const m[4] = {&mCO2, &mPM1, &mPM25, &mPM10};
+  static const Echelle* const e[4] = {&ECH_CO2, &ECH_PM25, &ECH_PM25, &ECH_PM10};
   static const char* NOMS[4] = {"CO2", "PM1", "PM2.5", "PM10"};
   int choix = -1, nivChoix = -1;
   for (uint8_t i = 0; i < 4; i++) {
@@ -4532,6 +4519,14 @@ bool ecranWifiAnime() {
   return false;
 }
 
+// Une animation change d'image quand ph (= now / sa période) n'est plus celui retenu dans phase : vrai, et on
+// retient le nouveau.
+static bool nouvelleImage(uint32_t &phase, uint32_t ph) {
+  if (ph == phase) return false;
+  phase = ph;
+  return true;
+}
+
 // Appelée à chaque tour de loop() : une image d'animation toutes les 40 ms au plus, et on ne
 // redessine l'écran que si quelque chose a réellement bougé sur la page affichée.
 void animer(unsigned long now) {
@@ -4540,13 +4535,10 @@ void animer(unsigned long now) {
   tAnim = now;
   bool maj = false;
   bool pageVisible = !ecranWifiActif();
+  static uint32_t phaseWifi = 0, phasePulse = 0, phaseAerer = 0, phaseEtat = 0;
 
   // écran de connexion / page Wi-Fi : logo animé, texte défilant, secondes (une image toutes les 60 ms)
-  if (ecranWifiAnime()) {
-    static uint32_t phaseWifi = 0;
-    uint32_t ph = (uint32_t)(now / 60UL);
-    if (ph != phaseWifi) { phaseWifi = ph; maj = true; }
-  }
+  if (ecranWifiAnime() && nouvelleImage(phaseWifi, now / 60UL)) maj = true;
 
   // éclair d'alerte : une image toutes les ALERTE_FLASH_MS, puis retour à la page normale
   if (tFlashDebut != 0) {
@@ -4562,29 +4554,21 @@ void animer(unsigned long now) {
   }
 
   // page PM en alerte : la valeur pulse (même sans ANIMATIONS : c'est une alerte)
-  if (pageVisible && pageCourante != PAGE_AERER && alertePage(pageCourante)) {
-    static uint32_t phasePulse = 0;
-    uint32_t ph = (uint32_t)(now / ALERTE_PULSE_MS);
-    if (ph != phasePulse) { phasePulse = ph; maj = true; }
-  }
+  if (pageVisible && pageCourante != PAGE_AERER && alertePage(pageCourante) &&
+      nouvelleImage(phasePulse, now / ALERTE_PULSE_MS)) maj = true;
 
   // page AERER : rubans qui défilent (120 ms) et "AERER" qui pulse (0,6 s), même sans ANIMATIONS : c'est une alerte
-  if (pageVisible && pageCourante == PAGE_AERER) {
-    static uint32_t phaseAerer = 0;
-    uint32_t ph = (uint32_t)(now / 120UL);
-    if (ph != phaseAerer) { phaseAerer = ph; phaseRuban = (uint16_t)(phaseRuban + 1); maj = true; }
+  if (pageVisible && pageCourante == PAGE_AERER && nouvelleImage(phaseAerer, now / 120UL)) {
+    phaseRuban = (uint16_t)(phaseRuban + 1);
+    maj = true;
   }
 
   // page ÉTAT : l'heure (redessinée à chaque seconde, au cas où la minute change pendant les 3 s)
-  if (pageVisible && pageCourante == PAGE_ETAT) {
-    static uint32_t phaseEtat = 0;
-    uint32_t ph = (uint32_t)(now / 1000UL);
-    if (ph != phaseEtat) { phaseEtat = ph; maj = true; }
-  }
+  if (pageVisible && pageCourante == PAGE_ETAT && nouvelleImage(phaseEtat, now / 1000UL)) maj = true;
 
 #if ANIMATIONS
   // chiffres qui glissent en douceur vers la nouvelle valeur
-  Mesure* tab[4] = {&mCO2, &mPM1, &mPM25, &mPM10};
+  static Mesure* const tab[4] = {&mCO2, &mPM1, &mPM25, &mPM10};
   for (uint8_t i = 0; i < 4; i++) {
     Mesure &m = *tab[i];
     if (m.etat != CAPTEUR_OK) continue;
@@ -4617,10 +4601,8 @@ void animer(unsigned long now) {
 #endif
 
   // préchauffage du CO2 : le compte à rebours change chaque seconde
-  if (pageVisible && pageCourante == PAGE_CO2 && mCO2.etat == CAPTEUR_CHAUFFE) {
-    uint32_t ph = (uint32_t)(now / 1000UL);
-    if (ph != phaseChauffe) { phaseChauffe = ph; maj = true; }
-  }
+  if (pageVisible && pageCourante == PAGE_CO2 && mCO2.etat == CAPTEUR_CHAUFFE &&
+      nouvelleImage(phaseChauffe, now / 1000UL)) maj = true;
 
   if (maj) aRedessiner = true;
 }
@@ -4674,24 +4656,12 @@ static const char* LOGO_BASILIQUE[32] = {
 void dessinerLogo(int rangs, int lettres, int niveaux, bool eclat) {
   static const uint16_t C_OR = rgb565(255, 170, 0), C_PIERRE = rgb565(90, 150, 175), C_VERT = rgb565(0, 150, 90);
   static const uint16_t C_COLLINE = rgb565(0, 140, 40), C_COLLINE_SOMBRE = rgb565(0, 70, 20);
+  static const uint16_t COULEURS[5] = {C_OR, C_PIERRE, C_VERT, C_COLLINE, C_COLLINE_SOMBRE};   // G S V H h
   display.clearDisplay();
   display.setTextWrap(false);
 
   // basilique, révélée du bas vers le haut
-  for (int y = 32 - rangs; y < 32; y++) {
-    for (int x = 0; x < 15; x++) {
-      uint16_t c;
-      switch (LOGO_BASILIQUE[y][x]) {
-        case 'G': c = C_OR; break;
-        case 'S': c = C_PIERRE; break;
-        case 'V': c = C_VERT; break;
-        case 'H': c = C_COLLINE; break;
-        case 'h': c = C_COLLINE_SOMBRE; break;
-        default: continue;
-      }
-      display.drawPixel(x, y, c);
-    }
-  }
+  dessinerMotif(LOGO_BASILIQUE + (32 - rangs), 15, rangs, 0, 32 - rangs, "GSVHh", COULEURS);
   if (eclat) {                                           // étoile à 4 branches à droite de la statue
     uint16_t ce = rgb565(255, 240, 120);
     display.drawPixel(11, 1, ce);
@@ -4832,6 +4802,14 @@ void afficherLuminosite() {
   else Console.printf("mode nuit : de %u h à %u h%s\n", heureNuitDebut, heureNuitFin, ECRAN_ETEINT_NUIT ? ", écran éteint" : "");
 }
 
+// Commande en minuscules, sans espace au début ni à la fin, espaces répétés réduits à un seul.
+static void normaliserCommande(String &bas) {
+  bas.toLowerCase();
+  bas.trim();
+  int i;
+  while ((i = bas.indexOf("  ")) >= 0) bas.remove(i, 1);
+}
+
 // Reconnaît une commande d'écran ; l'exécute si executer. Faux = pas une commande d'écran valide (sert aussi à la
 // liste blanche du Bluetooth : seules les formes exactes ci-dessous passent).
 //   lum                      état
@@ -4841,15 +4819,15 @@ void afficherLuminosite() {
 //   nuit | nuit <début> <fin> | nuit off   plage de nuit (heures 0..23)
 bool commandeEcran(const String &commande, bool executer) {
   String bas = commande;
-  bas.toLowerCase();
-  bas.trim();
-  while (bas.indexOf("  ") >= 0) bas.remove(bas.indexOf("  "), 1);
+  normaliserCommande(bas);
   int sp = bas.indexOf(' ');
   String mot = (sp < 0) ? bas : bas.substring(0, sp);
   String reste = (sp < 0) ? String("") : bas.substring(sp + 1);
+  bool lum = (mot == "lum");
+  if (!lum && mot != "nuit") return false;
+  if (reste.length() == 0) { if (executer) afficherLuminosite(); return true; }   // « lum » ou « nuit » seul : état
 
-  if (mot == "lum") {
-    if (reste.length() == 0) { if (executer) afficherLuminosite(); return true; }
+  if (lum) {
     if (reste == "defaut" || reste == "défaut") {
       if (!executer) return true;
       niveauJour = NIVEAU_JOUR_DEFAUT; niveauNuit = NIVEAU_NUIT_DEFAUT;
@@ -4881,57 +4859,57 @@ bool commandeEcran(const String &commande, bool executer) {
     return true;
   }
 
-  if (mot == "nuit") {
-    if (reste.length() == 0) { if (executer) afficherLuminosite(); return true; }
-    int a = 0, b = 0;
-    if (reste != "off") {
-      int s2 = reste.indexOf(' ');
-      if (s2 < 0 || !lireEntier(reste.substring(0, s2), 0, 23, a) || !lireEntier(reste.substring(s2 + 1), 0, 23, b))
-        return false;
-    }
-    if (!executer) return true;
-    heureNuitDebut = (uint8_t)a; heureNuitFin = (uint8_t)b;
-    prefs.putUChar("nuit_d", heureNuitDebut); prefs.putUChar("nuit_f", heureNuitFin);
-    majLuminosite();
-    afficherLuminosite();
-    return true;
+  // nuit
+  int a = 0, b = 0;
+  if (reste != "off") {
+    int s2 = reste.indexOf(' ');
+    if (s2 < 0 || !lireEntier(reste.substring(0, s2), 0, 23, a) || !lireEntier(reste.substring(s2 + 1), 0, 23, b))
+      return false;
   }
-  return false;
+  if (!executer) return true;
+  heureNuitDebut = (uint8_t)a; heureNuitFin = (uint8_t)b;
+  prefs.putUChar("nuit_d", heureNuitDebut); prefs.putUChar("nuit_f", heureNuitFin);
+  majLuminosite();
+  afficherLuminosite();
+  return true;
 }
 
 // Affiche la liste des commandes disponibles dans le moniteur série.
 void afficherAide() {
-  Console.println("Commandes disponibles :");
-  Console.println("  status                état de la carte (réseau, file d'attente, clé...)");
-  Console.println("  wifi list             réseaux Wi-Fi en mémoire (5 au maximum)");
-  Console.println("  wifi add <nom> [mdp]  ajoute / modifie un Wi-Fi classique (sans mdp = réseau ouvert)");
-  Console.println("  wifi ent <nom> <identifiant> <mdp>   ajoute un WPA2 Entreprise (ex. eduroam)");
-  Console.println("                        nom avec espaces : entre guillemets, ex. wifi add \"Box de Paul\" mdp");
-  Console.println("  wifi del <n|nom>       supprime UN réseau : son numéro ('wifi list') ou son nom");
-  Console.println("  wifi scan             liste les réseaux visibles (* = connu)");
-  Console.println("  wifi connect          relance la connexion tout de suite");
-  Console.println("  set cle <clé>         clé du groupe AirCarto (32 caractères)");
-  Console.println("  set relais <url>      adresse du relais Cloudflare (https://...workers.dev)");
-  Console.println("  set jeton <jeton>     jeton secret de la carte auprès du relais (16 caractères au moins)");
-  Console.println("  maj                   cherche une mise à jour publiée (maj installer : l'installe)");
-  Console.println("  maj oublier           réautorise une version qui a échoué sur la carte");
-  Console.println("  diag tls              teste les connexions HTTPS (AirCarto, relais) et affiche la raison d'un échec");
-  Console.println("  bt appairer           autorise un nouveau téléphone Bluetooth pendant 2 min");
-  Console.println("  bt demarrage on|off   autorise aussi un nouveau téléphone 2 min après la mise sous tension");
-  Console.println("  bt liste              téléphones Bluetooth appairés");
-  Console.println("  bt oublier [n]        oublie le téléphone n ('bt liste'), ou tous sans numéro");
-  Console.println("  lum                   luminosité de l'écran : lum + / lum - (période en cours, jour ou nuit),");
-  Console.println("                        lum jour|nuit <1..10> ou +/-, lum defaut");
-  Console.println("  nuit <début> <fin>    heures du mode nuit, ex. nuit 22 7 (nuit off : jamais)");
-  Console.println("  reboot                redémarre la carte");
-  Console.println("  verbose on|off        active/coupe l'affichage automatique des mesures");
-  Console.println("  calib oui             calibrage du zéro CO2 (seulement après 20 min à l'air libre)");
-  Console.println("  vider_file            supprime les mesures stockées en attente");
-  Console.println("  oublier               efface identifiants et clé de la carte");
-  Console.println("Saisie : Retour arrière = efface 1 caractère | Ctrl+U = efface toute la ligne");
-  Console.println("À distance (console du relais, Bluetooth) : aide, status, verbose, calib, reboot, wifi scan,");
-  Console.println("wifi connect, maj, diag tls. Bluetooth aussi (pas le relais) : lum, nuit.");
-  Console.println("Wi-Fi, clé, jeton, relais, calib oui, bt et effacements : câble USB seulement.");
+  static const char* const AIDE[] = {
+    "Commandes disponibles :",
+    "  status                état de la carte (réseau, file d'attente, clé...)",
+    "  wifi list             réseaux Wi-Fi en mémoire (5 au maximum)",
+    "  wifi add <nom> [mdp]  ajoute / modifie un Wi-Fi classique (sans mdp = réseau ouvert)",
+    "  wifi ent <nom> <identifiant> <mdp>   ajoute un WPA2 Entreprise (ex. eduroam)",
+    "                        nom avec espaces : entre guillemets, ex. wifi add \"Box de Paul\" mdp",
+    "  wifi del <n|nom>       supprime UN réseau : son numéro ('wifi list') ou son nom",
+    "  wifi scan             liste les réseaux visibles (* = connu)",
+    "  wifi connect          relance la connexion tout de suite",
+    "  set cle <clé>         clé du groupe AirCarto (32 caractères)",
+    "  set relais <url>      adresse du relais Cloudflare (https://...workers.dev)",
+    "  set jeton <jeton>     jeton secret de la carte auprès du relais (16 caractères au moins)",
+    "  maj                   cherche une mise à jour publiée (maj installer : l'installe)",
+    "  maj oublier           réautorise une version qui a échoué sur la carte",
+    "  diag tls              teste les connexions HTTPS (AirCarto, relais) et affiche la raison d'un échec",
+    "  bt appairer           autorise un nouveau téléphone Bluetooth pendant 2 min",
+    "  bt demarrage on|off   autorise aussi un nouveau téléphone 2 min après la mise sous tension",
+    "  bt liste              téléphones Bluetooth appairés",
+    "  bt oublier [n]        oublie le téléphone n ('bt liste'), ou tous sans numéro",
+    "  lum                   luminosité de l'écran : lum + / lum - (période en cours, jour ou nuit),",
+    "                        lum jour|nuit <1..10> ou +/-, lum defaut",
+    "  nuit <début> <fin>    heures du mode nuit, ex. nuit 22 7 (nuit off : jamais)",
+    "  reboot                redémarre la carte",
+    "  verbose on|off        active/coupe l'affichage automatique des mesures",
+    "  calib oui             calibrage du zéro CO2 (seulement après 20 min à l'air libre)",
+    "  vider_file            supprime les mesures stockées en attente",
+    "  oublier               efface identifiants et clé de la carte",
+    "Saisie : Retour arrière = efface 1 caractère | Ctrl+U = efface toute la ligne",
+    "À distance (console du relais, Bluetooth) : aide, status, verbose, calib, reboot, wifi scan,",
+    "wifi connect, maj, diag tls. Bluetooth aussi (pas le relais) : lum, nuit.",
+    "Wi-Fi, clé, jeton, relais, calib oui, bt et effacements : câble USB seulement.",
+  };
+  for (const char* ligne : AIDE) Console.println(ligne);
 }
 
 // Résumé de l'état de la carte (réseau, clé, file d'attente...) à la demande, commande « status ».
@@ -5035,6 +5013,18 @@ void afficherStatus() {
 #endif
 }
 
+#if CONSOLE_DISTANTE
+// Adresse et jeton du relais, changés ensemble sous mutexEnvoi (la tâche du relais les lit) ; passer cfgRelais ou
+// cfgJeton pour garder la valeur actuelle.
+static void changerRelais(const String &relais, const String &jeton) {
+  if (mutexEnvoi) xSemaphoreTake(mutexEnvoi, portMAX_DELAY);
+  cfgRelais = relais;
+  cfgJeton = jeton;
+  majRelaisConfigure();
+  if (mutexEnvoi) xSemaphoreGive(mutexEnvoi);
+}
+#endif
+
 void definirParametre(const String &nom, const String &valeur) {
   if (nom == "ssid" || nom == "wifi_pwd" || nom == "eap_id" || nom == "eap_pwd") {
     Console.println("Commande remplacée par le cache Wi-Fi :");
@@ -5049,20 +5039,14 @@ void definirParametre(const String &nom, const String &valeur) {
     String url = valeur;
     while (url.endsWith("/")) url.remove(url.length() - 1);
     if (!url.startsWith("https://")) { Console.println("L'adresse du relais commence par https://"); return; }
-    if (mutexEnvoi) xSemaphoreTake(mutexEnvoi, portMAX_DELAY);
-    cfgRelais = url;
-    majRelaisConfigure();
-    if (mutexEnvoi) xSemaphoreGive(mutexEnvoi);
+    changerRelais(url, cfgJeton);
     prefs.putString("relais", url);
     Console.printf("Relais enregistré : %s\n", url.c_str());   // une adresse n'est pas un secret
     syncDemandee = true;
     return;
   } else if (nom == "jeton") {
     if (valeur.length() < 16) { Console.println("Jeton trop court : 16 caractères au moins (32 conseillés)."); return; }
-    if (mutexEnvoi) xSemaphoreTake(mutexEnvoi, portMAX_DELAY);
-    cfgJeton = valeur;
-    majRelaisConfigure();
-    if (mutexEnvoi) xSemaphoreGive(mutexEnvoi);
+    changerRelais(cfgRelais, valeur);
     prefs.putString("jeton", valeur);
     syncDemandee = true;
 #endif
@@ -5079,20 +5063,12 @@ String motSuivant(const String &s, int &pos) {
   int len = s.length();
   while (pos < len && s[pos] == ' ') pos++;
   if (pos >= len) return "";
-  int fin;
-  String mot;
-  if (s[pos] == '"') {
-    fin = s.indexOf('"', pos + 1);
-    if (fin < 0) fin = len;
-    mot = s.substring(pos + 1, fin);
-    pos = (fin < len) ? fin + 1 : len;
-  } else {
-    fin = s.indexOf(' ', pos);
-    if (fin < 0) fin = len;
-    mot = s.substring(pos, fin);
-    pos = fin;
-  }
-  return mot;
+  bool guillemets = (s[pos] == '"');
+  int debut = guillemets ? pos + 1 : pos;
+  int fin = s.indexOf(guillemets ? '"' : ' ', debut);   // guillemet fermant, ou espace après le mot
+  if (fin < 0) fin = len;
+  pos = (guillemets && fin < len) ? fin + 1 : fin;      // on saute le guillemet fermant
+  return s.substring(debut, fin);
 }
 
 // Le reste de la ligne (mot de passe : peut contenir des espaces), guillemets autour retirés
@@ -5129,11 +5105,12 @@ void scannerReseaux() {
   // la liste des réseaux visibles ne révèle pas ceux que la carte connaît (commande sensible = sortie USB seule).
   bool montrerConnus = (sortieUsbSeule > 0);
   for (int j = 0; j < n; j++) {
+    String ssid = WiFi.SSID(j);
     bool connu = false;
-    if (montrerConnus) for (uint8_t i = 0; i < nbReseaux; i++) if (reseaux[i].ssid == WiFi.SSID(j)) connu = true;
-    bool ent = (WiFi.encryptionType(j) == WIFI_AUTH_WPA2_ENTERPRISE);
-    bool ouvert = (WiFi.encryptionType(j) == WIFI_AUTH_OPEN);
-    Console.printf(" %c %-28s %4d dBm  %s\n", connu ? '*' : ' ', nomAffichable(WiFi.SSID(j)).c_str(), WiFi.RSSI(j),
+    if (montrerConnus) for (uint8_t i = 0; i < nbReseaux; i++) if (reseaux[i].ssid == ssid) connu = true;
+    wifi_auth_mode_t securite = WiFi.encryptionType(j);
+    bool ent = (securite == WIFI_AUTH_WPA2_ENTERPRISE), ouvert = (securite == WIFI_AUTH_OPEN);
+    Console.printf(" %c %-28s %4d dBm  %s\n", connu ? '*' : ' ', nomAffichable(ssid).c_str(), WiFi.RSSI(j),
                   ent ? "ENTREPRISE (wifi ent)" : (ouvert ? "OUVERT" : "WPA (wifi add)"));
   }
   WiFi.scanDelete();
@@ -5174,7 +5151,8 @@ void commandeWifi(const String &s) {
     int i = -1;
     bool chiffres = quoi.length() > 0;
     for (unsigned k = 0; k < quoi.length(); k++) if (!isDigit(quoi[k])) chiffres = false;
-    if (chiffres && quoi.toInt() >= 1 && quoi.toInt() <= nbReseaux) i = quoi.toInt() - 1;
+    int num = chiffres ? quoi.toInt() : 0;
+    if (num >= 1 && num <= nbReseaux) i = num - 1;
     for (uint8_t k = 0; i < 0 && k < nbReseaux; k++) if (reseaux[k].ssid == quoi) i = k;
     if (i < 0) { Console.println("Réseau introuvable : donne son numéro ou son nom exact (voir 'wifi list')."); return; }
     Console.printf("Réseau %s supprimé.\n", nomAffichable(reseaux[i].ssid).c_str());
@@ -5303,10 +5281,7 @@ void executerCommande(const String &cmd) {
     cleInvalide = false;
 #if CONSOLE_DISTANTE
     prefs.remove("relais"); prefs.remove("jeton");
-    if (mutexEnvoi) xSemaphoreTake(mutexEnvoi, portMAX_DELAY);
-    cfgRelais = ""; cfgJeton = "";
-    majRelaisConfigure();
-    if (mutexEnvoi) xSemaphoreGive(mutexEnvoi);
+    changerRelais("", "");
 #endif
 #if BLUETOOTH_ACTIF
     oublierTelephones();
@@ -5452,11 +5427,12 @@ void lireRebootDistant() {
 bool commandeDistantePermise(const String &bas, const char* origine) {
   static unsigned long tReseauDistant = 0;
   unsigned long now = millis();
-  bool reseau = bas.startsWith("wifi ") || bas.startsWith("maj");
+  bool maj = bas.startsWith("maj");
+  bool reseau = bas.startsWith("wifi ") || maj;
 #if CONSOLE_DISTANTE
   // Nouvelle version en essai (1 min + un échange avec le relais) : le démarreur de l'ESP32 revient à l'ancienne
   // version au PREMIER redémarrage avant validation. Un reboot à distance pourrait donc annuler toute mise à jour.
-  if (otaEnEssai && (bas == "reboot" || bas.startsWith("maj"))) {
+  if (otaEnEssai && (bas == "reboot" || maj)) {
     Console.printf("> %s : refusée depuis %s pendant l'essai d'une nouvelle version (réessaie dans 1 min).\n",
                    bas.c_str(), origine);
     return false;
@@ -5489,9 +5465,7 @@ bool commandeDistantePermise(const String &bas, const char* origine) {
 // Point d'entrée de TOUTES les commandes (USB, Bluetooth, relais).
 void executerCommandeSource(const String &cmd, uint8_t source) {
   String bas = cmd;
-  bas.toLowerCase();
-  bas.trim();
-  while (bas.indexOf("  ") >= 0) bas.remove(bas.indexOf("  "), 1);   // "verbose   on" = "verbose on"
+  normaliserCommande(bas);   // "verbose   on" = "verbose on"
   if (source != SOURCE_USB) {
     const char* origine = (source == SOURCE_BLUETOOTH) ? "Bluetooth" : "console à distance";
     bool permise = (source == SOURCE_BLUETOOTH) ? commandeAutoriseeBluetooth(bas) : commandeAutoriseeADistance(bas);
@@ -5603,15 +5577,11 @@ void traiterSerie() {
         cmd.trim();
         if (cmd.length() > 0) executerCommandeSource(cmd, SOURCE_USB);
       }
-    } else if (c == 0x08 || c == 0x7F) {  // retour arrière
-      if (ligneSerie.length() > 0) {
-        ligneSerie.remove(ligneSerie.length() - 1);
-        Serial.print("\b \b");  // recule, efface, recule
-      }
-    } else if (c == 0x15) {  // Ctrl+U : efface toute la ligne
+    } else if (c == 0x08 || c == 0x7F || c == 0x15) {  // retour arrière | Ctrl+U : efface toute la ligne
       while (ligneSerie.length() > 0) {
         ligneSerie.remove(ligneSerie.length() - 1);
-        Serial.print("\b \b");
+        Serial.print("\b \b");  // recule, efface, recule
+        if (c != 0x15) break;     // retour arrière : un seul caractère
       }
     } else if ((uint8_t)c >= 32 && ligneSerie.length() < 120) {
       Serial.write(saisieSecrete() ? '*' : c);  // écho (masqué pour les mots de passe si MASQUER_SECRETS)
