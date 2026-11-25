@@ -1383,6 +1383,15 @@ void preparerCandidats(int n) {
   if (nbCandidats == 0 && dernierReseau >= 0 && essayableSansScan(dernierReseau)) candidats[nbCandidats++].reseau = dernierReseau;
   if (wifiInteractif || verbose)
     Console.printf("Wi-Fi : %d réseaux visibles, %u connus parmi eux.\n", n, (unsigned)nbCandidats);
+  // Les Wi-Fi à mot de passe que le scan n'a PAS vus (réseau caché, borne un peu loin, scan incomplet) passent en fin de
+  // liste, essayés « à l'aveugle » après les réseaux visibles. Avant, dès qu'UN réseau connu était visible (eduroam), les
+  // autres n'étaient jamais essayés, même si le premier échouait.
+  for (uint8_t i = 0; i < nbReseaux; i++) {
+    if (!essayableSansScan(i)) continue;
+    bool deja = false;
+    for (uint8_t k = 0; k < nbCandidats; k++) if (candidats[k].reseau == i) deja = true;
+    if (!deja) { candidats[nbCandidats].reseau = i; candidats[nbCandidats].bssidOk = false; nbCandidats++; }
+  }
   WiFi.scanDelete();
 }
 
