@@ -6,7 +6,9 @@
 #  2. SIGNATURE : après chaque compilation, si ta clé privée existe (outils/cle_privee_ota.pem), fabrique
 #     ota/firmware.bin + ota/firmware.json (version, taille, empreinte SHA-256, signature). Ce sont les DEUX fichiers
 #     à joindre à une release GitHub.
-#  3. « pio run -t cles » (une seule fois) : crée ta paire de clés. La clé PRIVÉE reste sur ton PC (jamais dans git,
+#  3. « pio run -t publier » : compile, signe, puis PUBLIE la release GitHub (tag v<version>, firmware.bin + firmware.json)
+#     avec l'outil « gh » (GitHub CLI). La clé privée reste sur ton PC : c'est voulu, ne pas la confier à GitHub Actions.
+#  4. « pio run -t cles » (une seule fois) : crée ta paire de clés. La clé PRIVÉE reste sur ton PC (jamais dans git,
 #     garde-en une copie) ; la clé PUBLIQUE va dans src/cle_ota.h, compilée dans le programme de la carte.
 #
 # Signature : ECDSA P-256 + SHA-256, écrite ici en Python pur (aucun paquet à installer), vérifiée sur la carte par
@@ -190,6 +192,42 @@ def fabriquer_manifeste(bin_chemin, version, d):
     return {"version": version, "tag": "v%d" % version, "taille": len(contenu), "sha256": sha, "sig": sig}
 
 
+# ------------------------------------------------------------------ publication de la release
+def publier_release(dossier_ota, depot_git):
+    """Crée la release GitHub avec firmware.bin + firmware.json (via « gh »). Renvoie True si elle est publiée."""
+    import subprocess
+    gh = shutil.which("gh")
+    if gh is None:
+        print("Publication : l'outil « gh » (GitHub CLI) n'est pas installé. Installe-le (https://cli.github.com), puis « gh auth login ».")
+        print("              Sinon : release à la main avec Firmware/ota/firmware.bin et firmware.json.")
+        return False
+    binaire = os.path.join(dossier_ota, "firmware.bin")
+    manifeste = os.path.join(dossier_ota, "firmware.json")
+    if not (os.path.exists(binaire) and os.path.exists(manifeste)):
+        print("Publication : firmware.bin / firmware.json absents (la clé privée existe-t-elle ? « pio run -t cles »).")
+        return False
+    infos = json.load(open(manifeste))
+    tag = infos["tag"]
+    # Avertit si le code publié n'est pas celui du dépôt : la release est taguée sur la branche par défaut de GitHub.
+    try:
+        sale = subprocess.run(["git", "status", "--porcelain", "--", "."], cwd=depot_git, capture_output=True, text=True).stdout.strip()
+        avance = subprocess.run(["git", "log", "@{u}..", "--oneline"], cwd=depot_git, capture_output=True, text=True).stdout.strip()
+        if sale or avance:
+            print("ATTENTION : du code n'est pas encore sur GitHub (modifications non commitées ou commits non poussés).")
+            print("            La release contient bien CE programme compilé, mais le dépôt ne le montre pas encore : fais « git push ».")
+    except OSError:
+        pass
+    notes = "Programme de la carte, version %s (signé). La carte l'installe avec « maj installer »." % infos["version"]
+    r = subprocess.run([gh, "release", "create", tag, binaire, manifeste, "--title", tag, "--notes", notes, "--latest"],
+                       cwd=depot_git)
+    if r.returncode != 0:
+        print("Publication échouée (voir ci-dessus). Tag déjà publié ? Modifie le code pour obtenir une nouvelle version,")
+        print("ou « gh auth status » si tu n'es pas connecté.")
+        return False
+    print("Release %s publiée. Sur la console : « Chercher une mise à jour », puis « Installer la mise à jour »." % tag)
+    return True
+
+
 # ------------------------------------------------------------------ intégration PlatformIO
 try:
     Import("env")  # noqa: F821  (fourni par PlatformIO)
@@ -251,6 +289,12 @@ if env is not None:
         print("Idées de secrets pour le relais (à copier une seule fois, puis à garder dans un gestionnaire de mots de passe) :")
         print("  jeton de la carte        : %s" % secrets.token_urlsafe(24))
         print("  mot de passe de console  : %s" % secrets.token_urlsafe(18))
+
+    def publier(*args, **kwargs):
+        publier_release(SORTIE, PROJET)
+
+    env.AddCustomTarget("publier", "$BUILD_DIR/${PROGNAME}.bin", publier, title="Publier la release",
+                        description="Compile, signe et publie la release GitHub (outil gh requis)")
 
     env.AddCustomTarget("cles", None, generer_cles, title="Clés OTA",
                         description="Crée la clé de signature des mises à jour (une seule fois)")

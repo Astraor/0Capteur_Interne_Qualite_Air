@@ -94,7 +94,7 @@ Sans réseau, la mesure est rangée en flash puis renvoyée plus tard avec son �
 ├── Firmware/
 │   ├── platformio.ini          # Configuration PlatformIO
 │   ├── partitions_mair.csv     # Mémoire : 2 × 1,5 Mo pour le programme (mise à jour à distance) + 896 Ko de mesures
-│   ├── outils/ota.py           # Version, signature des mises à jour, « pio run -t cles »
+│   ├── outils/ota.py           # Version, signature des mises à jour, « pio run -t cles », « pio run -t publier »
 │   └── src/
 │       ├── main.cpp            # Programme de la carte
 │       ├── racines_tls.h       # Certificats acceptés pour joindre le relais
