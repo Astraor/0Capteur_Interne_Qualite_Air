@@ -234,7 +234,7 @@ const GROUPES = [
   ] },
   { titre: "Programme", touches: [
     { c: "maj", nom: "Chercher une mise à jour", aide: "Compare avec la dernière version publiée", attente: 30 },
-    { c: "maj installer", nom: "Installer la mise à jour", aide: "…", attente: 30, prudente: true,
+    { c: "maj installer", nom: "Installer la mise à jour", aide: "Vérification de la version publiée…", attente: 30, prudente: true,
       question: "Appuie encore pour installer : la carte redémarre" },
     { c: "reboot", nom: "Redémarrer la carte", aide: "Mesures gardées en mémoire", attente: 300, prudente: true, large: true,
       question: "Appuie encore pour redémarrer" },
@@ -351,6 +351,7 @@ async function envoyer(t) {
   try {
     await api("/api/commande", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ texte: t.c }) });
     if (t.attente) bloqueeJusqua[t.c] = Date.now() + t.attente * 1000;
+    if (t.c === "maj") verifierPubliee();   // la carte va comparer avec la release : la console aussi, tout de suite
     if (toucheEnvoyee) toucheEnvoyee.bouton.classList.remove("envoyee", "recue");
     toucheEnvoyee = t;
     enAttente = Math.max(enAttente, 1);   // au prochain relevé, 0 en attente = la carte l'a prise
@@ -566,10 +567,16 @@ async function rafraichir() {
 // page cachée : plus de demandes (la carte repasse à un échange toutes les 30 s)
 document.addEventListener("visibilitychange", () => { if (!document.hidden && jeton) rafraichir(); });
 
+// Version publiée (firmware.json de la dernière release GitHub, lu par le relais). Relue toutes les 2 min, et à
+// chaque « Chercher une mise à jour » : avant, elle n'était lue qu'à l'ouverture de la page. Une release publiée
+// ensuite (ou un échec passager à l'ouverture) laissait « Installer la mise à jour » grisé, alors que la commande
+// « maj » de la carte, elle, trouvait bien la nouvelle version.
 async function verifierPubliee() {
-  try { publiee = await api("/api/manifeste"); } catch { publiee = null; }
+  try { publiee = await api("/api/manifeste"); }
+  catch (e) { if (/aucune release/.test(e.message)) publiee = null; }   // panne passagère : on garde la dernière réponse
   if (jeton) majTouches();
 }
+setInterval(() => { if (jeton) verifierPubliee(); }, 120000);
 
 // ---------- panneau LED de la page de connexion : l'animation de démarrage de la carte (dessinerLogo dans main.cpp),
 // même dessin pixel par pixel sur 64 x 32 LED, mêmes couleurs.
