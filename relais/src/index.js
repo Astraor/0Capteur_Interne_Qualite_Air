@@ -1,20 +1,20 @@
-// Relais Cloudflare de La Bonne M'Air : boîte aux lettres entre la carte et ta page console.
+// Relais Cloudflare de La Bonne M'Air : boîte aux lettres entre la carte et la page console.
 //
 //   carte  --HTTPS-->  /carte/sync       (journal)      <-- commandes en attente, « console ouverte ? »
 //   carte  --HTTPS-->  /carte/manifeste  (mise à jour : firmware.json de la dernière release GitHub)
 //   carte  --HTTPS-->  /carte/firmware   (mise à jour : firmware.bin de cette release, relayé tel quel)
-//   toi    --HTTPS-->  /                 (page console)  /api/connexion  /api/journal  /api/commande ...
+//   admin  --HTTPS-->  /                 (page console)  /api/connexion  /api/journal  /api/commande ...
 //   site   --HTTPS-->  /donnees          (mesures AirCarto : le relais ajoute la clé du groupe, que le site ne voit plus)
 //
 // Secrets (wrangler secret put ...) — 16 caractères minimum, sinon tout est refusé :
 //   JETON_CARTE           la carte se présente avec lui (entré au câble USB : set jeton ...)
-//   MOT_DE_PASSE_CONSOLE  toi, une seule fois par appareil : la page reçoit ensuite un JETON DE SESSION
+//   MOT_DE_PASSE_CONSOLE  administrateur, une seule fois par appareil : la page reçoit ensuite un JETON DE SESSION
 //                         (le mot de passe n'est plus gardé dans le navigateur). Changer ce secret
 //                         déconnecte tous les appareils.
 //   AIRCARTO_CLE          clé du groupe AirCarto (elle permettait aussi d'ENVOYER de fausses mesures)
 //   GITHUB_TOKEN          seulement si le dépôt devient privé (lecture des releases par l'API GitHub)
 // La SIGNATURE des mises à jour est vérifiée par la CARTE (clé publique compilée dedans) : même un relais piraté ne
-// peut pas lui faire installer un programme qui ne vient pas de ta clé privée.
+// peut pas lui faire installer un programme qui n'est pas signé par la clé privée du projet.
 // Le relais refuse aussi les commandes sensibles (Wi-Fi, clé...) ; la carte les refuse de toute façon.
 import PAGE_CONSOLE from "./console.html";
 
@@ -179,7 +179,7 @@ async function donnees(request, env, url) {
   const cors = entetesCors(origine);
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: { ...cors, "Access-Control-Max-Age": "86400" } });
   if (await tropDeRequetes(env.LIMITE_DONNEES, ipClient(request)))
-    return json({ ok: false, message: "trop de requêtes : réessaie dans une minute" }, 429, { ...cors, "Retry-After": "60" });
+    return json({ ok: false, message: "trop de requêtes : réessayez dans une minute" }, 429, { ...cors, "Retry-After": "60" });
   if (!env.AIRCARTO_CLE) return json({ ok: false, message: "clé AirCarto absente du relais (wrangler secret put AIRCARTO_CLE)" }, 500, cors);
 
   const lecture = new URLSearchParams();
@@ -191,7 +191,7 @@ async function donnees(request, env, url) {
   }
   if (!lecture.has("start")) return json({ ok: false, message: "paramètre start manquant" }, 400, cors);
 
-  // plage demandée : PLAGE_MAX_JOURS au plus (évite qu'on fasse travailler AirCarto sur des années avec ta clé)
+  // plage demandée : PLAGE_MAX_JOURS au plus (évite de solliciter AirCarto sur des années de données avec la clé du groupe)
   const maintenant = Date.now();
   const s = lecture.get("start");
   const debut = s.startsWith("-") ? maintenant - Number(s.slice(1, -1)) * UNITE_MS[s.slice(-1)] : Date.parse(s);
@@ -235,7 +235,7 @@ async function donnees(request, env, url) {
 
 // ---------------- page console : CSP par empreinte (plus de 'unsafe-inline')
 // Les empreintes du <script> et du <style> de console.html sont calculées une fois au démarrage du Worker :
-// si tu modifies console.html, elles suivent toutes seules. N'ajoute pas d'attribut style="..." ni de
+// elles suivent donc automatiquement toute modification de console.html. Ne pas ajouter d'attribut style="..." ni de
 // onclick="..." dans la page : ils seraient bloqués.
 let cspConsole = null;
 async function empreinteBloc(motif) {
@@ -280,7 +280,7 @@ export default {
     if (p.startsWith("/carte/") || p.startsWith("/api/")) {
       const carteAuthentifiee = p.startsWith("/carte/") && (await secretEgal(porteur(request), env.JETON_CARTE));
       if (!carteAuthentifiee && await tropDeRequetes(env.LIMITE, ipClient(request)))
-        return json({ erreur: "trop de requêtes : réessaie dans une minute" }, 429, { "Retry-After": "60" });
+        return json({ erreur: "trop de requêtes : réessayez dans une minute" }, 429, { "Retry-After": "60" });
       return env.RELAIS.get(env.RELAIS.idFromName("carte")).fetch(request);
     }
     return new Response("Introuvable", { status: 404 });
@@ -333,7 +333,7 @@ export class Relais {
     if (this.alerte.n >= ALERTE_ESSAIS_HEURE && !this.alerte.dit) {
       this.alerte.dit = true;
       this.ajouterLigne(maintenant, `[sécurité] ${this.alerte.n} secrets refusés en moins d'1 h, toutes adresses confondues : ` +
-        "attaque probable. Vérifie que ton mot de passe de console est long et aléatoire.");
+        "attaque probable. Vérifiez que le mot de passe de la console est long et aléatoire.");
     }
   }
 
@@ -364,7 +364,7 @@ export class Relais {
       // plus : impossible à deviner, même sans blocage ; le blocage ne sert qu'à freiner les essais.)
       const cle = "carte " + ip;
       if (!(await secretEgal(porteur(request), this.env.JETON_CARTE))) {
-        if (this.estBloque(cle, maintenant)) return json({ erreur: "trop d'essais : réessaie dans 15 min" }, 429);
+        if (this.estBloque(cle, maintenant)) return json({ erreur: "trop d'essais : réessayez dans 15 min" }, 429);
         this.noterEchec(cle, maintenant, "jetons de carte");
         return json({ erreur: "jeton refusé" }, 401);
       }
@@ -393,7 +393,7 @@ export class Relais {
 
       // ---- connexion : le mot de passe ne sert qu'ici, la page reçoit un jeton de session
       if (p === "/api/connexion" && request.method === "POST") {
-        if (this.estBloque(cle, maintenant)) return json({ erreur: "trop d'essais : réessaie dans 15 min" }, 429);
+        if (this.estBloque(cle, maintenant)) return json({ erreur: "trop d'essais : réessayez dans 15 min" }, 429);
         // L'essai est compté AVANT toute attente (lecture du corps, calcul d'empreinte) : pendant ces attentes, d'autres
         // requêtes peuvent passer ; comptées après, une rafale dépasserait les 10 essais. Effacé si c'est le bon.
         this.noterEchec(cle, maintenant, "mots de passe");
@@ -419,9 +419,9 @@ export class Relais {
       const jeton = porteur(request);
       const s = await this.session(jeton, maintenant);
       if (!s) {
-        if (this.estBloque(cle, maintenant)) return json({ erreur: "trop d'essais : réessaie dans 15 min" }, 429);
+        if (this.estBloque(cle, maintenant)) return json({ erreur: "trop d'essais : réessayez dans 15 min" }, 429);
         this.noterEchec(cle, maintenant, "jetons de session");
-        return json({ erreur: "session expirée : reconnecte-toi" }, 401);
+        return json({ erreur: "session expirée : reconnectez-vous" }, 401);
       }
       const qui = `${ip}, ${appareil(request.headers.get("User-Agent") || "")}`;
 

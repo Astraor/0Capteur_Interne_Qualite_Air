@@ -2,7 +2,7 @@
 # ou si le CO2 manque (ou n'a que des valeurs impossibles) depuis plus d'1 h alors que le reste arrive.
 #
 # Fonctionnement : toutes les 5 min, GitHub lance .github/scripts/surveiller-capteur.mjs, qui interroge le serveur
-# AirCarto. Plus de SEUIL_MIN minutes sans mesure -> une issue « Capteur muet » est ouverte (avec une mention @toi,
+# AirCarto. Plus de SEUIL_MIN minutes sans mesure -> une issue « Capteur muet » est ouverte (avec une mention du propriétaire,
 # sans assignation) : UN mail. Quand les mesures reviennent, l'issue est fermée toute seule : UN mail.
 # Même principe pour le CO2 : issue « CO2 à vérifier » (capteur débranché, en panne ou à recalibrer).
 #

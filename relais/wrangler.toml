@@ -29,7 +29,7 @@ tag = "v1"
 new_sqlite_classes = ["Relais"]
 
 # Limites de débit par adresse IP (bloc /64 en IPv6), gérées par Cloudflare, gratuites.
-# namespace_id : un nombre que tu choisis, unique sur ton compte Cloudflare.
+# namespace_id : un nombre libre, unique sur le compte Cloudflare.
 # Console + carte : la console lit toutes les 2 s (30/min), la carte aussi en direct (30/min).
 [[ratelimits]]
 name = "LIMITE"

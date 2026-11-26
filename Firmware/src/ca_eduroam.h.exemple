@@ -1,32 +1,32 @@
-// CERTIFICAT EDUROAM (facultatif, mais conseillé si la carte se connecte avec ton compte ENT)
+// CERTIFICAT EDUROAM (facultatif, mais conseillé si la carte se connecte avec un compte eduroam personnel)
 //
 // Sans ce fichier, la carte accepte N'IMPORTE QUEL serveur d'authentification : un faux point d'accès « eduroam »
-// (un simple ordinateur portable suffit) peut récupérer ton identifiant et l'empreinte de ton mot de passe ENT,
+// (un simple ordinateur portable suffit) peut récupérer l'identifiant et l'empreinte du mot de passe,
 // puis la casser hors ligne. Avec ce fichier, la carte refuse tout serveur qui n'est pas signé par cette autorité.
 //
 // MISE EN PLACE
-//  1. Copie ce fichier en « ca_eduroam.h », dans ce même dossier (src/).
-//  2. Récupère le certificat de l'autorité (CA) du serveur eduroam de ton université. Prends de préférence l'autorité
+//  1. Copier ce fichier en « ca_eduroam.h », dans ce même dossier (src/).
+//  2. Récupérer le certificat de l'autorité (CA) du serveur eduroam de l'établissement. Choisir de préférence l'autorité
 //     qui a DIRECTEMENT signé le certificat du serveur RADIUS (souvent une autorité propre à l'université), plutôt
 //     qu'une grande racine publique : ESP32 Arduino 2.x ne vérifie pas le nom du serveur, donc avec une racine
 //     publique, n'importe quel certificat qu'elle a signé (pour n'importe qui) serait accepté.
-//     - sur https://cat.eduroam.org, choisis ton établissement, puis télécharge l'installeur « Linux » (fichier .py) :
+//     - sur https://cat.eduroam.org, choisir l'établissement, puis télécharger l'installeur « Linux » (fichier .py) :
 //       le certificat y est écrit en clair, entre « -----BEGIN CERTIFICATE----- » et « -----END CERTIFICATE----- » ;
-//     - ou demande-le au service informatique de l'université (« certificat CA du serveur RADIUS eduroam »).
-//  3. Colle-le ci-dessous à la place de l'exemple : une ligne du certificat par ligne, chacune entre guillemets et
+//     - ou le demander au service informatique de l'université (« certificat CA du serveur RADIUS eduroam »).
+//  3. Le coller ci-dessous à la place de l'exemple : une ligne du certificat par ligne, chacune entre guillemets et
 //     terminée par \n (même présentation que racines_tls.h).
-//  4. Compile et flashe au câble USB. « status » affiche alors « certificat du serveur ENT : vérifié ». S'il affiche
+//  4. Compiler et flasher au câble USB. « status » affiche alors « certificat du serveur ENT : vérifié ». S'il affiche
 //     « ILLISIBLE », le texte collé n'est pas un certificat valide (eduroam ne se connectera pas).
 //  Ce certificat s'applique à TOUS les réseaux entreprise enregistrés (wifi ent) : un deuxième réseau entreprise
 //  signé par une autre autorité ne pourrait pas se connecter.
 //
 // EN CAS DE PROBLÈME : si la carte n'arrive plus à se connecter à eduroam (« MDP ? » à l'écran alors que le mot de
-// passe est bon), le certificat n'est pas le bon : supprime ca_eduroam.h et reflashe.
+// passe est bon), le certificat n'est pas le bon : supprimer ca_eduroam.h et reflasher.
 // LIMITE : ESP32 Arduino 2.x vérifie l'autorité qui a signé le serveur, mais pas son nom. Si cette autorité est
-// publique (vend des certificats à n'importe qui), la protection est partielle. Le plus sûr reste de ne pas mettre
-// ton mot de passe ENT personnel dans la carte (réseau dédié aux objets, ou partage de connexion d'un téléphone).
+// publique (vend des certificats à n'importe qui), la protection est partielle. Recommandation : ne pas enregistrer
+// de mot de passe personnel dans la carte (réseau dédié aux objets, ou partage de connexion d'un téléphone).
 #pragma once
 static const char CA_EDUROAM[] =
   "-----BEGIN CERTIFICATE-----\n"
-  "COLLE ICI LES LIGNES DU CERTIFICAT, UNE PAR LIGNE\n"
+  "COLLER ICI LES LIGNES DU CERTIFICAT, UNE PAR LIGNE\n"
   "-----END CERTIFICATE-----\n";

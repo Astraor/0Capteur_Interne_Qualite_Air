@@ -3,13 +3,13 @@
 #  1. NUMÉRO DE VERSION : écrit src/version_fw.h (FW_VERSION = AAMMJJhhmm, date de la dernière modification du code).
 #     La carte n'installe une mise à jour que si son numéro est plus grand que le sien. Le numéro tient sur 32 bits :
 #     ce format fonctionne jusqu'à fin 2042 (au-delà, changer de format et reflasher au câble USB).
-#  2. SIGNATURE : après chaque compilation, si ta clé privée existe (outils/cle_privee_ota.pem), fabrique
+#  2. SIGNATURE : après chaque compilation, si la clé privée existe (outils/cle_privee_ota.pem), fabrique
 #     ota/firmware.bin + ota/firmware.json (version, taille, empreinte SHA-256, signature). Ce sont les DEUX fichiers
 #     à joindre à une release GitHub.
 #  3. « pio run -t publier » : compile, signe, puis PUBLIE la release GitHub (tag v<version>, firmware.bin + firmware.json)
-#     avec l'outil « gh » (GitHub CLI). La clé privée reste sur ton PC : c'est voulu, ne pas la confier à GitHub Actions.
-#  4. « pio run -t cles » (une seule fois) : crée ta paire de clés. La clé PRIVÉE reste sur ton PC (jamais dans git,
-#     garde-en une copie) ; la clé PUBLIQUE va dans src/cle_ota.h, compilée dans le programme de la carte.
+#     avec l'outil « gh » (GitHub CLI). La clé privée reste sur le poste de développement : volontairement, elle n'est pas confiée à GitHub Actions.
+#  4. « pio run -t cles » (une seule fois) : crée la paire de clés. La clé PRIVÉE reste sur le poste de développement
+#     (jamais dans git, en conserver une copie de sauvegarde) ; la clé PUBLIQUE va dans src/cle_ota.h, compilée dans le programme de la carte.
 #
 # Signature : ECDSA P-256 + SHA-256, écrite ici en Python pur (aucun paquet à installer), vérifiée sur la carte par
 # mbedtls. Message signé : "MAIR-OTA|<version>|<taille>|<sha256>".
@@ -198,7 +198,7 @@ def publier_release(dossier_ota, depot_git):
     import subprocess
     gh = shutil.which("gh")
     if gh is None:
-        print("Publication : l'outil « gh » (GitHub CLI) n'est pas installé. Installe-le (https://cli.github.com), puis « gh auth login ».")
+        print("Publication : l'outil « gh » (GitHub CLI) n'est pas installé. L'installer (https://cli.github.com), puis lancer « gh auth login ».")
         print("              Sinon : release à la main avec Firmware/ota/firmware.bin et firmware.json.")
         return False
     binaire = os.path.join(dossier_ota, "firmware.bin")
@@ -214,15 +214,15 @@ def publier_release(dossier_ota, depot_git):
         avance = subprocess.run(["git", "log", "@{u}..", "--oneline"], cwd=depot_git, capture_output=True, text=True).stdout.strip()
         if sale or avance:
             print("ATTENTION : du code n'est pas encore sur GitHub (modifications non commitées ou commits non poussés).")
-            print("            La release contient bien CE programme compilé, mais le dépôt ne le montre pas encore : fais « git push ».")
+            print("            La release contient bien CE programme compilé, mais le dépôt ne le montre pas encore : lancer « git push ».")
     except OSError:
         pass
     notes = "Programme de la carte, version %s (signé). La carte l'installe avec « maj installer »." % infos["version"]
     r = subprocess.run([gh, "release", "create", tag, binaire, manifeste, "--title", tag, "--notes", notes, "--latest"],
                        cwd=depot_git)
     if r.returncode != 0:
-        print("Publication échouée (voir ci-dessus). Tag déjà publié ? Modifie le code pour obtenir une nouvelle version,")
-        print("ou « gh auth status » si tu n'es pas connecté.")
+        print("Publication échouée (voir ci-dessus). Tag déjà publié ? Modifier le code pour obtenir une nouvelle version,")
+        print("ou vérifier la connexion avec « gh auth status ».")
         return False
     print("Release %s publiée. Sur la console : « Chercher une mise à jour », puis « Installer la mise à jour »." % tag)
     return True
@@ -250,7 +250,7 @@ if env is not None:
             print("OTA : pas de clé privée (pio run -t cles) : programme NON signé, mise à jour à distance impossible.")
             return
         if not os.path.exists(CLE_PUBLIQUE_H):
-            print("OTA : src/cle_ota.h manquant : relance « pio run -t cles » (il le recrée depuis ta clé privée).")
+            print("OTA : src/cle_ota.h manquant : relancer « pio run -t cles » (il le recrée depuis la clé privée).")
             return
         manifeste = fabriquer_manifeste(binaire, version, lire_privee(CLE_PRIVEE))
         os.makedirs(SORTIE, exist_ok=True)
@@ -270,16 +270,16 @@ if env is not None:
         else:
             d, q = nouvelle_cle()
             os.makedirs(os.path.dirname(CLE_PRIVEE), exist_ok=True)
-            # Lisible par toi seul (sous Linux / macOS ; sans effet sous Windows, où le dossier personnel est déjà privé)
+            # Lisible par le seul propriétaire du fichier (sous Linux / macOS ; sans effet sous Windows, où le dossier personnel est déjà privé)
             fd = os.open(CLE_PRIVEE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
             with os.fdopen(fd, "w") as f:
                 f.write(pem_privee(d, q))
             print("Clé privée créée : %s" % CLE_PRIVEE)
-            print("  -> NE LA METS PAS dans git (.gitignore s'en charge) et garde-en une copie (clé USB, gestionnaire de")
+            print("  -> NE PAS l'ajouter à git (.gitignore s'en charge) et en conserver une copie (clé USB, gestionnaire de")
             print("     mots de passe). Perdue : il faudra une nouvelle clé ET un flash USB.")
         with open(CLE_PUBLIQUE_H, "w") as f:
             f.write("// Clé PUBLIQUE de signature des mises à jour (créée par « pio run -t cles »). Elle n'est pas secrète :\n")
-            f.write("// elle permet seulement de VÉRIFIER une signature. La clé privée correspondante reste sur ton PC.\n")
+            f.write("// elle permet seulement de VÉRIFIER une signature. La clé privée correspondante reste sur le poste de développement.\n")
             f.write("#pragma once\nstatic const char CLE_PUBLIQUE_OTA[] =\n")
             for ligne in pem_publique(q).splitlines():
                 f.write('  "%s\\n"\n' % ligne)

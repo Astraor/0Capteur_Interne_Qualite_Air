@@ -4,7 +4,7 @@
  * automatique quand il revient.
  * Capteurs : NextPM (Modbus, UART1) | MH-Z19C (UART2) | écran PxMatrix 64x32
  * Dans le moniteur série (115200 bauds) :
- *   wifi ent eduroam identifiant@etablissement.fr MOT_DE_PASSE_ENT   (WPA2 Entreprise)
+ *   wifi ent eduroam identifiant@etablissement.fr MOT_DE_PASSE     (WPA2 Entreprise)
  *   wifi add MaBox MotDePasse                                      (Wi-Fi classique)
  *   wifi add "iPhone de Paul" MotDePasse                           (nom avec espaces : guillemets)
  *   set cle LA_CLE_DE_32_CARACTERES
@@ -16,10 +16,10 @@
  *   set relais <url> | set jeton <jeton>   (console à distance, voir relais/LISEZMOI.md)
  *
  * CONSOLE SANS FIL (le moniteur série, sans câble) :
- *   - À DISTANCE, par Internet (CONSOLE_DISTANTE) : la carte envoie son journal à TON relais Cloudflare (HTTPS) et
+ *   - À DISTANCE, par Internet (CONSOLE_DISTANTE) : la carte envoie son journal au relais Cloudflare (HTTPS) et
  *     y prend les commandes tapées dans la page console. Sert aussi aux MISES À JOUR : « maj installer » télécharge
- *     la dernière release GitHub, vérifie sa SIGNATURE (clé privée sur ton PC seulement), l'installe dans l'autre
- *     emplacement de la mémoire et revient tout seul à l'ancienne version si la nouvelle ne marche pas.
+ *     la dernière release GitHub, vérifie sa SIGNATURE (clé privée conservée hors ligne), l'installe dans l'autre
+ *     emplacement de la mémoire et revient automatiquement à la version précédente en cas d'échec.
  *   - À CÔTÉ, par Bluetooth (BLUETOOTH_ACTIF) : appairage avec le code à 6 chiffres affiché sur l'écran. Un NOUVEAU
  *     téléphone ne peut s'appairer que dans les 2 min qui suivent « bt appairer » tapé au câble USB (ou une mise sous
  *     tension, si « bt demarrage on ») ; les téléphones déjà appairés se reconnectent à tout moment.
@@ -28,13 +28,13 @@
  *   (wifi scan / wifi connect / maj : une fois par 30 s ; reboot et diag tls : une fois par 5 min) :
  *   Wi-Fi, clé, jeton, relais, oublier, vider_file, calib oui = câble USB uniquement, et ce qu'affichent Wi-Fi,
  *   set et oublier ne quitte jamais le câble USB. (Le nom du réseau connecté, lui, apparaît dans « status ».)
- * SAISIE : ce que tu tapes s'affiche (écho), Retour arrière efface un caractère,
+ * SAISIE : le texte saisi s'affiche (écho), Retour arrière efface un caractère,
  * Ctrl+U efface toute la ligne. Les flèches / Suppr sont ignorées.
- * Avant de rendre ou prêter la carte : tape "oublier" (ou pio run -t erase).
+ * Avant de rendre ou prêter la carte : commande "oublier" (ou pio run -t erase).
  * AFFICHAGE SÉRIE : par défaut la carte est SILENCIEUSE (verbose off), pour
  * pouvoir taper les commandes sans que le texte défile. "verbose on" réactive
  * les logs automatiques (mesures, envois) ; "status" donne l'état à la demande.
- * Pour couper aussi les logs du framework ESP32, ajoute dans platformio.ini :
+ * Pour couper aussi les logs du framework ESP32, ajouter dans platformio.ini :
  *   build_flags = -DCORE_DEBUG_LEVEL=0
  *
  * ÉCRAN : interrupteurs en haut du fichier
@@ -104,7 +104,7 @@
 //    - refreshTask  : rafraîchit l'écran LED en continu (cœur 1 avec loop, réveillée par un timer toutes les 4 ms) ;
 //    - tacheEnvoi   : envoie les mesures au serveur ; sans réseau, les range dans un fichier en flash
 //                     puis les renvoie quand le réseau revient ;
-//    - tacheRelais  : console à distance et mises à jour (HTTPS vers ton relais Cloudflare, cœur 0).
+//    - tacheRelais  : console à distance et mises à jour (HTTPS vers le relais Cloudflare, cœur 0).
 // 4. Le chemin d'une mesure :
 //    capteur -> lireCapteurs() -> accumulerLectures() (moyenne + pic) -> finaliserPeriode() (JSON)
 //    -> deposerMesure() -> tacheEnvoi -> serveur AirCarto
@@ -131,11 +131,11 @@
                                      //     (clé du groupe lisible sur le réseau : seulement si le HTTPS pose problème)
 #endif
 #ifndef EDUROAM_IDENTITE_ANONYME
-#define EDUROAM_IDENTITE_ANONYME  1  // 1 = eduroam : « anonymous@ton-domaine » circule en clair à la place de ton identifiant
-                                     //     (le vrai ne part que dans le tunnel chiffré) | 0 si ton université le refuse
+#define EDUROAM_IDENTITE_ANONYME  1  // 1 = eduroam : « anonymous@domaine » circule en clair à la place de l'identifiant
+                                     //     (le vrai ne part que dans le tunnel chiffré) | 0 si l'établissement le refuse
 #endif
 #ifndef CONSOLE_DISTANTE
-#define CONSOLE_DISTANTE          1  // 1 = journal, commandes et mise à jour PAR INTERNET, via ton relais Cloudflare
+#define CONSOLE_DISTANTE          1  // 1 = journal, commandes et mise à jour PAR INTERNET, via le relais Cloudflare
                                      //     (dossier relais/ ; adresse et jeton : set relais / set jeton, au câble USB)
 #endif
 #ifndef BLUETOOTH_ACTIF
@@ -184,7 +184,7 @@
 #if WIFI_ACTIVE
 #include "esp_wpa2.h"
 // eduroam : certificat de l'autorité qui signe le serveur d'authentification de l'université (facultatif mais
-// conseillé : sans lui, un faux point d'accès « eduroam » peut récupérer ton identifiant et ton mot de passe ENT).
+// conseillé : sans lui, un faux point d'accès « eduroam » peut récupérer l'identifiant et le mot de passe ENT).
 // Fichier à créer : voir ca_eduroam.h.exemple.
 #if __has_include("ca_eduroam.h")
 #include "ca_eduroam.h"
@@ -213,7 +213,7 @@
 #ifndef FW_VERSION
 #define FW_VERSION 0UL
 #endif
-// Clé PUBLIQUE de signature des mises à jour, créée une fois par « pio run -t cles » (la clé privée reste sur ton PC).
+// Clé PUBLIQUE de signature des mises à jour, créée une fois par « pio run -t cles » (la clé privée reste sur le poste de développement).
 // Sans elle, la carte refuse toute mise à jour à distance.
 #if CONSOLE_DISTANTE && __has_include("cle_ota.h")
 #include "cle_ota.h"
@@ -684,7 +684,7 @@ Preferences prefs;  // mémoire de configuration (espace "aircarto")
 // ---------- Sortie texte de la carte ----------
 // Tout ce que la carte écrit passe par « Console » : moniteur série (USB) + journal à distance (relais Cloudflare)
 // + Bluetooth. Deux exceptions, qui ne quittent JAMAIS le câble USB :
-//  - l'écho de ce que tu tapes au clavier (traiterSerie) ;
+//  - l'écho du texte saisi au clavier (traiterSerie) ;
 //  - tout ce qu'écrit une commande « sensible » tapée en USB (wifi ..., set ..., oublier, bt oublier) :
 //    noms de réseaux, identifiant ENT, longueur des mots de passe... (voir executerCommandeSource).
 volatile uint8_t sortieUsbSeule = 0;   // > 0 : ce qui s'écrit reste sur l'USB
@@ -1358,7 +1358,7 @@ void lancerScan() {
 }
 
 // Le réseau vu au scan a-t-il la sécurité du réseau enregistré ? Un faux point d'accès OUVERT nommé « eduroam » ou
-// comme ta box est ainsi ignoré (pour un réseau entreprise, la carte n'exigerait sinon aucun chiffrement).
+// comme le réseau domestique est ainsi ignoré (pour un réseau entreprise, la carte n'exigerait sinon aucun chiffrement).
 bool securiteCompatible(uint8_t i, wifi_auth_mode_t m) {
   if (estEntreprise(i)) return m == WIFI_AUTH_WPA2_ENTERPRISE;
   if (reseaux[i].mdp.length() == 0) return m == WIFI_AUTH_OPEN;
@@ -1457,24 +1457,24 @@ bool btOccupe(unsigned long now);   // section BLUETOOTH : un téléphone est en
 // Réseau entreprise (eduroam) refusé : on alterne identité anonyme et identifiant réel (certaines universités
 // refusent l'identité anonyme, ou son domaine). Avant, la carte ne passait à l'identifiant réel que si DEUX bornes
 // différentes avaient refusé : à poste fixe, c'est presque toujours la même borne (la plus forte), et ce repli
-// n'arrivait jamais. Un faux point d'accès qui refuserait exprès n'obtient que ton identifiant, jamais ton mot de
+// n'arrivait jamais. Un faux point d'accès qui refuserait délibérément n'obtient que l'identifiant, jamais le mot de
 // passe : il ne part que dans le tunnel chiffré, vers un serveur dont le certificat est vérifié (ca_eduroam.h).
 // Deux refus de suite (les deux identités) : pause de WIFI_BLOCAGE_EAP_MS sur ce réseau.
 void refusEntreprise(int8_t i, unsigned long now) {
   if (essaiSansCert) {
     essaiSansCert = false;
-    Console.println("eduroam : refusé MÊME sans vérifier le certificat. Le certificat n'y est pour rien : vérifie "
-                    "l'identifiant (identifiant@etablissement.fr, en entier) et le mot de passe de l'ENT.");
+    Console.println("eduroam : refusé MÊME sans vérifier le certificat. Le certificat n'est pas en cause : vérifiez "
+                    "l'identifiant (complet, domaine compris) et le mot de passe de l'ENT.");
   }
 #if EDUROAM_IDENTITE_ANONYME
   identiteReelle[i] = !identiteReelle[i];
-  if (identiteReelle[i]) Console.println("eduroam : refusé avec l'identité anonyme, prochain essai avec ton identifiant réel.");
+  if (identiteReelle[i]) Console.println("eduroam : refusé avec l'identité anonyme, prochain essai avec votre identifiant réel.");
 #endif
   if (++refusEap[i] < 2) return;
   refusEap[i] = 0;
   tBlocageEap[i] = now | 1UL;
   Console.printf("eduroam : refusé deux fois de suite (identifiant, mot de passe ENT ou certificat). Pause de %lu min "
-                 "sur ce réseau, pour ne pas faire bloquer ton compte ENT ni occuper la radio du Bluetooth. "
+                 "sur ce réseau, pour ne pas faire bloquer votre compte ENT ni occuper la radio du Bluetooth. "
                  "'wifi connect' : réessayer ; 'wifi ent test' : savoir si le certificat est en cause.\n",
                  WIFI_BLOCAGE_EAP_MS / 60000UL);
 }
@@ -1511,7 +1511,7 @@ void connexionReussie() {
 void finTentatives(unsigned long now) {
   if (essaiSansCert && !rescannerApresEchec) {
     essaiSansCert = false;
-    Console.println("eduroam : test sans certificat impossible (réseau introuvable ou sans réponse). Réessaie près d'une borne.");
+    Console.println("eduroam : test sans certificat impossible (réseau introuvable ou sans réponse). Réessayez à proximité d'une borne.");
   }
   if (rescannerApresEchec) { lancerScan(); return; }  // coupure : le même réseau ne répond plus, on cherche ailleurs
   WiFi.disconnect(false, false);
@@ -1557,7 +1557,7 @@ void initialiserWiFi() {
   WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
   WiFi.onEvent(surDeconnexion, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
   if (nbReseaux == 0) {
-    Console.println("Aucun Wi-Fi en mémoire : tape 'wifi add <nom> <mdp>' ou 'wifi ent <nom> <identifiant> <mdp>'.");
+    Console.println("Aucun Wi-Fi en mémoire : tapez 'wifi add <nom> <mdp>' ou 'wifi ent <nom> <identifiant> <mdp>'.");
   }
   relancerWifi(true);
 #else
@@ -2349,7 +2349,7 @@ ResultatPush posterAuServeur(const String &payload) {
   if (code == 401) {  // clé absente, fausse, révoquée ou expirée… ou refus passager du serveur
     // Avant : arrêt DÉFINITIF des envois jusqu'au prochain démarrage. Un seul 401 passager (maintenance du serveur)
     // bloquait donc tout pendant des jours. Maintenant : nouvel essai toutes les 15 min, mesures gardées en mémoire.
-    if (!cleInvalide) Console.println("Clé refusée : envois suspendus, nouvel essai toutes les 15 min (mesures gardées en mémoire). Vérifie 'set cle ...'.");
+    if (!cleInvalide) Console.println("Clé refusée : envois suspendus, nouvel essai toutes les 15 min (mesures gardées en mémoire). Vérifiez 'set cle ...'.");
     cleInvalide = true;
     tCleRefusee = millis();
     etatEnvoi = 3;
@@ -2627,9 +2627,9 @@ void tacheEnvoi(void* param) {
 // =====================================================================
 // CONSOLE À DISTANCE (relais Cloudflare) ET MISE À JOUR PAR INTERNET
 // =====================================================================
-// Le relais est un petit programme gratuit qui tourne chez Cloudflare (dossier relais/ du dépôt). Il sert de boîte
-// aux lettres entre la carte et ta page « console » : la carte n'a besoin que d'HTTPS sortant (port 443), qui passe
-// partout, eduroam compris.
+// Le relais est un Worker Cloudflare (offre gratuite, dossier relais/ du dépôt). Il sert de boîte aux lettres
+// entre la carte et la page « console » : la carte n'a besoin que d'HTTPS sortant (port 443), autorisé sur
+// la plupart des réseaux, eduroam compris.
 //  - JOURNAL : tout ce que la carte écrit (Console) est gardé dans journalTampon, puis envoyé au relais par paquets :
 //    toutes les SYNC_REPOS_MS au repos, toutes les SYNC_LIVE_MS quand la page console est ouverte.
 //  - COMMANDES : la réponse du relais contient les commandes tapées dans la console. Elles passent par la même
@@ -2637,7 +2637,7 @@ void tacheEnvoi(void* param) {
 //    Wi-Fi, clé, jeton, relais et effacements restent réservés au câble USB, même si le relais était piraté.
 //  - MISE À JOUR (« maj » puis « maj installer ») : le relais donne le manifeste de la dernière release GitHub
 //    (version, taille, empreinte SHA-256, signature). La carte vérifie la SIGNATURE avec la clé publique de cle_ota.h
-//    (la clé privée ne quitte pas ton PC), télécharge le programme, vérifie son empreinte, l'écrit dans l'AUTRE
+//    (la clé privée ne quitte pas le poste de développement), télécharge le programme, vérifie son empreinte, l'écrit dans l'AUTRE
 //    emplacement de la mémoire, puis redémarre dessus. L'ancien programme reste en place : si le nouveau redémarre
 //    en boucle ou ne rejoint pas le relais en 10 min, la carte revient toute seule à l'ancien (verifierDemarrageOta).
 //  - SÉCURITÉ RÉSEAU : HTTPS avec vérification du certificat du relais (racines_tls.h) ; la carte se présente avec
@@ -2781,7 +2781,7 @@ static int valHexa(char c) {
   return -1;
 }
 
-// La signature du manifeste est-elle bien celle de TA clé privée ?
+// La signature du manifeste est-elle bien celle de la clé privée du projet ?
 // Message signé : "MAIR-OTA|<version>|<taille>|<sha256>" (ECDSA P-256 + SHA-256, signature DER en hexadécimal).
 static bool signatureValide(const char* message, const char* sigHexa) {
   uint8_t sig[80];
@@ -2913,7 +2913,7 @@ static void verifierMiseAJour(bool installer) {
   char message[100];   // 95 caractères au plus quand sha en fait 64 (seul cas où la signature est vérifiée)
   snprintf(message, sizeof(message), "MAIR-OTA|%lu|%lu|%s", (unsigned long)version, (unsigned long)taille, sha);
   if (strlen(sha) != 64 || *tag == 0 || !signatureValide(message, sig)) {
-    Console.println("Mise à jour REFUSÉE : signature invalide (ce programme ne vient pas de ta clé).");
+    Console.println("Mise à jour REFUSÉE : signature invalide (ce programme n'est pas signé par la clé du projet).");
     return;
   }
   Console.printf("Version installée : %lu | dernière publiée : %lu (%s, %lu octets, signature OK)\n",
@@ -2922,8 +2922,8 @@ static void verifierMiseAJour(bool installer) {
   // Une version qui a déjà échoué sur cette carte (retour automatique à l'ancienne) n'est pas réinstallée à distance :
   // sinon une console volée pourrait la réinstaller en boucle (« maj installer » puis « reboot »), en usant la flash.
   if (version == prefsOta.getULong("refusee", 0)) {
-    Console.printf("Mise à jour REFUSÉE : la version %lu a déjà échoué sur cette carte (redémarrages en boucle). Publie "
-                   "une version corrigée, ou tape 'maj oublier' au câble USB pour l'autoriser à nouveau.\n", (unsigned long)version);
+    Console.printf("Mise à jour REFUSÉE : la version %lu a déjà échoué sur cette carte (redémarrages en boucle). Publiez "
+                   "une version corrigée, ou tapez 'maj oublier' au câble USB pour l'autoriser à nouveau.\n", (unsigned long)version);
     return;
   }
   if (!installer) { Console.println("Pour l'installer : maj installer"); return; }
@@ -2949,7 +2949,7 @@ static void verifierMiseAJour(bool installer) {
   if (err != ESP_OK) {
     majProgression = 0xFF;
     if (err == ESP_ERR_OTA_ROLLBACK_INVALID_STATE)
-      Console.println("Mise à jour : la version actuelle est encore en essai (validée 1 min après un échange avec le relais). Réessaie ensuite.");
+      Console.println("Mise à jour : la version actuelle est encore en essai (validée 1 min après un échange avec le relais). Réessayez ensuite.");
     else
       Console.printf("Mise à jour : préparation impossible (%s).\n", esp_err_to_name(err));
     return;
@@ -3087,9 +3087,9 @@ void tacheRelais(void* param) {
       bool installer = (demandeMaj == 2);
       demandeMaj = 0;
       if (!prendreVerrouTls(20000)) {
-        Console.println("Mise à jour : une autre connexion HTTPS est en cours, réessaie.");
+        Console.println("Mise à jour : une autre connexion HTTPS est en cours, réessayez.");
       } else {
-        if (!memoireTlsOK()) Console.println("Mise à jour : mémoire insuffisante, réessaie.");
+        if (!memoireTlsOK()) Console.println("Mise à jour : mémoire insuffisante, réessayez.");
         else verifierMiseAJour(installer);
         rendreVerrouTls();
       }
@@ -3210,7 +3210,7 @@ bool appairageOuvert() {
 // Commande « bt appairer » (câble USB) : un nouveau téléphone peut s'appairer pendant FENETRE_APPAIRAGE_MS.
 void ouvrirAppairage() {
   tFenetreAppairage = millis() | 1UL;
-  Console.printf("Bluetooth : appairage ouvert pendant %lu s. Connecte-toi à %s et tape le code affiché sur l'écran.\n",
+  Console.printf("Bluetooth : appairage ouvert pendant %lu s. Connectez-vous à %s et saisissez le code affiché sur l'écran.\n",
                  FENETRE_APPAIRAGE_MS / 1000UL, btNom.c_str());
 }
 
@@ -3254,7 +3254,7 @@ void btEnvoyer(unsigned long now) {
   if (btCleInconnue || raison == 0x23D || raison == 0x206) {
     btCleInconnue = false;
     Console.printf("Bluetooth : ce téléphone a sans doute gardé un ancien appairage que la carte n'a plus. Sur le téléphone : "
-                   "réglages Bluetooth > %s > Oublier, puis 'bt appairer' au câble USB et reconnecte-toi.\r\n", btNom.c_str());
+                   "réglages Bluetooth > %s > Oublier, puis 'bt appairer' au câble USB et reconnectez-vous.\r\n", btNom.c_str());
   }
   // Chaque seconde : la carte doit diffuser dès qu'aucun téléphone n'est connecté. Une liaison qui avorte avant
   // d'être établie (radio occupée) n'appelle ni onConnect ni onDisconnect : sans cette relance, la carte resterait
@@ -3282,7 +3282,7 @@ void btEnvoyer(unsigned long now) {
     btRefuser = false;
     tBtConnexion = now;   // une seule tentative de déconnexion par délai
     NimBLEDevice::getServer()->disconnect(btConnexion);
-    if (refus) Console.println("Bluetooth : nouveau téléphone refusé (appairage fermé). Pour en ajouter un : 'bt appairer' au câble USB, ou débranche / rebranche la carte.");
+    if (refus) Console.println("Bluetooth : nouveau téléphone refusé (appairage fermé). Pour en ajouter un : 'bt appairer' au câble USB, ou débranchez / rebranchez la carte.");
     else LOG("Bluetooth : connexion sans appairage coupée.\n");
     return;
   }
@@ -3359,7 +3359,7 @@ class BtServeur : public NimBLEServerCallbacks {
       // (assez pour traverser un scan Wi-Fi, assez court pour libérer vite l'unique place de connexion).
       NimBLEDevice::getServer()->updateConnParams(info.getConnHandle(), 24, 40, 0, 600);
       // (gardé dans le tampon jusqu'à l'abonnement du téléphone, puis envoyé)
-      Console.printf("Bluetooth : téléphone appairé (console %s). Tape 'aide'.\n", btNom.c_str());
+      Console.printf("Bluetooth : téléphone appairé (console %s). Tapez 'aide'.\n", btNom.c_str());
     } else {
       // Appairage chiffré mais SANS code (« Just Works », téléphone qui se dit sans clavier) : NimBLE l'a quand même
       // enregistré ; on l'efface, sinon ces appairages s'accumulent et poussent dehors ceux des vrais téléphones.
@@ -4134,7 +4134,7 @@ void dessinerPageWifi() {
   if (nbReseaux == 0) {
     ecrireTexte("AUCUN", 19, 10, 1, COL_ERREUR);
     ecrireTexte("RESEAU", 19, 18, 1, COL_ERREUR);
-    ecrireLigneDefilante("tape: wifi add <nom> <mdp>", 25, COL_DISCRET);
+    ecrireLigneDefilante("usb: wifi add <nom> <mdp>", 25, COL_DISCRET);
     return;
   }
   const char* etat = (etatWifi == WIFI_SCAN) ? "RECHER" : wifiEnConnexion() ? "CONNEX" : "ABSENT";
@@ -5136,7 +5136,7 @@ static void changerRelais(const String &relais, const String &jeton) {
 void definirParametre(const String &nom, const String &valeur) {
   if (nom == "ssid" || nom == "wifi_pwd" || nom == "eap_id" || nom == "eap_pwd") {
     Console.println("Commande remplacée par le cache Wi-Fi :");
-    Console.println("  wifi ent eduroam <identifiant> <mdp>   ou   wifi add <nom> <mdp>   (tape 'aide')");
+    Console.println("  wifi ent eduroam <identifiant> <mdp>   ou   wifi add <nom> <mdp>   (tapez 'aide')");
     return;
   } else if (nom == "cle") {
     definirCle(valeur); prefs.putString("cle", valeur);
@@ -5159,7 +5159,7 @@ void definirParametre(const String &nom, const String &valeur) {
     syncDemandee = true;
 #endif
   } else {
-    Console.println("Paramètre inconnu. Tape 'aide'.");
+    Console.println("Paramètre inconnu. Tapez 'aide'.");
     return;
   }
   // on n'affiche jamais la valeur : ce sont des secrets
@@ -5188,7 +5188,7 @@ String resteLigne(const String &s, int pos) {
 }
 
 void listerReseaux() {
-  if (nbReseaux == 0) { Console.println("Aucun réseau en mémoire. Tape 'aide'."); return; }
+  if (nbReseaux == 0) { Console.println("Aucun réseau en mémoire. Tapez 'aide'."); return; }
   Console.printf("Réseaux en mémoire (%u / %u) :\n", (unsigned)nbReseaux, (unsigned)NB_WIFI_MAX);
   for (uint8_t i = 0; i < nbReseaux; i++) {
     bool actif = reseauOK() && reseauCourant == (int8_t)i;
@@ -5203,7 +5203,7 @@ void listerReseaux() {
 void scannerReseaux() {
 #if WIFI_ACTIVE
   if (etatWifi == WIFI_SCAN || wifiEnConnexion()) {
-    Console.println("Connexion en cours : réessaie dans quelques secondes.");
+    Console.println("Connexion en cours : réessayez dans quelques secondes.");
     return;
   }
   Console.println("Recherche des réseaux visibles...");
@@ -5245,8 +5245,8 @@ void commandeWifi(const String &s) {
     if (!entreprise) { Console.println("Aucun réseau entreprise enregistré ('wifi ent <nom> <identifiant> <mdp>')."); return; }
     if (!oui) {
       Console.println("Test : UN essai de connexion à eduroam SANS vérifier le certificat du serveur. Il dit si c'est le "
-                      "certificat (ca_eduroam.h) qui bloque. Ton mot de passe part alors vers un serveur non vérifié : "
-                      "fais-le seulement à la fac, sur le vrai eduroam. Pour lancer : 'wifi ent test oui'.");
+                      "certificat (ca_eduroam.h) qui bloque. Le mot de passe part alors vers un serveur non vérifié : "
+                      "à faire uniquement sur le réseau eduroam officiel de l'établissement. Pour lancer : 'wifi ent test oui'.");
       return;
     }
     essaiSansCert = true;
@@ -5298,7 +5298,7 @@ void commandeWifi(const String &s) {
     Console.println("Relance de la connexion Wi-Fi...");
     relancerWifi(sortieUsbSeule > 0);   // à distance : pas d'écran de connexion ni de noms des réseaux essayés
   } else {
-    Console.println("Commande wifi inconnue. Tape 'aide'.");
+    Console.println("Commande wifi inconnue. Tapez 'aide'.");
   }
 }
 
@@ -5332,7 +5332,7 @@ void executerCommande(const String &cmd) {
     String reste = cmd.substring(4);
     reste.trim();
     int sp = reste.indexOf(' ');
-    if (sp < 0) { Console.println("Usage : set <nom> <valeur> (tape 'aide')"); return; }
+    if (sp < 0) { Console.println("Usage : set <nom> <valeur> (tapez 'aide')"); return; }
     String nom = reste.substring(0, sp);
     nom.toLowerCase();
     String valeur = reste.substring(sp + 1);
@@ -5347,7 +5347,7 @@ void executerCommande(const String &cmd) {
     Console.println("MH-Z19C désactivé (MHZ_ACTIVE 0).");
 #endif
   } else if (bas == "calib") {
-    Console.println("Calibrage : l'air doit être extérieur (~400 ppm) depuis 20 min. Tape 'calib oui' au câble USB pour confirmer.");
+    Console.println("Calibrage : l'air doit être extérieur (~400 ppm) depuis 20 min. Tapez 'calib oui' au câble USB pour confirmer.");
   } else if (bas == "maj" || bas == "maj installer") {
 #if CONSOLE_DISTANTE
     if (!relaisConfigure) { Console.println("Mise à jour : relais non configuré (set relais / set jeton, câble USB)."); return; }
@@ -5416,7 +5416,7 @@ void executerCommande(const String &cmd) {
     relancerWifi(false);
     Console.println("Réseaux Wi-Fi, identifiants, clé, jeton du relais et téléphones effacés de la carte.");
   } else {
-    Console.println("Commande inconnue. Tape 'aide'.");
+    Console.println("Commande inconnue. Tapez 'aide'.");
   }
 }
 
@@ -5478,7 +5478,7 @@ static void essaiTls(const char* hote, const uint8_t* bundle, const char* nom) {
 void diagnosticTls() {
   if (!reseauOK()) { Console.println("diag tls : pas de Wi-Fi."); return; }
   if (mutexTls && xSemaphoreTake(mutexTls, pdMS_TO_TICKS(20000)) != pdTRUE) {
-    Console.println("diag tls : une autre connexion HTTPS est en cours, réessaie.");
+    Console.println("diag tls : une autre connexion HTTPS est en cours, réessayez.");
     return;
   }
   Console.printf("Diagnostic HTTPS v4 (racines en bundle, version %lu). Aucune donnée n'est envoyée.\n",
@@ -5563,7 +5563,7 @@ bool commandeDistantePermise(const String &bas, const char* origine) {
   // Nouvelle version en essai (1 min + un échange avec le relais) : le démarreur de l'ESP32 revient à l'ancienne
   // version au PREMIER redémarrage avant validation. Un reboot à distance pourrait donc annuler toute mise à jour.
   if (otaEnEssai && (bas == "reboot" || maj)) {
-    Console.printf("> %s : refusée depuis %s pendant l'essai d'une nouvelle version (réessaie dans 1 min).\n",
+    Console.printf("> %s : refusée depuis %s pendant l'essai d'une nouvelle version (réessayez dans 1 min).\n",
                    bas.c_str(), origine);
     return false;
   }
@@ -5603,7 +5603,7 @@ void executerCommandeSource(const String &cmd, uint8_t source) {
       // on ne recopie que le premier mot : la suite peut contenir un mot de passe
       int sp = bas.indexOf(' ');
       String debut = (sp < 0) ? bas : bas.substring(0, sp) + " ...";
-      Console.printf("> %s : refusée depuis %s (%s). Tape 'aide'.\n", debut.c_str(), origine,
+      Console.printf("> %s : refusée depuis %s (%s). Tapez 'aide'.\n", debut.c_str(), origine,
                      commandeEcran(bas, false) ? "écran : câble USB ou Bluetooth seulement" : "réservée au câble USB");
       return;
     }
@@ -5679,7 +5679,7 @@ bool saisieSecrete() {
 #endif
 }
 
-// Lecture de la saisie caractère par caractère, avec ÉCHO : la carte renvoie ce que tu tapes
+// Lecture de la saisie caractère par caractère, avec ÉCHO : la carte renvoie le texte saisi
 // (le moniteur PlatformIO n'affiche pas les touches tapées, il les envoie seulement).
 // Retour arrière (0x08 / 0x7F) : efface 1 caractère. Ctrl+U (0x15) : efface toute la ligne.
 // Les séquences des flèches / Suppr (ESC [ ...) sont ignorées.
@@ -5760,7 +5760,7 @@ void setup() {
   verifierCaEduroam();
   for (uint8_t i = 0; i < nbReseaux; i++)
     if (estEntreprise(i) && caEduroamValide != 1) {
-      Console.println("ATTENTION : réseau entreprise sans certificat vérifié (ca_eduroam.h) : un faux point d'accès peut capturer ton mot de passe ENT.");
+      Console.println("ATTENTION : réseau entreprise sans certificat vérifié (ca_eduroam.h) : un faux point d'accès peut capturer le mot de passe ENT.");
       break;
     }
 #if CONSOLE_DISTANTE
@@ -5815,7 +5815,7 @@ void setup() {
   // Lance la connexion Wi-Fi en arrière-plan (scan puis meilleur réseau connu) : le programme n'attend pas,
   // l'écran montre la progression (page de connexion) puis le résultat.
   initialiserWiFi();
-  if (!cleOK()) Console.println("Clé du groupe absente : les mesures seront gardées en mémoire. Tape 'aide'.");
+  if (!cleOK()) Console.println("Clé du groupe absente : les mesures seront gardées en mémoire. Tapez 'aide'.");
 
   // Watchdog : la carte redémarre toute seule si loop() reste bloquée 60 s
   esp_task_wdt_init(WDT_TIMEOUT_S, true);
@@ -5835,7 +5835,7 @@ void setup() {
   aTransition = true;  // fondu (court) du logo vers la première page
   fonduCourt = true;
   afficher();          // première page : CO2 en préchauffage
-  Console.println("Prêt. Tape 'aide' pour la liste des commandes.");
+  Console.println("Prêt. Tapez 'aide' pour la liste des commandes.");
 }
 
 // =====================================================================
