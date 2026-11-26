@@ -146,6 +146,9 @@ Aucun identifiant n’est écrit dans le code : tout est enregistré dans la mé
 | `lum` · `lum +` · `lum -` | Luminosité de l'écran (10 niveaux) : `+` / `-` règlent la période en cours, jour ou nuit — **câble USB ou Bluetooth** |
 | `lum jour <1..10>` · `lum nuit <1..10>` · `lum defaut` | Niveau précis de jour / de nuit (par défaut : jour 10, nuit 2), gardé en mémoire |
 | `nuit 22 7` · `nuit off` | Heures du mode nuit (par défaut 22 h → 7 h, heure de France) ; `off` : jamais |
+| `page` · `page suivante` · `page precedente` (ou `page +` / `page -`) | Page affichée ; passe à la page suivante / précédente de la rotation — **aussi par Bluetooth et par la console à distance** |
+| `page <nom>` | Affiche une page tout de suite : `co2`, `aerer`, `pm1`, `pm2.5`, `pm10`, `atmo`, `courbe`, `wifi`, `etat` (refusé, avec la raison, si la page n'a rien à montrer) |
+| `page fixe` · `page auto` | Fige la page affichée / reprend la rotation ; les alertes passent quand même, puis l'écran revient à la page figée (non gardé après un redémarrage) |
 | `aide` | Liste des commandes |
 
 La carte se connecte seule au meilleur réseau connu visible, sans redémarrage.
@@ -158,7 +161,7 @@ Le moniteur série est aussi disponible **sans câble** (mode d'emploi complet :
 - **par Bluetooth**, à proximité de la carte : appairage avec le code à 6 chiffres affiché sur l'écran. Un nouveau téléphone n'est accepté que dans les 2 min qui suivent un `bt appairer` (câble USB), ou une mise sous tension si `bt demarrage on` est activé : une personne qui voit l'écran ne peut donc pas s'appairer sans autorisation. Voir [Dépannage Bluetooth](#dépannage-bluetooth) ;
 - **mises à jour** : `maj installer` télécharge la dernière release GitHub, vérifie sa **signature** (ECDSA, clé privée conservée sur le poste de développement) et son empreinte, l'installe dans l'autre emplacement de la mémoire et revient automatiquement à la version précédente en cas d'échec.
 
-Sans câble, seules les commandes **sans secret, sans effacement et sans effet durable** passent (`aide`, `status`, `verbose`, `calib`, `reboot`, `wifi scan`, `wifi connect`, `maj`), une par seconde au plus (`wifi scan`, `wifi connect`, `maj` : une fois par 30 s ; `reboot` : une fois par 5 min). Par Bluetooth uniquement (pas par le relais) : `lum` et `nuit`, pour régler l'écran à proximité de la carte. Wi-Fi, clé, jeton, relais, `calib oui`, `bt …`, `oublier`, `vider_file` : **câble USB uniquement**, et ce qu'ils affichent ne quitte jamais le câble.
+Sans câble, seules les commandes **sans secret, sans effacement et sans effet durable** passent (`aide`, `status`, `verbose`, `calib`, `reboot`, `wifi scan`, `wifi connect`, `maj`, `page`), une par seconde au plus (`wifi scan`, `wifi connect`, `maj` : une fois par 30 s ; `reboot` : une fois par 5 min). Par Bluetooth uniquement (pas par le relais) : `lum` et `nuit`, pour régler l'écran à proximité de la carte. Wi-Fi, clé, jeton, relais, `calib oui`, `bt …`, `oublier`, `vider_file` : **câble USB uniquement**, et ce qu'ils affichent ne quitte jamais le câble.
 
 #### Dépannage Bluetooth
 
@@ -206,6 +209,7 @@ Mécanismes de fiabilisation côté carte : diffusion surveillée chaque seconde
 - **Page de mesure :** nom et unité en haut, filet à la couleur du niveau, valeur en grand avec un visage qui change d’expression, puis la **jauge des niveaux ATMO**, fine (6 segments pour les PM, 4 pour le CO₂) : le niveau atteint est allumé, les autres restent en sourdine, et un **curseur** ▲ détaché de la jauge, à la couleur du niveau, indique la position exacte de la valeur dans son niveau.
 - **Page ÉTAT (toutes les 3 pages, pendant 4 s, fondu très court de ~0,15 s) :** heure et date, puis trois grandes icônes colorées (vert = OK, orange = à surveiller, rouge = problème) : **Wi-Fi** (arcs selon le signal, en dBm), **serveur** (nuage : envoi OK, nombre de mesures en attente, clé refusée) et **capteurs** (ventilateur : OK, préchauffage, panne, à calibrer). Réglable avec `PERIODE_ETAT_MS` et `DUREE_ETAT_MS`.
 - **Couleurs :** chaque valeur prend la couleur de son niveau ATMO.
+- **Changer de page :** commande `page` au câble USB, par Bluetooth ou depuis la page console du relais (touches « Écran » et « Afficher une page ») : page suivante ou précédente, page précise, ou page figée (`page fixe`, `page auto` pour reprendre la rotation). La page demandée reste une durée complète, puis la rotation reprend à partir d'elle.
 - **Alerte hors norme :** dès qu’un polluant atteint son seuil d’alerte (PM : « Mauvais », CO₂ : > 1 000 ppm), l’écran saute aussitôt sur sa page, clignote à la couleur du niveau, puis la valeur pulse ; la page revient une fois sur deux tant que l’alerte dure.
 - **Luminosité adaptée :** 10 niveaux réglables (`lum`), un pour le jour et un pour la nuit (22 h → 7 h par défaut, `nuit`), bridée sur batterie.
 - **Préchauffage du CO₂ :** compte à rebours en minutes:secondes (« 2:18 ») les 3 premières minutes après une mise sous tension (pas après un redémarrage logiciel : le capteur est resté alimenté).

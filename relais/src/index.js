@@ -20,9 +20,12 @@ import PAGE_CONSOLE from "./console.html";
 
 // Commandes acceptées à distance : même liste que sur la carte (commandeAutoriseeADistance dans main.cpp).
 // « calib oui » n'y est plus : il fausserait les mesures de CO2 jusqu'au prochain calibrage (câble USB seulement).
+// Commandes « page » : changer la page de l'écran (sans effet durable). MÊMES NOMS que NOMS_PAGES dans main.cpp.
+export const NOMS_PAGES = ["co2", "aerer", "aérer", "pm1", "pm2.5", "pm25", "pm10", "atmo", "courbe", "wifi", "etat", "état"];
 export const COMMANDES_AUTORISEES = [
   "aide", "help", "status", "verbose on", "verbose off", "calib", "reboot",
   "wifi scan", "wifi connect", "maj", "maj installer", "diag tls",
+  "page", ...["suivante", "+", "precedente", "précédente", "-", "fixe", "auto", ...NOMS_PAGES].map((m) => "page " + m),
 ];
 // Lignes que seul le relais écrit (connexions, commandes de la console, séparateurs, alertes de sécurité). Une ligne
 // de la CARTE qui commencerait pareil (nom de Wi-Fi piégé, réponse de serveur...) est préfixée par « carte : »,
@@ -469,7 +472,7 @@ export class Relais {
         const texte = normaliser((corps && corps.texte) || "");
         if (!texte || texte.length > 100) return json({ erreur: "commande vide ou trop longue" }, 400);
         if (!COMMANDES_AUTORISEES.includes(texte)) {
-          return json({ erreur: "Réservée au câble USB (ou inconnue). À distance : status, verbose on/off, calib, reboot, wifi scan, wifi connect, maj, maj installer, diag tls, aide (calib oui : câble USB)." }, 403);
+          return json({ erreur: "Réservée au câble USB (ou inconnue). À distance : status, verbose on/off, calib, reboot, wifi scan, wifi connect, maj, maj installer, diag tls, page (suivante, precedente, fixe, auto, co2, pm1, pm2.5, pm10, atmo, courbe, etat…), aide (calib oui : câble USB)." }, 403);
         }
         const n = this.sql.exec("SELECT COUNT(*) AS n FROM commandes").one().n;
         if (n >= MAX_COMMANDES_ATTENTE) return json({ erreur: "déjà trop de commandes en attente" }, 429);

@@ -42,7 +42,8 @@
  *   ANIMATIONS (clignement des yeux, chiffres qui glissent, sommet de la courbe qui clignote),
  *   AFFICHER_ETAT (page d'icônes intercalée).
  *   Pages (UNE mesure par écran) : CO2 | AERER (si CO2 élevé) | PM1 | PM2.5 | PM10 | INDICE ATMO | courbe CO2
- *   | Wi-Fi (seulement hors ligne). Chaque page de mesure : nom + unité, filet à la couleur du niveau, valeur en
+ *   | Wi-Fi (seulement hors ligne). Commande « page » (USB, Bluetooth, console à distance) : page suivante,
+ *   précédente, page précise, page figée. Chaque page de mesure : nom + unité, filet à la couleur du niveau, valeur en
  *   grand, visage, et la jauge des niveaux ATMO avec un CURSEUR sous la position exacte de la valeur.
  *   Page ÉTAT (toutes les PERIODE_ETAT_MS, pendant DUREE_ETAT_MS) : heure, grandes icônes Wi-Fi (signal),
  *   serveur (envoi / mesures en attente) et capteurs, chacune colorée selon son état.
@@ -4604,6 +4605,140 @@ void pageSuivante() {
   }
 }
 
+// ---------- changement de page à la demande (commande « page », câble USB, Bluetooth ou console à distance) ----------
+// La page demandée s'affiche avec le fondu habituel et reste une durée complète, puis la rotation reprend à partir
+// d'elle. « page fixe » arrête la rotation sur la page affichée (pas gardé en mémoire : un redémarrage la relance).
+// Une alerte passe TOUJOURS devant : l'écran saute sur le polluant en cause, puis revient à la page figée quand
+// l'alerte est finie.
+static const char* const LIBELLES_PAGES[NB_PAGES] = {
+  "CO2", "AERER", "PM1", "PM2.5", "PM10", "INDICE ATMO", "COURBE CO2", "WI-FI", "ETAT"
+};
+struct NomPage { const char* nom; uint8_t page; };
+static const NomPage NOMS_PAGES[] = {   // MÊMES NOMS dans relais/src/index.js (NOMS_PAGES)
+  {"co2", PAGE_CO2}, {"aerer", PAGE_AERER}, {"aérer", PAGE_AERER}, {"pm1", PAGE_PM1}, {"pm2.5", PAGE_PM25},
+  {"pm25", PAGE_PM25}, {"pm10", PAGE_PM10}, {"atmo", PAGE_GLOBAL}, {"courbe", PAGE_COURBE}, {"wifi", PAGE_WIFI},
+  {"etat", PAGE_ETAT}, {"état", PAGE_ETAT}
+};
+bool pageFigee = false;            // « page fixe » : plus de rotation
+uint8_t pageFixe = PAGE_CO2;       // la page figée
+
+// La page p peut-elle être affichée maintenant ? (ÉTAT : hors rotation, mais disponible à la demande)
+bool pageDisponible(uint8_t p) {
+  if (p == PAGE_ETAT) return AFFICHER_ETAT;
+  return p < NB_PAGES && pageActive(p);
+}
+
+// Pourquoi la page p n'est pas disponible (message de la commande « page »)
+const char* raisonPageIndisponible(uint8_t p) {
+  switch (p) {
+    case PAGE_AERER:  return "elle n'apparaît que si le CO2 dépasse 1000 ppm";
+    case PAGE_COURBE: return "il faut d'abord 2 minutes de mesures";
+    case PAGE_WIFI:   return WIFI_ACTIVE ? "carte connectée : le Wi-Fi est sur la page ETAT" : "Wi-Fi désactivé (WIFI_ACTIVE 0)";
+    case PAGE_ETAT:   return "page ETAT désactivée (AFFICHER_ETAT 0)";
+    default:          return "page indisponible";
+  }
+}
+
+// Affiche la page p tout de suite (fondu habituel), pour une durée complète ; la rotation reprendra après elle.
+void allerPage(uint8_t p) {
+  unsigned long now = millis();
+  tPage = now;
+  if (p == pageCourante) return;
+  aTransition = true;
+  aRedessiner = true;
+  pageAvantFondu = pageCourante;
+  allongementPage = 0;
+  if (pageCourante == PAGE_ETAT) tFinEtat = now;
+  pageCourante = p;
+  if (p != PAGE_ETAT) curseurRotation = p;
+}
+
+// Page disponible voisine de la page affichée dans l'ordre de la rotation (sens +1 : suivante, -1 : précédente).
+// Depuis la page ÉTAT, « précédente » revient à la page montrée juste avant elle.
+uint8_t pageVoisine(int sens) {
+  uint8_t base = (pageCourante == PAGE_ETAT) ? curseurRotation : pageCourante;
+  if (pageCourante == PAGE_ETAT && sens < 0 && pageActive(base)) return base;
+  for (int i = 1; i <= NB_PAGES; i++) {
+    uint8_t p = (uint8_t)((base + NB_PAGES + sens * i) % NB_PAGES);
+    if (pageActive(p)) return p;
+  }
+  return pageCourante;
+}
+
+// Appelée à chaque tour de loop() : maintient la page figée (sauf pendant une alerte, qui passe devant).
+void maintenirPageFigee(unsigned long now) {
+  if (!pageFigee || alerteEnCours()) return;
+  if (!pageDisponible(pageFixe)) {
+    pageFigee = false;
+    Console.printf("Écran : page %s plus disponible (%s), rotation reprise.\n", LIBELLES_PAGES[pageFixe],
+                   raisonPageIndisponible(pageFixe));
+    return;
+  }
+  if (pageCourante != pageFixe) allerPage(pageFixe);   // retour après une alerte
+  tPage = now;                                          // la rotation ne repart pas
+}
+
+// État de l'écran pour la commande « page » et « status »
+void afficherPage() {
+  Console.printf("Écran : page %s | %s\n", LIBELLES_PAGES[pageCourante],
+                 pageFigee ? "figée ('page auto' : reprendre la rotation)" : "rotation automatique");
+}
+
+// Reconnaît une commande « page » ; l'exécute si executer. Faux = pas une commande de page valide (sert aussi à la
+// liste blanche du Bluetooth et de la console à distance : seules les formes exactes ci-dessous passent).
+//   page                              page affichée
+//   page suivante | page +            page suivante de la rotation
+//   page precedente | page -          page précédente
+//   page <nom>                        co2, aerer, pm1, pm2.5 (ou pm25), pm10, atmo, courbe, wifi, etat
+//   page fixe | page auto             fige la page affichée / reprend la rotation
+static void normaliserCommande(String &bas);
+bool commandePage(const String &commande, bool executer) {
+  String bas = commande;
+  normaliserCommande(bas);
+  if (bas == "page") { if (executer) afficherPage(); return true; }
+  if (!bas.startsWith("page ")) return false;
+  String quoi = bas.substring(5);
+  int cible = -1;
+  if (quoi == "suivante" || quoi == "+") {
+    if (!executer) return true;
+    cible = pageVoisine(+1);
+  } else if (quoi == "precedente" || quoi == "précédente" || quoi == "-") {
+    if (!executer) return true;
+    cible = pageVoisine(-1);
+  } else if (quoi == "fixe") {
+    if (!executer) return true;
+    pageFigee = true;
+    pageFixe = pageCourante;
+    tPage = millis();
+    Console.printf("Écran : page %s figée (les alertes passent quand même ; 'page auto' : reprendre la rotation).\n",
+                   LIBELLES_PAGES[pageFixe]);
+    return true;
+  } else if (quoi == "auto") {
+    if (!executer) return true;
+    bool etait = pageFigee;
+    pageFigee = false;
+    tPage = millis();
+    Console.println(etait ? "Écran : rotation automatique reprise." : "Écran : déjà en rotation automatique.");
+    return true;
+  } else {
+    for (const NomPage &n : NOMS_PAGES) if (quoi == n.nom) cible = n.page;
+    if (cible < 0) return false;
+    if (!executer) return true;
+    if (!pageDisponible((uint8_t)cible)) {
+      Console.printf("Écran : page %s indisponible pour l'instant (%s).\n", LIBELLES_PAGES[cible],
+                     raisonPageIndisponible((uint8_t)cible));
+      return true;
+    }
+  }
+  allerPage((uint8_t)cible);
+  if (pageFigee) pageFixe = (uint8_t)cible;   // page figée : la nouvelle page reste figée
+  const char* note = ecranEteint ? " (écran éteint pour la nuit)"
+                   : (ecranWifiActif() || ecranSpecialActif()) ? " (après l'écran en cours)"
+                   : (alerteEnCours() && !pageFigee) ? " (alerte en cours : elle revient ensuite une page sur deux)" : "";
+  Console.printf("Écran : page %s%s%s\n", LIBELLES_PAGES[pageCourante], pageFigee ? ", figée" : "", note);
+  return true;
+}
+
 // ---------- animations ----------
 // La page courante affiche-t-elle cette mesure ? (pour ne redessiner que si ce qui bouge est visible)
 bool mesureVisible(const Mesure &m) {
@@ -5006,6 +5141,9 @@ void afficherAide() {
     "  lum                   luminosité de l'écran : lum + / lum - (période en cours, jour ou nuit),",
     "                        lum jour|nuit <1..10> ou +/-, lum defaut",
     "  nuit <début> <fin>    heures du mode nuit, ex. nuit 22 7 (nuit off : jamais)",
+    "  page                  page affichée ; page suivante | page precedente (ou page + / page -)",
+    "  page <nom>            affiche une page : co2 aerer pm1 pm2.5 pm10 atmo courbe wifi etat",
+    "  page fixe|auto        fige la page affichée / reprend la rotation (les alertes passent quand même)",
     "  reboot                redémarre la carte",
     "  verbose on|off        active/coupe l'affichage automatique des mesures",
     "  calib oui             calibrage du zéro CO2 (seulement après 20 min à l'air libre)",
@@ -5013,7 +5151,7 @@ void afficherAide() {
     "  oublier               efface identifiants et clé de la carte",
     "Saisie : Retour arrière = efface 1 caractère | Ctrl+U = efface toute la ligne",
     "À distance (console du relais, Bluetooth) : aide, status, verbose, calib, reboot, wifi scan,",
-    "wifi connect, maj, diag tls. Bluetooth aussi (pas le relais) : lum, nuit.",
+    "wifi connect, maj, diag tls, page. Bluetooth aussi (pas le relais) : lum, nuit.",
     "Wi-Fi, clé, jeton, relais, calib oui, bt et effacements : câble USB seulement.",
   };
   for (const char* ligne : AIDE) Console.println(ligne);
@@ -5055,6 +5193,7 @@ void afficherStatus() {
 #endif
   Console.printf("heure NTP : %s | mode nuit : %s\n", heureValide() ? "valide" : "pas encore", estNuit() ? "oui" : "non");
   afficherLuminosite();
+  afficherPage();
   Console.printf("clé du groupe : %s%s\n", cleOK() ? "présente (32 car.)" : "ABSENTE ou mauvaise longueur",
                 cleInvalide ? " | REFUSÉE par le serveur (nouvel essai toutes les 15 min)" : "");
   Console.printf("dernier envoi (%s) : code HTTP %d | état %u | écart %lu ms (dont marge %lu ms)",
@@ -5308,7 +5447,8 @@ void executerCommande(const String &cmd) {
   String bas = cmd;
   bas.toLowerCase();
 
-  // Chaque branche ci-dessous correspond à une commande : aide, status, reboot, verbose, set, calib, vider_file, oublier.
+  // Chaque branche ci-dessous correspond à une commande : aide, status, reboot, lum, nuit, page, verbose, set, calib,
+  // vider_file, oublier.
   if (bas == "aide" || bas == "help") {
     afficherAide();
   } else if (bas == "status") {
@@ -5321,6 +5461,11 @@ void executerCommande(const String &cmd) {
     // lum ..., nuit ... (exécutée)
   } else if (bas == "lum" || bas.startsWith("lum ") || bas == "nuit" || bas.startsWith("nuit ")) {
     Console.println("Écran : lum | lum + | lum - | lum jour|nuit <1..10> | lum defaut | nuit <début> <fin> | nuit off");
+  } else if (commandePage(bas, true)) {
+    // page, page suivante, page co2... (exécutée)
+  } else if (bas.startsWith("page ")) {
+    Console.println("Écran : page | page suivante|precedente (ou + / -) | page fixe|auto | page <nom> : "
+                    "co2 aerer pm1 pm2.5 pm10 atmo courbe wifi etat");
   } else if (bas == "verbose on" || bas == "verbose off") {
     verbose = (bas == "verbose on");
     prefs.putBool("verbose", verbose);
@@ -5507,7 +5652,8 @@ void diagnosticTls() {
 
 // Commandes acceptées par Bluetooth et par la console à distance : rien qui touche aux mots de passe, à la clé,
 // au jeton, au relais, rien qui efface, rien qui ait un effet durable. Comparaison sur la commande ENTIÈRE (en
-// minuscules, espaces réduits). « calib oui » n'y est plus : lancé depuis un téléphone appairé ou une console dont
+// minuscules, espaces réduits). Les commandes « page » (changer la page de l'écran, sans effet durable) passent
+// aussi, sous leurs formes exactes (commandePage). « calib oui » n'y est plus : lancé depuis un téléphone appairé ou une console dont
 // le mot de passe aurait fuité, il fausserait les mesures de CO2 jusqu'au prochain calibrage (câble USB seulement).
 // MÊME LISTE dans relais/src/index.js (COMMANDES_AUTORISEES).
 bool commandeAutoriseeADistance(const String &bas) {
@@ -5516,7 +5662,7 @@ bool commandeAutoriseeADistance(const String &bas) {
     "wifi scan", "wifi connect", "maj", "maj installer", "diag tls"
   };
   for (const char* a : AUTORISEES) if (bas == a) return true;
-  return false;
+  return commandePage(bas, false);
 }
 
 // Bluetooth : il faut un téléphone appairé, à portée de la carte. Il a la liste blanche du relais, plus le réglage
@@ -5604,7 +5750,8 @@ void executerCommandeSource(const String &cmd, uint8_t source) {
       int sp = bas.indexOf(' ');
       String debut = (sp < 0) ? bas : bas.substring(0, sp) + " ...";
       Console.printf("> %s : refusée depuis %s (%s). Tapez 'aide'.\n", debut.c_str(), origine,
-                     commandeEcran(bas, false) ? "écran : câble USB ou Bluetooth seulement" : "réservée au câble USB");
+                     commandeEcran(bas, false) ? "écran : câble USB ou Bluetooth seulement"
+                     : bas.startsWith("page ") ? "page inconnue : tapez 'page'" : "réservée au câble USB");
       return;
     }
     if (!commandeDistantePermise(bas, origine)) return;
@@ -5895,6 +6042,7 @@ void loop() {
   // (en pause pendant l'écran de connexion Wi-Fi, le code Bluetooth et la mise à jour : la page reste fixe,
   // sans fondu ni redessin toutes les 5 s, et la rotation reprend où elle en était).
   if (ecranWifiActif() || ecranSpecialActif()) tPage = now;
+  maintenirPageFigee(now);   // « page fixe » : la rotation ne repart pas (les alertes passent quand même)
   if (now - tPage >= dureePage()) {
     tPage = now;
     pageSuivante();

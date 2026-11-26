@@ -105,6 +105,10 @@
     background: var(--boitier); border: 1px solid var(--trait); color: var(--ardoise); }
   .touche small { color: var(--vent); font-size: 12.5px; }
   .touche.large { grid-column: 1 / -1; }
+  /* pages de l'écran : petites touches sur 3 colonnes (nom + commande) */
+  .touches.compact { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .touches.compact .touche { min-height: 50px; padding: 9px 10px 8px; }
+  .touche small:empty { display: none; }
   .touche:disabled { cursor: default; opacity: .55; }
   .touche.prudente b { color: var(--prudence); }
   .touche.a-confirmer { background: var(--prudence-fond); border-color: var(--prudence); }
@@ -217,6 +221,21 @@ const GROUPES = [
   { titre: "Consulter", touches: [
     { c: "status", nom: "État complet", aide: "Wi-Fi, envois, capteurs, version, mémoire", large: true },
   ] },
+  { titre: "Écran", touches: [
+    { c: "page precedente", nom: "◀ Page précédente", aide: "Dans l'ordre de la rotation" },
+    { c: "page suivante", nom: "Page suivante ▶", aide: "Dans l'ordre de la rotation" },
+  ] },
+  { titre: "Afficher une page", compact: true, touches: [
+    { c: "page co2", nom: "CO₂", aide: "" },
+    { c: "page pm1", nom: "PM1", aide: "" },
+    { c: "page pm2.5", nom: "PM2.5", aide: "" },
+    { c: "page pm10", nom: "PM10", aide: "" },
+    { c: "page atmo", nom: "Indice ATMO", aide: "" },
+    { c: "page courbe", nom: "Courbe CO₂", aide: "" },
+    { c: "page etat", nom: "État", aide: "" },
+    { c: "page fixe", nom: "Figer", aide: "" },
+    { c: "page auto", nom: "Rotation", aide: "" },
+  ] },
   { titre: "Journal détaillé", touches: [
     { c: "verbose on", nom: "Activer", aide: "Chaque mesure et chaque envoi" },
     { c: "verbose off", nom: "Couper", aide: "Messages importants seulement" },
@@ -310,7 +329,7 @@ function construireTouches() {
     const s = document.createElement("section");
     s.className = "groupe";
     const h = document.createElement("h2"); h.textContent = g.titre;
-    const grille = document.createElement("div"); grille.className = "touches";
+    const grille = document.createElement("div"); grille.className = "touches" + (g.compact ? " compact" : "");
     for (const t of g.touches) {
       const b = document.createElement("button");
       b.type = "button";
