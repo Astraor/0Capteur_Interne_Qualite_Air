@@ -5,7 +5,7 @@ Deux moyens de communiquer avec la carte **sans câble USB** :
 | | Par Internet (relais Cloudflare) | Par Bluetooth |
 |---|---|---|
 | Portée | Tout réseau autorisant le HTTPS sortant, eduroam compris | À une dizaine de mètres de la carte |
-| Journal | Gardé 7 jours (5 000 lignes), presque en direct quand la page est ouverte ; un intertitre par jour (« Aujourd'hui », « Hier », date), date complète au survol de l'heure et dans « Copier » | En direct |
+| Journal | Gardé 7 jours (5 000 lignes), presque en direct quand la page est ouverte et utilisée (pause automatique après 5 min sans activité) ; un intertitre par jour (« Aujourd'hui », « Hier », date), date complète au survol de l'heure et dans « Copier » | En direct |
 | Commandes | Liste blanche (ci-dessous) | Même liste blanche |
 | Mise à jour du programme | Oui (`maj installer`, signée) | Se lance aussi par Bluetooth ; le programme est toujours téléchargé par le Wi-Fi, via le relais |
 | Prérequis | Un compte Cloudflare (offre gratuite) | Une application « terminal BLE » |
@@ -147,8 +147,41 @@ Bonnes pratiques côté administrateur : validation en deux étapes sur **GitHub
 
 ## 4. Limites de l'offre gratuite Cloudflare
 
-100 000 requêtes par jour, partagées entre la carte, la console et les visiteurs du site (une dizaine de requêtes à
-l'ouverture du site, puis une toutes les 5 min). La carte en fait ~3 000 par jour au repos (une toutes les 30 s), et ~1 800 par heure tant que la page console est ouverte (une toutes les 2 s, plus celles de la page). Quand l'onglet est caché, la page s'arrête de demander et la carte revient à 30 s.
+Quotas **quotidiens**, remis à zéro à 00:00 UTC (1 h du matin en hiver, 2 h en été en France) :
+
+| | Limite par jour | Qui l'utilise |
+|---|---|---|
+| Requêtes du Worker | 100 000 | carte, console, visiteurs du site (`/donnees`) |
+| Requêtes du Durable Object | 100 000 | carte et console seulement |
+| Lignes lues (base du Durable Object) | 5 millions | journal, sessions, commandes |
+| Lignes écrites (base du Durable Object) | 100 000 | journal de la carte (ajout et nettoyage) |
+
+Au-delà, Cloudflare refuse tout jusqu'au lendemain : la console affiche « relais indisponible : quota Cloudflare du
+jour atteint » et la carte espace ses échanges (jusqu'à 5 min). Les **mesures et le site ne sont pas touchés** : la
+carte envoie ses mesures directement à AirCarto, et `/donnees` n'utilise pas la base.
+
+Ce que fait le relais pour rester loin de ces limites :
+
+- **base allégée** : ce qui change à chaque échange (dernière visite de la carte, console ouverte) reste en mémoire et
+  n'est enregistré que toutes les 5 min ; les lignes du journal arrivent en une seule écriture par échange ; le
+  nettoyage du journal (5 000 lignes, 7 jours) se fait une fois par heure et ne relit que les lignes effacées.
+  Avant, il relisait tout le journal à chaque échange, soit jusqu'à 9 millions de lignes par heure de console
+  ouverte : c'est très probablement ce qui a épuisé le quota le 26 novembre 2026 ;
+- **pause automatique** : la page console arrête ses relevés après 5 min sans clic, frappe ni mouvement de souris
+  (bandeau « Console en pause », bouton **Reprendre**, ou n'importe quel geste sur la page), et dès que l'onglet est
+  caché. La carte revient alors à un échange toutes les 30 s. Une console oubliée dans un coin de l'écran ne coûte
+  plus rien ;
+- **paliers** : le relais compte lui-même ses requêtes et ses lignes lues et écrites du jour. À 50 % d'un quota,
+  mode économie : console relevée toutes les 15 s, carte à 30 s. À 80 % : console toutes les minutes, et si ce sont
+  les écritures, le journal de la carte n'est plus gardé jusqu'au lendemain (une ligne le signale ; les commandes et
+  la minute de journal qui suit chacune passent toujours). La page console affiche en permanence le pourcentage atteint
+  (« Quota Cloudflare du jour ») ;
+- **filtre** : une requête de console sans jeton de session valide est refusée par le Worker, sans réveiller le
+  Durable Object.
+
+Ordre de grandeur après ces changements : ~3 000 requêtes par jour au repos (carte, une toutes les 30 s), ~3 600 par
+heure de console **réellement utilisée** (carte et page toutes les 2 s), quelques milliers de lignes lues et écrites
+par jour (davantage avec `verbose on`, qui allonge le journal).
 
 ## 5. Fichiers
 

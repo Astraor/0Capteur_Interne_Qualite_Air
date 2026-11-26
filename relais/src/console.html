@@ -118,6 +118,13 @@
   .touche.envoyee::after { animation: attente 8s linear forwards; }
   .touche.recue::after { width: 100%; background: var(--atmo-moyen); transition: opacity .6s .8s; opacity: 0; }
   @keyframes attente { from { width: 0; } to { width: 92%; } }
+  /* quota Cloudflare du jour et pause automatique */
+  #quota { font-size: 12.5px; color: var(--vent); }
+  #quota.alerte { color: var(--prudence); }
+  .pause { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 14px;
+    border-radius: var(--r); border: 1px solid var(--trait); background: var(--boitier); font-size: 13.5px; }
+  .pause button { flex: none; padding: 7px 14px; border-radius: 10px; border: 1px solid var(--vent); background: var(--brume);
+    font-weight: 600; }
   #retour { font-size: 13.5px; color: var(--vent); min-height: 1.4em; padding: 0 4px; margin: -6px 0 -6px; }
   #retour.err { color: var(--prudence); }
 
@@ -189,12 +196,17 @@
       <div class="identite">
         <h1>La Bonne M'Air</h1>
         <div id="details">Connexion au relais…</div>
+        <div id="quota"></div>
         <div class="session">
           <button class="discret" id="deconnexion" title="Fermer la session sur cet appareil">Se déconnecter</button>
           <button class="discret" id="partout" title="Téléphone perdu, mot de passe partagé…">Déconnecter tous les appareils</button>
         </div>
       </div>
     </section>
+    <div id="pause" class="pause cache" role="status">
+      <span>Console en pause après 5 min sans activité : la carte est revenue à un échange toutes les 30 s.</span>
+      <button type="button" id="reprendre">Reprendre</button>
+    </div>
     <div id="retour" role="status"></div>
     <div id="groupes"></div>
   </div>
@@ -207,7 +219,7 @@
       <button class="discret" id="copier" title="Copier les lignes affichées (pour les transmettre)">Copier</button>
       <button class="discret" id="effacer" title="Vider le journal gardé par le relais">Vider</button>
     </div>
-    <div id="journal"><div id="vide">Rien pour l'instant. La carte envoie son journal toutes les 30 s, puis toutes les 2 s tant que cette page est ouverte.</div></div>
+    <div id="journal"><div id="vide">Rien pour l'instant. La carte envoie son journal toutes les 30 s, puis toutes les 2 s tant que cette page est ouverte et utilisée.</div></div>
   </section>
 </main>
 
@@ -264,6 +276,11 @@ localStorage.removeItem("mdp"); sessionStorage.removeItem("mdp");   // (très an
 // Le navigateur ne garde qu'un jeton de session (12 h, ou 30 jours), révocable et annulé si le mot de passe change.
 let jeton = localStorage.getItem("jeton") || sessionStorage.getItem("jeton") || "";
 let dernierId = 0, minuterie = null, echecs = 0, carte = {}, publiee = null, enAttente = 0;
+// Rythme des relevés : donné par le relais (2 s, 15 s en mode économie, 60 s quand le quota Cloudflare du jour est
+// presque atteint). Sans clic, frappe ni mouvement pendant PAUSE_INACTIF_MS, la page se met en pause : une console
+// oubliée dans un coin de l'écran ne consomme plus rien, et la carte revient à un échange toutes les 30 s.
+const PAUSE_INACTIF_MS = 5 * 60000;
+let rythme = 2000, derniereActivite = Date.now(), enPause = false;
 const toucheDe = {};          // commande -> bouton
 const bloqueeJusqua = {};     // commande -> instant (ms) où elle redevient possible
 let toucheEnvoyee = null;     // la dernière touche envoyée, jusqu'à ce que la carte la prenne
@@ -376,7 +393,8 @@ async function envoyer(t) {
     enAttente = Math.max(enAttente, 1);   // au prochain relevé, 0 en attente = la carte l'a prise
     void t.bouton.offsetWidth;            // relance l'animation si on renvoie la même commande
     t.bouton.classList.add("envoyee");
-    retour("« " + t.nom + " » envoyée : la carte la prend à son prochain échange (2 s si elle est en ligne).");
+    retour("« " + t.nom + " » envoyée : la carte la prend à son prochain échange (" + (rythme <= 2000 ? "2 s" : "30 s") +
+           " si elle est en ligne).");
     majTouches();
     rafraichir();
   } catch (e) { if (e.message !== "401") retour(e.message, true); }
@@ -411,6 +429,7 @@ function demarrer() {
   dernierId = 0; jourDernier = 0;
   $("journal").replaceChildren($("vide") || document.createElement("div"));
   construireTouches();
+  derniereActivite = Date.now(); enPause = false; $("pause").classList.add("cache");
   rafraichir(); verifierPubliee();
 }
 
@@ -564,7 +583,27 @@ function afficherEtat(rep) {
     toucheEnvoyee = null;
   }
   enAttente = rep.commandesEnAttente || 0;
+  afficherQuota(rep.quota);
   majTouches();
+}
+
+// Heure locale de la remise à zéro des quotas Cloudflare (00:00 UTC : 1 h en hiver, 2 h en été en France)
+function heureRemise() {
+  const d = new Date();
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1))
+    .toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+}
+function afficherQuota(q) {
+  const el = $("quota");
+  if (!q) { el.textContent = ""; el.className = ""; return; }
+  const max = Math.max(q.requetes, q.lectures, q.ecritures);
+  const quoi = max === q.ecritures ? "écritures" : max === q.lectures ? "lectures" : "requêtes";
+  let txt = "Quota Cloudflare du jour : " + (max < 1 ? "moins de 1 %" : max + " % (" + quoi + ")");
+  if (q.niveau === 1) txt += " · mode économie, relevé toutes les 15 s";
+  if (q.niveau >= 2) txt += " · relevé toutes les minutes" + (q.ecritures >= 80 ? ", journal de la carte suspendu" : "");
+  if (q.niveau) txt += " · remise à zéro à " + heureRemise();
+  el.textContent = txt;
+  el.className = q.niveau ? "alerte" : "";
 }
 
 async function rafraichir() {
@@ -573,20 +612,47 @@ async function rafraichir() {
   try {
     const rep = await api("/api/journal?apres=" + dernierId);
     ajouterLignes(rep.lignes || []);
+    rythme = Math.max(2000, Number(rep.rythme) || 2000);
     afficherEtat(rep);
     echecs = 0;
   } catch (e) {
     if (e.message === "401") return;
     echecs++;
-    $("details").textContent = "Relais injoignable (" + e.message + "), nouvel essai…";
+    // 500 : le plus souvent, le quota quotidien de Cloudflare est épuisé (tout échoue jusqu'à la remise à zéro)
+    $("details").textContent = "Relais injoignable (" + e.message + ")" +
+      (/ 500$/.test(e.message) ? " : quota Cloudflare du jour peut-être atteint, retour à " + heureRemise() : "") + ", nouvel essai…";
     $("indice").className = "absente"; $("indiceMot").textContent = "Relais ?"; $("indiceAge").textContent = "";
   }
-  if (!document.hidden) minuterie = setTimeout(rafraichir, Math.min(2000 * Math.pow(2, echecs), 30000));
+  if (document.hidden || enPause) return;
+  if (Date.now() - derniereActivite >= PAUSE_INACTIF_MS) { mettreEnPause(); return; }
+  minuterie = setTimeout(rafraichir, Math.max(rythme, Math.min(2000 * Math.pow(2, echecs), 60000)));
 }
-// page cachée : plus de demandes (la carte repasse à un échange toutes les 30 s)
-document.addEventListener("visibilitychange", () => { if (!document.hidden && jeton) rafraichir(); });
 
-// Version publiée (firmware.json de la dernière release GitHub, lu par le relais). Relue toutes les 2 min, et à
+// ---------- pause automatique
+function mettreEnPause() {
+  enPause = true;
+  clearTimeout(minuterie);
+  $("pause").classList.remove("cache");
+}
+function reprendre() {
+  derniereActivite = Date.now();
+  if (!enPause) return;
+  enPause = false;
+  $("pause").classList.add("cache");
+  if (jeton && !document.hidden) rafraichir();
+}
+// Toute activité sur la page (souris, doigt, clavier, molette) repousse la pause, ou relance une page en pause.
+for (const ev of ["pointerdown", "pointermove", "keydown", "wheel", "touchstart"])
+  document.addEventListener(ev, () => { if (enPause) reprendre(); else derniereActivite = Date.now(); }, { passive: true });
+$("reprendre").addEventListener("click", reprendre);
+// page cachée : plus de demandes (la carte repasse à un échange toutes les 30 s) ; revenir sur l'onglet la relance
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden || !jeton) return;
+  if (enPause) reprendre(); else { derniereActivite = Date.now(); rafraichir(); }
+});
+
+// Version publiée (firmware.json de la dernière release GitHub, lu par le relais). Relue toutes les 10 min (page visible
+// et active seulement), et à
 // chaque « Chercher une mise à jour » : avant, elle n'était lue qu'à l'ouverture de la page. Une release publiée
 // ensuite (ou un échec passager à l'ouverture) laissait « Installer la mise à jour » grisé, alors que la commande
 // « maj » de la carte, elle, trouvait bien la nouvelle version.
@@ -595,7 +661,7 @@ async function verifierPubliee() {
   catch (e) { if (/aucune release/.test(e.message)) publiee = null; }   // panne passagère : on garde la dernière réponse
   if (jeton) majTouches();
 }
-setInterval(() => { if (jeton) verifierPubliee(); }, 120000);
+setInterval(() => { if (jeton && !document.hidden && !enPause) verifierPubliee(); }, 600000);
 
 // ---------- panneau LED de la page de connexion : l'animation de démarrage de la carte (dessinerLogo dans main.cpp),
 // même dessin pixel par pixel sur 64 x 32 LED, mêmes couleurs.
